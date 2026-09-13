@@ -5,6 +5,8 @@ Hermes) that records usage per account. Two Go files with no dependencies, plus 
 SvelteKit dashboard embedded in the binary. Optionally syncs across your machines
 through a Supabase project you own (see [Sync across devices](#sync-across-devices)).
 
+**Documentation:** https://asieke.github.io/garcon/ (the `docs/` directory, served by GitHub Pages).
+
 Each agent is pointed at `http://127.0.0.1:4141/<harness>/<account>/<provider>/`,
 where `<harness>` names the tool, `<account>` is the login it uses (an email), and
 `<provider>` is the upstream: `anthropic`, `openai`, `openrouter` or `chatgpt`.
@@ -172,19 +174,11 @@ not work; a missing column after an upgrade shows up here, and rerunning the SQL
 idempotent) fixes it. The `connect-supabase` skill in `.claude/skills/` walks an agent
 through all of this.
 
-How it works: the table has row level security enabled with no policies, so only the secret
-key, which bypasses RLS, can read or write it; the publishable key sees nothing. Each row's
-id is a hash of a random per-machine device id and the row's fields, so history backfills
-with stable ids and re-sending is a harmless upsert. Pushes go in batches of 500 with
-backoff; pulls run every minute, ordered by the server-side `synced_at`, with a five-minute
-overlap deduplicated by id. What leaves the machine, per call: device name, time, harness,
-account, provider, model, status, latency and token counts. Never prompts, replies or keys.
-
-Files: the switch, device name, URL and key in `~/.config/garcon/config.json` (owner-only;
-`./install.sh --uninstall` removes it); the device id and push/pull cursors in
-`~/.local/share/garcon/sync.json`, which is why recreating the config never turns this
-machine into a "new" device. Renaming a device is free: the name is a label, the id is
-what identifies the machine.
+The table has row level security enabled with no policies, so only the secret key, which
+bypasses RLS, can read or write it. What leaves the machine, per call: device name, time,
+harness, account, provider, model, status, latency and token counts. Never prompts, replies
+or keys. The [documentation](https://asieke.github.io/garcon/#sync) covers the mechanics,
+the security model, file locations and troubleshooting.
 
 ## Dashboard development
 

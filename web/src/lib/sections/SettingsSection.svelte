@@ -4,7 +4,7 @@
 	import { HARNESSES, harnessLabel, harnessVar, providerOf, sortHarnesses, type Row } from '../usage';
 	import { PROVIDERS, HARNESS_PROVIDERS, baseUrl, snippetsFor } from '../connect';
 	import { loadOverrides, saveOverrides, PRICE_FIELDS, PRICE_RULES, type Price } from '../pricing';
-	import { TABLE_SQL, keyProblem, type SettingsResponse } from '../sync';
+	import { keyProblem, DOCS_URL, type SettingsResponse } from '../sync';
 
 	let { rows, pollMs, now }: { rows: Row[]; pollMs: number; now: number } = $props();
 
@@ -288,6 +288,8 @@
 	<p class="caption">
 		Off: Garcon never contacts the network. On: this device's usage rows are upserted into a table in a Supabase project you
 		own, and other devices' rows are pulled in, so every dashboard shows the union with a Device filter.
+		<a href="{DOCS_URL}#sync" target="_blank" rel="noopener">Setup guide</a>: creating the project and table, connecting more
+		machines, what leaves this machine, troubleshooting.
 	</p>
 	<div class="builder">
 		<label>Device name <input type="text" placeholder="work laptop" bind:value={form.device_name} oninput={touch} /></label>
@@ -332,23 +334,6 @@
 			</table>
 		</div>
 	{/if}
-	<div class="snippet">
-		<div class="snippet-head">
-			<span>Set up the table: supabase/garcon_usage.sql</span>
-			<button onclick={() => copy(TABLE_SQL, 'sql')}>{copied === 'sql' ? 'Copied' : 'Copy'}</button>
-		</div>
-		<pre>{TABLE_SQL}</pre>
-	</div>
-	<p class="caption">
-		First machine: <code>./connect-supabase.sh --name "work laptop"</code> uses the Supabase CLI to create a project, run this
-		SQL and hand the secret key to the proxy without ever printing it. Another machine: paste the same project URL and
-		secret key above. Or run the SQL yourself in the project's SQL editor.
-	</p>
-	<p class="caption">
-		What leaves this machine: per completion call, the device name, time, harness, account, provider, model, status,
-		latency and token counts. Never prompts, replies or credentials. The secret key lives in
-		<code>~/.config/garcon/config.json</code> (owner-only) and is sent only to the project URL.
-	</p>
 {/if}
 
 <h2 class="spaced">This browser</h2>
@@ -390,6 +375,9 @@
 		font-size: 12px;
 		margin: 8px 0 0;
 		max-width: 80ch;
+	}
+	.caption a {
+		color: var(--accent);
 	}
 	.empty {
 		color: var(--text-muted);
@@ -572,10 +560,6 @@
 	}
 	.devices {
 		margin-top: 16px;
-	}
-	.snippet .snippet-head + pre {
-		max-height: 260px;
-		overflow: auto;
 	}
 	.plain {
 		list-style: none;
