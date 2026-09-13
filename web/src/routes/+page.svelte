@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import Sidebar from '$lib/navigation/Sidebar.svelte';
+	import MultiSelect from '$lib/MultiSelect.svelte';
 	import { views, viewFromParam } from '$lib/navigation/views';
 	import OverviewSection from '$lib/sections/OverviewSection.svelte';
 	import UsageSection from '$lib/sections/UsageSection.svelte';
@@ -54,9 +55,10 @@
 		menuOpen = false;
 		heading?.focus();
 	});
-	let harnessFilter = $state('all');
-	let accountFilter = $state('all');
-	let deviceFilter = $state('all');
+	// Empty means "all"; the filters are multi-select.
+	let harnessFilter = $state<string[]>([]);
+	let accountFilter = $state<string[]>([]);
+	let deviceFilter = $state<string[]>([]);
 	let now = $state(Date.now());
 	let lastSync = $state<number | null>(null);
 	let stale = $state(false);
@@ -91,9 +93,9 @@
 
 	const dimFiltered = $derived(
 		rows.filter((r) => {
-			if (harnessFilter !== 'all' && r.harness !== harnessFilter) return false;
-			if (accountFilter !== 'all' && r.account !== accountFilter) return false;
-			if (deviceFilter !== 'all' && r.device !== deviceFilter) return false;
+			if (harnessFilter.length && !harnessFilter.includes(r.harness)) return false;
+			if (accountFilter.length && !accountFilter.includes(r.account)) return false;
+			if (deviceFilter.length && !deviceFilter.includes(r.device ?? '')) return false;
 			return true;
 		})
 	);
@@ -264,10 +266,10 @@
 					<div class="period"><span class="filter-label" id="period-label">Time range</span><div class="seg" role="group" aria-labelledby="period-label">
 						{#each WINDOWS as [label, d]}<button class:active={days === d} aria-pressed={days === d} onclick={() => days = d}>{label}</button>{/each}
 					</div></div>
-					<label><span id="harness-label">Harness</span><select aria-labelledby="harness-label" bind:value={harnessFilter}><option value="all">All harnesses</option>{#each harnessesAll as h}<option value={h}>{harnessLabel(h)}</option>{/each}</select></label>
-					<label><span id="account-label">Account</span><select aria-labelledby="account-label" bind:value={accountFilter}><option value="all">All accounts</option>{#each accountsAll as a}<option value={a}>{a}</option>{/each}</select></label>
-					{#if devicesAll.length > 1}<label><span id="device-label">Device</span><select aria-labelledby="device-label" bind:value={deviceFilter}><option value="all">All devices</option>{#each devicesAll as d}<option value={d}>{d}</option>{/each}</select></label>{/if}
-					{#if days !== 7 || harnessFilter !== 'all' || accountFilter !== 'all' || deviceFilter !== 'all'}<button class="reset" onclick={() => { days = 7; harnessFilter = 'all'; accountFilter = 'all'; deviceFilter = 'all'; }}>Reset filters</button>{/if}
+					<MultiSelect id="harness" label="Harness" allLabel="All harnesses" options={harnessesAll.map((h) => ({ value: h, label: harnessLabel(h) }))} bind:selected={harnessFilter} />
+					<MultiSelect id="account" label="Account" allLabel="All accounts" options={accountsAll.map((a) => ({ value: a, label: a }))} bind:selected={accountFilter} />
+					{#if devicesAll.length > 1}<MultiSelect id="device" label="Device" allLabel="All devices" options={devicesAll.map((d) => ({ value: d, label: d }))} bind:selected={deviceFilter} />{/if}
+					{#if days !== 7 || harnessFilter.length || accountFilter.length || deviceFilter.length}<button class="reset" onclick={() => { days = 7; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Reset filters</button>{/if}
 				</div>
 			{/if}
 			{#if stale}<p class="notice" role="status">Proxy unreachable; retrying.</p>{/if}
@@ -279,7 +281,7 @@
 {:else if !lastSync}
 	<p class="empty-state">Proxy unreachable.</p>
 {:else if !visible.length}
-	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'No usage yet'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Point a coding agent at the proxy.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = 'all'; accountFilter = 'all'; deviceFilter = 'all'; }}>Show all usage</button>{:else}<a href="?view=settings">Connect a harness</a>{/if}</div>
+	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'No usage yet'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Point a coding agent at the proxy.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Show all usage</button>{:else}<a href="?view=settings">Connect a harness</a>{/if}</div>
 {:else}
 	{#if tab === 'overview'}
 		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />
@@ -352,15 +354,13 @@
 	h1:focus { outline: none; }
 	.description { color: var(--text-secondary); font-size: 13px; margin: 10px 0 0; }
 	.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 28px; }
-	label, .filter-label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; font-weight: 550; }
+	.filter-label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; font-weight: 550; }
 	.filter-label { margin-bottom: 6px; }
-	label { flex: 1; min-width: 140px; max-width: 280px; }
 	.seg { display: flex; gap: 3px; background: var(--page); border: 1px solid var(--border); border-radius: 7px; padding: 3px; }
-	button, select { font: inherit; color: var(--text-primary); border: 1px solid var(--border); background: var(--surface); border-radius: 6px; min-height: 36px; padding: 7px 12px; }
+	button { font: inherit; color: var(--text-primary); border: 1px solid var(--border); background: var(--surface); border-radius: 6px; min-height: 36px; padding: 7px 12px; }
 	button { cursor: pointer; }
 	.seg button { min-height: 28px; padding: 4px 12px; border: 0; background: transparent; font-size: 12px; color: var(--text-secondary); }
 	.seg button.active { background: var(--accent); color: var(--surface); }
-	select { width: 100%; font-size: 12px; }
 	.reset { color: var(--accent); background: none; border-color: transparent; font-size: 12px; }
 	.view-content { min-width: 0; }
 	.notice { padding: 12px 16px; color: var(--status-critical); border: 1px solid var(--border); border-radius: 8px; }
@@ -385,6 +385,5 @@
 		.filters { gap: 12px; }
 		.period { width: 100%; }
 		.seg button { flex: 1; }
-		label { min-width: 0; max-width: none; width: 100%; flex-basis: 100%; }
 	}
 </style>

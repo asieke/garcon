@@ -29,8 +29,9 @@ analytics preserves the current filters during client navigation.
 The content hierarchy is page title and purpose, shared filters, then metrics and
 charts. Existing analytics retain their calculations and chart colors. Shared
 surface, text, focus, and navigation tokens provide light and dark skins without
-external fonts or UI dependencies. Harnesses and accounts use labeled selects so
-new values cannot expand the toolbar indefinitely. A Device select joins them only
+external fonts or UI dependencies. Harnesses, accounts and devices use multi-select
+listboxes (nothing selected means all; fully keyboard-operable) so new values
+cannot expand the toolbar indefinitely. A Device select joins them only
 once sync has pulled in rows from a second machine; a single-device install never
 shows it.
 
