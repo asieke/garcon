@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Connect this machine's garcon to a Supabase project for cross-device sync.
-#   ./connect-supabase.sh --name "work laptop"                  create a project, apply the schema, connect
-#   ./connect-supabase.sh --name "home desktop" --project-ref REF   reuse an existing project
+#   scripts/connect-supabase.sh --name "work laptop"                  create a project, apply the schema, connect
+#   scripts/connect-supabase.sh --name "home desktop" --project-ref REF   reuse an existing project
 # Options: --org-id ID (when you belong to several), --region R (default us-east-1),
 #          --url http://127.0.0.1:4141 (a garcon on another port)
 # Needs the Supabase CLI (logged in: `supabase login`), jq and curl. The secret key is
 # fetched by the CLI and piped straight into garcon: it is never printed.
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 NAME="" REF="" ORG="" REGION="us-east-1" GARCON="http://127.0.0.1:4141"
 while [ $# -gt 0 ]; do
@@ -74,7 +74,7 @@ fi
 cat <<MSG
 connected: sync is ON for "$NAME" → https://$REF.supabase.co
   progress: $GARCON/?view=settings (or curl $GARCON/api/settings)
-  another machine: ./connect-supabase.sh --name "<its label>" --project-ref $REF
+  another machine: scripts/connect-supabase.sh --name "<its label>" --project-ref $REF
                    or paste the URL and the sb_secret_ key (Project Settings > API Keys)
                    into Settings > Sync in its dashboard.
 MSG

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Build garcon from source and install it to ~/.local/bin/garcon.
-#   ./install.sh              build + install; restarts the service if one is running
-#   ./install.sh --service    also run it in the background now and at every login
-#   ./install.sh --update     pull the latest main, then build + install + restart
-#   ./install.sh --uninstall  stop and remove the service, the binary and the settings file
+#   scripts/install.sh              build + install; restarts the service if one is running
+#   scripts/install.sh --service    also run it in the background now and at every login
+#   scripts/install.sh --update     pull the latest main, then build + install + restart
+#   scripts/install.sh --uninstall  stop and remove the service, the binary and the settings file
 #                             (which holds the Supabase key, if sync was set up)
 # Prefer `npm i -g ai-garcon && garcon service install` unless you want to build from source.
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 BIN="$HOME/.local/bin/garcon"
 URL="http://127.0.0.1:4141"
@@ -50,7 +50,7 @@ for tool in go npm; do
 done
 
 (cd web && npm ci --no-audit --no-fund --loglevel=error && npm run build >/dev/null)
-go build -ldflags "-X main.version=$(git describe --tags --always 2>/dev/null || echo source)" -o garcon .
+go build -ldflags "-X main.version=$(git describe --tags --always 2>/dev/null || echo source)" -o garcon ./cmd/garcon
 mkdir -p "$(dirname "$BIN")"
 install -m 755 garcon "$BIN"
 echo "installed $BIN"
@@ -69,4 +69,4 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 	sleep 0.3
 done
 [ "$MODE" = --service ] && { echo "garcon did not answer at $URL" >&2; exit 1; }
-echo "not running; start it with: $BIN   (or ./install.sh --service)"
+echo "not running; start it with: $BIN   (or scripts/install.sh --service)"

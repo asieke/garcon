@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the dashboard and the binary for every platform, then publish the npm packages.
-#   npm/release.sh 0.1.0            publish ai-garcon@0.1.0 and its four platform packages
-#   npm/release.sh 0.1.0 --dry-run  build and show what would be published
+#   scripts/release.sh 0.1.0            publish ai-garcon@0.1.0 and its four platform packages
+#   scripts/release.sh 0.1.0 --dry-run  build and show what would be published
 # Needs: go, npm (logged in: `npm login`), a clean checkout on main.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,7 +19,7 @@ echo "== dashboard"; (cd web && npm ci --no-audit --no-fund --loglevel=error && 
 for t in $TARGETS; do
 	os=${t%-*}; cpu=${t#*-}
 	echo "== garcon $V for $t"
-	CGO_ENABLED=0 GOOS=$os GOARCH=$(goarch "$cpu") go build -trimpath -ldflags "-s -w -X main.version=$V" -o "npm/platforms/ai-garcon-$t/bin/garcon" .
+	CGO_ENABLED=0 GOOS=$os GOARCH=$(goarch "$cpu") go build -trimpath -ldflags "-s -w -X main.version=$V" -o "npm/platforms/ai-garcon-$t/bin/garcon" ./cmd/garcon
 	(cd "npm/platforms/ai-garcon-$t" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
 done
 (cd npm/ai-garcon && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null && node -e '

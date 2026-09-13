@@ -146,7 +146,7 @@
 
 <h2>Proxy</h2>
 {#if configError}
-	<p class="empty">Could not read /api/config; rebuild with <code>./install.sh</code>.</p>
+	<p class="empty">Could not read /api/config; rebuild with <code>scripts/install.sh</code>.</p>
 {:else if !config}
 	<p class="caption">Loading…</p>
 {:else}
@@ -270,7 +270,7 @@
 
 <h2 class="spaced">Sync</h2>
 {#if syncError}
-	<p class="empty">Could not read /api/settings; rebuild with <code>./install.sh</code>.</p>
+	<p class="empty">Could not read /api/settings; rebuild with <code>scripts/install.sh</code>.</p>
 {:else if !sync}
 	<p class="caption">Loading…</p>
 {:else}

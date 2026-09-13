@@ -2,7 +2,7 @@
 // background and at every login, as a systemd user unit on Linux or a
 // LaunchAgent on macOS. The unit points at this executable, so an upgrade that
 // replaces the file in place (npm, install.sh) only needs a restart.
-package main
+package service
 
 import (
 	"errors"
@@ -16,7 +16,8 @@ import (
 
 const unitName = "garcon"
 
-func serviceMain(args []string) {
+// Main runs `garcon service <cmd>`.
+func Main(args []string) {
 	cmd := "status"
 	if len(args) > 0 {
 		cmd = args[0]

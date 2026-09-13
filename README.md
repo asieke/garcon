@@ -26,14 +26,15 @@ harness name is accepted. `<account>` is a label: use the login the tool signs i
 
 ## Install
 
-Go 1.27+ and Node 22+ (`mise install` provides both). macOS and Linux.
-
 ```sh
-./install.sh            # build, install ~/.local/bin/garcon
-./install.sh --service  # also run now and at every login (systemd user unit / LaunchAgent)
-./install.sh --update   # pull the latest main, rebuild, restart
-./install.sh --uninstall
-``` Flags: `-listen 127.0.0.1:4141`,
+npm i -g ai-garcon && garcon service install   # macOS and Linux, x64 and arm64
+npm i -g ai-garcon@latest                       # update: a running service restarts itself
+garcon service status|restart|uninstall
+```
+
+From source (Go 1.27+, Node 22+; `mise install` provides both): `scripts/install.sh --service`
+builds and installs `~/.local/bin/garcon`; `--update` pulls the latest main, rebuilds and
+restarts; `--uninstall` removes it. Flags: `-listen 127.0.0.1:4141`,
 `-data ~/.local/share/garcon/usage.jsonl`, `-config ~/.config/garcon/config.json`.
 
 ## Connect a harness
@@ -75,7 +76,7 @@ in, so every dashboard shows the union with a Device filter. First machine, with
 CLI logged in:
 
 ```sh
-./connect-supabase.sh --name "work laptop"    # creates the project, applies supabase/garcon_usage.sql, stores the key
+scripts/connect-supabase.sh --name "work laptop"    # creates the project, applies supabase/garcon_usage.sql, stores the key
 ```
 
 Other machines: Settings → Sync, paste the project URL and `sb_secret_` key, or rerun the
@@ -86,5 +87,21 @@ cursors in `~/.local/share/garcon/sync.json`. Details: [docs](https://asieke.git
 
 ## Development
 
+```
+cmd/garcon/          entry point: flags, subcommands, HTTP wiring
+internal/proxy/      routing and the pass-through proxy
+internal/usage/      the Record type and usage-block parsing
+internal/store/      usage.jsonl and the remote-row cache
+internal/syncer/     Supabase push/pull and /api/settings
+internal/service/    systemd and launchd management
+internal/dashboard/  embedded build output of web/
+web/                 SvelteKit dashboard          docs/       GitHub Pages site
+scripts/             install, connect-supabase, release
+npm/                 ai-garcon and its platform packages
+supabase/            sync table schema            .claude/    agent skills
+```
+
 `go test ./...`; `cd web && npm run check && npm run dev` (proxies `/api` to a running garcon).
+Release: `scripts/release.sh X.Y.Z` cross-compiles for four platforms and publishes `ai-garcon`
+plus its platform packages (`npm login` first; `--dry-run` only builds).
 Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `connect-supabase`.

@@ -1,2 +1,4 @@
 /garcon
-npm/platforms/*/bin/
+/npm/platforms/*/bin/
+/internal/dashboard/build/*
+!/internal/dashboard/build/.gitkeep

@@ -1,7 +1,8 @@
-// Cross-device sync: every device upserts its rows into one table in a Supabase
-// project the user owns and pulls the other devices' rows into a local cache.
-// Recording never waits on any of this; the local log stays the source of truth.
-package main
+// Package syncer exchanges usage rows with a table in a Supabase project the
+// user owns: every device upserts its rows and pulls the other devices' rows into
+// the local store. Recording never waits on any of this; the local log stays the
+// source of truth. Nothing at all happens while the switch is off.
+package syncer
 
 import (
 	"bytes"
@@ -21,7 +22,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"garcon/internal/proxy"
+	"garcon/internal/store"
+	"garcon/internal/usage"
 )
 
 const (
@@ -34,8 +40,8 @@ const (
 	overlap = 5 * time.Minute
 )
 
-// columns is every column the table must have, in wire order plus synced_at;
-// probing with it makes a missing column fail loudly on Save.
+// columns is every column the table must have; probing with it makes a missing
+// column fail loudly on Save.
 const columns = "id,device_id,device,time,harness,account,provider,model,status,ms,queue_us,reused,connect_ms,dns_ms,tcp_ms,tls_ms,first_byte_ms,input,cache_read,cache_write,output,synced_at"
 
 // settings is what the user chose in Settings > Sync (~/.config/garcon/config.json).
@@ -46,10 +52,10 @@ type settings struct {
 	Key         string `json:"key,omitempty"` // secret key; never returned by the API
 }
 
-// syncState is what this device has done so far (~/.local/share/garcon/sync.json).
-// It lives next to the data it describes, so recreating the config never changes
+// state is what this device has done so far (sync.json next to the usage log).
+// It lives with the data it describes, so recreating the config never changes
 // the device's identity.
-type syncState struct {
+type state struct {
 	DeviceID   string `json:"device_id"`
 	Pushed     int    `json:"pushed"`      // local records delivered
 	PullCursor string `json:"pull_cursor"` // raw synced_at string from PostgREST
@@ -84,57 +90,44 @@ type wire struct {
 
 // pulled is a row as read back from the table.
 type pulled struct {
-	record
+	usage.Record
 	SyncedAt string `json:"synced_at"`
 }
 
-// All guarded by mu (main.go), which is never held across a network call.
-var (
-	cfg        settings
-	st         syncState
-	remote     = []record{}
-	seen       = map[string]struct{}{}
-	remoteFile *os.File
+// Syncer owns the settings, the sync state and the loop.
+type Syncer struct {
+	store      *store.Store
 	configPath string
 	statePath  string
 	listenAddr string
+	client     *http.Client
+	poke       chan struct{}
+
+	mu  sync.Mutex // guards everything below; never held across a network call
+	cfg settings
+	st  state
 
 	lastPushOK, lastPushErrAt, lastPullOK, lastPullErrAt int64 // unix ms, 0 = never
 	lastPushErr, lastPullErr                             string
-)
-
-var (
-	poke   = make(chan struct{}, 1)
-	client = &http.Client{Timeout: 30 * time.Second}
-)
-
-// providerOf mirrors the dashboard: rows from before the provider segment
-// existed imply it from the harness.
-func providerOf(r record) string {
-	if r.Provider != "" {
-		return r.Provider
-	}
-	if p, ok := implicitProvider[r.Harness]; ok {
-		return p
-	}
-	return "anthropic"
 }
 
-// recordID is deterministic so the existing history backfills with stable ids
-// and a re-push is an idempotent upsert. Latency fields are left out: they never
-// affect identity. Two byte-identical rows in the same millisecond collapse to one.
-func recordID(deviceID string, r record) string {
-	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d",
-		deviceID, r.Time, r.Harness, r.Account, providerOf(r), r.Model, r.Status, r.Ms, r.Input, r.CacheRead, r.CacheWrite, r.Output)
-	return hex.EncodeToString(h.Sum(nil))[:32]
+// New loads the settings and state, labels the store's rows with the device
+// name, and arranges to be woken on every Save. Run must be called to sync.
+func New(st *store.Store, configPath, listenAddr string) *Syncer {
+	s := &Syncer{store: st, configPath: configPath, statePath: filepath.Join(st.Dir(), "sync.json"), listenAddr: listenAddr,
+		client: &http.Client{Timeout: 30 * time.Second}, poke: make(chan struct{}, 1)}
+	s.loadSettings()
+	s.loadState()
+	st.SetDevice(s.cfg.DeviceName)
+	st.OnSave = s.Wake
+	return s
 }
 
-func toWire(r record, deviceID, device string) wire {
-	return wire{ID: recordID(deviceID, r), DeviceID: deviceID, Device: device, Time: r.Time, Harness: r.Harness,
-		Account: r.Account, Provider: providerOf(r), Model: r.Model, Status: r.Status, Ms: r.Ms,
-		QueueUs: r.QueueUs, Reused: r.Reused, ConnectMs: r.ConnectMs, DnsMs: r.DnsMs, TcpMs: r.TcpMs, TlsMs: r.TlsMs,
-		FirstByteMs: r.FirstByteMs, Input: r.Input, CacheRead: r.CacheRead, CacheWrite: r.CacheWrite, Output: r.Output}
+// DeviceName is this machine's label.
+func (s *Syncer) DeviceName() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg.DeviceName
 }
 
 // writeJSON writes atomically with owner-only permissions: the config holds the secret.
@@ -148,57 +141,58 @@ func writeJSON(path string, v any) error {
 	return os.Rename(tmp, path)
 }
 
-func loadSettings(path string) {
-	configPath = path
-	data, err := os.ReadFile(path)
+func (s *Syncer) loadSettings() {
+	data, err := os.ReadFile(s.configPath)
 	if err == nil {
-		json.Unmarshal(data, &cfg)
+		json.Unmarshal(data, &s.cfg)
 	}
-	if cfg.DeviceName == "" {
-		if cfg.DeviceName, _ = os.Hostname(); cfg.DeviceName == "" {
-			cfg.DeviceName = "this device"
+	if s.cfg.DeviceName == "" {
+		if s.cfg.DeviceName, _ = os.Hostname(); s.cfg.DeviceName == "" {
+			s.cfg.DeviceName = "this device"
 		}
 	}
 	if err != nil {
-		if err := writeJSON(path, cfg); err != nil {
+		if err := writeJSON(s.configPath, s.cfg); err != nil {
 			log.Print(err)
 		}
 	}
 }
 
-// loadState runs after load(): the cursor can never exceed the log it indexes.
-func loadState(path string) {
-	statePath = path
-	data, err := os.ReadFile(path)
+// loadState clamps the cursor to the log it indexes.
+func (s *Syncer) loadState() {
+	data, err := os.ReadFile(s.statePath)
 	if err == nil {
-		json.Unmarshal(data, &st)
+		json.Unmarshal(data, &s.st)
 	}
-	if st.DeviceID == "" {
+	if s.st.DeviceID == "" {
 		b := make([]byte, 16)
 		rand.Read(b)
-		st.DeviceID = hex.EncodeToString(b)
+		s.st.DeviceID = hex.EncodeToString(b)
 		err = errors.New("new device")
 	}
-	st.Pushed = min(st.Pushed, len(records))
+	s.st.Pushed = min(s.st.Pushed, s.store.Len())
 	if err != nil {
-		if err := writeJSON(path, st); err != nil {
+		if err := writeJSON(s.statePath, s.st); err != nil {
 			log.Print(err)
 		}
 	}
 }
 
-func loadRemote(path string) {
-	for _, rec := range readRecords(path) {
-		if _, dup := seen[rec.ID]; rec.ID == "" || dup {
-			continue
-		}
-		seen[rec.ID] = struct{}{}
-		remote = append(remote, rec)
-	}
-	var err error
-	if remoteFile, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err != nil {
-		log.Fatal(err)
-	}
+// recordID is deterministic so the existing history backfills with stable ids
+// and a re-push is an idempotent upsert. Latency fields are left out: they never
+// affect identity. Two byte-identical rows in the same millisecond collapse to one.
+func recordID(deviceID string, r usage.Record) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d",
+		deviceID, r.Time, r.Harness, r.Account, proxy.ProviderOf(r), r.Model, r.Status, r.Ms, r.Input, r.CacheRead, r.CacheWrite, r.Output)
+	return hex.EncodeToString(h.Sum(nil))[:32]
+}
+
+func toWire(r usage.Record, deviceID, device string) wire {
+	return wire{ID: recordID(deviceID, r), DeviceID: deviceID, Device: device, Time: r.Time, Harness: r.Harness,
+		Account: r.Account, Provider: proxy.ProviderOf(r), Model: r.Model, Status: r.Status, Ms: r.Ms,
+		QueueUs: r.QueueUs, Reused: r.Reused, ConnectMs: r.ConnectMs, DnsMs: r.DnsMs, TcpMs: r.TcpMs, TlsMs: r.TlsMs,
+		FirstByteMs: r.FirstByteMs, Input: r.Input, CacheRead: r.CacheRead, CacheWrite: r.CacheWrite, Output: r.Output}
 }
 
 func restURL(base string) string {
@@ -267,8 +261,8 @@ func apiError(res *http.Response, body []byte) error {
 	return fmt.Errorf("%s: %s", res.Status, strings.TrimSpace(string(body)))
 }
 
-func do(req *http.Request) ([]byte, error) {
-	res, err := client.Do(req)
+func (s *Syncer) do(req *http.Request) ([]byte, error) {
+	res, err := s.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -285,33 +279,31 @@ func do(req *http.Request) ([]byte, error) {
 
 // probe checks that the table exists with every column, using the exact
 // credentials that are about to be saved.
-func probe(base, key string) error {
+func (s *Syncer) probe(base, key string) error {
 	req, err := http.NewRequest("GET", restURL(base)+"?select="+columns+"&limit=0", nil)
 	if err != nil {
 		return err
 	}
 	authHeaders(req, key)
-	_, err = do(req)
+	_, err = s.do(req)
 	return err
 }
 
 // push delivers every local record past the cursor in batches, advancing the
 // persisted cursor after each successful upsert.
-func push(c settings) error {
+func (s *Syncer) push(c settings) error {
 	for {
-		mu.Lock()
-		start := st.Pushed
-		if start >= len(records) {
-			mu.Unlock()
+		s.mu.Lock()
+		start, deviceID := s.st.Pushed, s.st.DeviceID
+		s.mu.Unlock()
+		rows := s.store.Batch(start, batchSize)
+		if len(rows) == 0 {
 			return nil
 		}
-		end := min(start+batchSize, len(records))
-		batch := make([]wire, 0, end-start)
-		for _, r := range records[start:end] {
-			batch = append(batch, toWire(r, st.DeviceID, c.DeviceName))
+		batch := make([]wire, 0, len(rows))
+		for _, r := range rows {
+			batch = append(batch, toWire(r, deviceID, c.DeviceName))
 		}
-		mu.Unlock()
-
 		body, _ := json.Marshal(batch)
 		req, err := http.NewRequest("POST", restURL(c.URL), bytes.NewReader(body))
 		if err != nil {
@@ -320,29 +312,29 @@ func push(c settings) error {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Prefer", "resolution=merge-duplicates,return=minimal")
 		authHeaders(req, c.Key)
-		_, err = do(req)
+		_, err = s.do(req)
 
-		mu.Lock()
+		s.mu.Lock()
 		if err != nil {
-			lastPushErr, lastPushErrAt = err.Error(), time.Now().UnixMilli()
-			mu.Unlock()
+			s.lastPushErr, s.lastPushErrAt = err.Error(), time.Now().UnixMilli()
+			s.mu.Unlock()
 			return fmt.Errorf("push: %w", err)
 		}
-		if st.Pushed == start { // unchanged by a URL change while the request was in flight
-			st.Pushed = end
-			writeJSON(statePath, st)
+		if s.st.Pushed == start { // unchanged by a URL change while the request was in flight
+			s.st.Pushed = start + len(rows)
+			writeJSON(s.statePath, s.st)
 		}
-		lastPushOK, lastPushErr = time.Now().UnixMilli(), ""
-		mu.Unlock()
+		s.lastPushOK, s.lastPushErr = time.Now().UnixMilli(), ""
+		s.mu.Unlock()
 	}
 }
 
 // pull reads every other device's rows since the cursor (minus the overlap),
 // page by page, and only moves the cursor once the whole pass has succeeded.
-func pull(c settings) error {
-	mu.Lock()
-	cursor, me := st.PullCursor, st.DeviceID
-	mu.Unlock()
+func (s *Syncer) pull(c settings) error {
+	s.mu.Lock()
+	cursor, me := s.st.PullCursor, s.st.DeviceID
+	s.mu.Unlock()
 	since := "1970-01-01T00:00:00Z"
 	if t, err := time.Parse(time.RFC3339Nano, cursor); err == nil {
 		since = t.Add(-overlap).UTC().Format(time.RFC3339Nano)
@@ -361,78 +353,70 @@ func pull(c settings) error {
 			return err
 		}
 		authHeaders(req, c.Key)
-		body, err := do(req)
+		body, err := s.do(req)
 		var page []pulled
 		if err == nil {
 			err = json.Unmarshal(body, &page)
 		}
 		if err != nil {
-			mu.Lock()
-			lastPullErr, lastPullErrAt = err.Error(), time.Now().UnixMilli()
-			mu.Unlock()
+			s.mu.Lock()
+			s.lastPullErr, s.lastPullErrAt = err.Error(), time.Now().UnixMilli()
+			s.mu.Unlock()
 			return fmt.Errorf("pull: %w", err)
 		}
-		mu.Lock()
 		for _, p := range page {
 			last = p.SyncedAt
-			if _, dup := seen[p.ID]; dup || p.ID == "" || p.DeviceID == me {
-				continue
-			}
-			seen[p.ID] = struct{}{}
-			remote = append(remote, p.record)
-			line, _ := json.Marshal(p.record)
-			if _, err := remoteFile.Write(append(line, '\n')); err != nil {
-				log.Print(err)
+			if p.DeviceID != me {
+				s.store.AddRemote(p.Record)
 			}
 		}
-		mu.Unlock()
 		if len(page) < pageSize {
 			break
 		}
 	}
-	mu.Lock()
-	st.PullCursor = last
-	writeJSON(statePath, st)
-	lastPullOK, lastPullErr = time.Now().UnixMilli(), ""
-	mu.Unlock()
+	s.mu.Lock()
+	s.st.PullCursor = last
+	writeJSON(s.statePath, s.st)
+	s.lastPullOK, s.lastPullErr = time.Now().UnixMilli(), ""
+	s.mu.Unlock()
 	return nil
 }
 
-// syncOnce is one turn of the loop: nothing at all happens while the switch is off.
-func syncOnce(lastPull *time.Time) error {
-	mu.Lock()
-	c := cfg
-	mu.Unlock()
+// once is one turn of the loop: nothing at all happens while the switch is off.
+func (s *Syncer) once(lastPull *time.Time) error {
+	s.mu.Lock()
+	c := s.cfg
+	s.mu.Unlock()
 	if !c.SyncEnabled {
 		return nil
 	}
-	if err := push(c); err != nil {
+	if err := s.push(c); err != nil {
 		return err
 	}
 	if time.Since(*lastPull) < pullEvery {
 		return nil
 	}
-	if err := pull(c); err != nil {
+	if err := s.pull(c); err != nil {
 		return err
 	}
 	*lastPull = time.Now()
 	return nil
 }
 
-// syncLoop runs forever: woken by save() and Save in Settings, otherwise ticking.
-// Failures back off up to five minutes but a poke always wakes it early.
-func syncLoop() {
+// Run loops forever: woken by Save and by Settings, otherwise ticking. Failures
+// back off up to five minutes, but a wake always cuts the wait short.
+func (s *Syncer) Run() {
 	backoff := 5 * time.Second
 	var lastPull time.Time
 	for {
 		select {
-		case <-poke:
+		case <-s.poke:
 		case <-time.After(5 * time.Second):
 		}
-		if err := syncOnce(&lastPull); err != nil {
+		if err := s.once(&lastPull); err != nil {
 			log.Print("sync: ", err)
 			select {
-			case <-poke:
+			case <-s.poke:
 			case <-time.After(backoff):
 			}
 			backoff = min(backoff*2, 5*time.Minute)
@@ -442,17 +426,18 @@ func syncLoop() {
 	}
 }
 
-func wake() {
+// Wake nudges the loop without ever blocking the caller.
+func (s *Syncer) Wake() {
 	select {
-	case poke <- struct{}{}:
+	case s.poke <- struct{}{}:
 	default:
 	}
 }
 
 // loopback reports whether a Host header names this machine: the only defence
 // the settings endpoint has against DNS rebinding, since the server has no auth.
-func loopback(host string) bool {
-	if host == listenAddr {
+func (s *Syncer) loopback(host string) bool {
+	if host == s.listenAddr {
 		return true
 	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -472,11 +457,11 @@ type deviceStat struct {
 	LastTime int64  `json:"last_time"`
 }
 
-// settingsView is the GET /api/settings body: the settings with the key redacted
-// to a boolean, plus everything the Sync section shows about progress.
-func settingsView() map[string]any {
+// view is the GET /api/settings body: the settings with the key redacted to a
+// boolean, plus everything the Sync section shows about progress.
+func (s *Syncer) view() map[string]any {
 	byDevice := map[string]*deviceStat{}
-	var devices []deviceStat
+	remote := s.store.Remote()
 	for _, r := range remote {
 		d := byDevice[r.DeviceID]
 		if d == nil {
@@ -488,25 +473,27 @@ func settingsView() map[string]any {
 			d.LastTime, d.Device = r.Time, r.Device
 		}
 	}
+	devices := []deviceStat{}
 	for _, d := range byDevice {
 		devices = append(devices, *d)
 	}
-	if devices == nil {
-		devices = []deviceStat{}
-	}
+	local := s.store.Len()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return map[string]any{
-		"settings": map[string]any{"sync_enabled": cfg.SyncEnabled, "device_name": cfg.DeviceName, "url": cfg.URL, "key_set": cfg.Key != ""},
+		"settings": map[string]any{"sync_enabled": s.cfg.SyncEnabled, "device_name": s.cfg.DeviceName, "url": s.cfg.URL, "key_set": s.cfg.Key != ""},
 		"status": map[string]any{
-			"device_id": st.DeviceID, "pushed": st.Pushed, "pending": len(records) - st.Pushed,
-			"last_push_ok": lastPushOK, "last_push_error": lastPushErr, "last_push_error_at": lastPushErrAt,
-			"last_pull_ok": lastPullOK, "last_pull_error": lastPullErr, "last_pull_error_at": lastPullErrAt,
+			"device_id": s.st.DeviceID, "pushed": s.st.Pushed, "pending": local - s.st.Pushed,
+			"last_push_ok": s.lastPushOK, "last_push_error": s.lastPushErr, "last_push_error_at": s.lastPushErrAt,
+			"last_pull_ok": s.lastPullOK, "last_pull_error": s.lastPullErr, "last_pull_error_at": s.lastPullErrAt,
 			"remote_rows": len(remote), "devices": devices,
 		},
 	}
 }
 
-func handleSettings(w http.ResponseWriter, r *http.Request) {
-	if !loopback(r.Host) {
+// ServeHTTP is GET/PUT /api/settings.
+func (s *Syncer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.loopback(r.Host) {
 		http.Error(w, "settings can only be changed from this machine", http.StatusForbidden)
 		return
 	}
@@ -527,70 +514,68 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		mu.Lock()
-		next := cfg
-		mu.Unlock()
+		s.mu.Lock()
+		next := s.cfg
+		s.mu.Unlock()
 		next.SyncEnabled, next.DeviceName, next.URL = in.SyncEnabled, strings.TrimSpace(in.DeviceName), strings.TrimRight(strings.TrimSpace(in.URL), "/")
 		if in.Key != nil {
 			next.Key = strings.TrimSpace(*in.Key)
 		}
-		if err := validate(next); err != nil {
+		if err := s.validate(next); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if next.SyncEnabled {
-			if err := probe(next.URL, next.Key); err != nil {
+			if err := s.probe(next.URL, next.Key); err != nil {
 				http.Error(w, "could not reach the table: "+err.Error(), http.StatusBadRequest)
 				return
 			}
 		}
-		mu.Lock()
-		if next.URL != cfg.URL { // a different project: start over, and forget the old project's rows
-			st.Pushed, st.PullCursor = 0, ""
-			remote, seen = []record{}, map[string]struct{}{}
-			remoteFile.Truncate(0)
-			writeJSON(statePath, st)
+		s.mu.Lock()
+		urlChanged, nameChanged := next.URL != s.cfg.URL, next.DeviceName != s.cfg.DeviceName
+		if urlChanged { // a different project: start over
+			s.st.Pushed, s.st.PullCursor = 0, ""
+			writeJSON(s.statePath, s.st)
 		}
-		if next.DeviceName != cfg.DeviceName {
-			for i := range records {
-				records[i].Device = next.DeviceName
-			}
+		s.cfg = next
+		err := writeJSON(s.configPath, s.cfg)
+		s.mu.Unlock()
+		if urlChanged {
+			s.store.ClearRemote()
 		}
-		cfg = next
-		err := writeJSON(configPath, cfg)
-		mu.Unlock()
+		if nameChanged {
+			s.store.SetDevice(next.DeviceName)
+		}
 		if err != nil {
-			http.Error(w, "could not write "+configPath+": "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "could not write "+s.configPath+": "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		wake()
+		s.Wake()
 	default:
 		w.Header().Set("Allow", "GET, PUT")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	mu.Lock()
-	defer mu.Unlock()
-	json.NewEncoder(w).Encode(settingsView())
+	json.NewEncoder(w).Encode(s.view())
 }
 
-func validate(s settings) error {
-	if s.DeviceName == "" {
+func (s *Syncer) validate(c settings) error {
+	if c.DeviceName == "" {
 		return errors.New("device name is required")
 	}
-	if s.URL != "" {
-		u, err := url.Parse(s.URL)
-		if err != nil || u.Host == "" || u.Path != "" || (u.Scheme != "https" && !(u.Scheme == "http" && loopback(u.Host))) {
+	if c.URL != "" {
+		u, err := url.Parse(c.URL)
+		if err != nil || u.Host == "" || u.Path != "" || (u.Scheme != "https" && !(u.Scheme == "http" && s.loopback(u.Host))) {
 			return errors.New("project URL must look like https://<ref>.supabase.co")
 		}
 	}
-	if s.Key != "" {
-		if err := validKey(s.Key); err != nil {
+	if c.Key != "" {
+		if err := validKey(c.Key); err != nil {
 			return err
 		}
 	}
-	if s.SyncEnabled && (s.URL == "" || s.Key == "") {
+	if c.SyncEnabled && (c.URL == "" || c.Key == "") {
 		return errors.New("a project URL and secret key are needed before sync can be enabled")
 	}
 	return nil
