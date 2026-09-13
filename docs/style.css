@@ -137,6 +137,16 @@ dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; font-
 dt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--text-secondary); }
 dd { margin: 0; }
 .muted { color: var(--text-muted); font-size: 13px; }
+.shot { margin: 20px 0 28px; }
+.shot img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); }
+.shot figcaption { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+.diagram { margin: 16px 0 20px; }
+.diagram svg { display: block; width: 100%; height: auto; max-width: 760px; }
+.diagram figcaption { font-size: 13px; color: var(--text-muted); max-width: 72ch; margin-top: 8px; }
+table.compare th { vertical-align: top; }
+table.compare tbody th { font-weight: 500; color: var(--text); font-size: 14px; width: 30%; }
+table.compare td:nth-child(2) { width: 36%; }
+.steps > li a { color: inherit; }
 .pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border); }
 .pager a { text-decoration: none; font-weight: 600; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); min-width: 160px; }
 .pager a.next { text-align: right; }

@@ -35,7 +35,7 @@ export function snippetsFor(base: string, harness: string, provider: string, acc
 				{
 					title: 'Environment for claude',
 					text: `ANTHROPIC_BASE_URL=${url} \\\n_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude`,
-					note: 'Claude Code appends /v1/messages itself. The second variable keeps subscription (claude.ai) login working through a non-Anthropic host.'
+					note: 'The second variable keeps claude.ai login working.'
 				}
 			];
 		case 'codex':
@@ -43,7 +43,7 @@ export function snippetsFor(base: string, harness: string, provider: string, acc
 				{
 					title: 'Codex custom provider (command line)',
 					text: `codex -c model_provider="garcon" -c model_providers.garcon.name="OpenAI" \\\n  -c model_providers.garcon.base_url="${url}" \\\n  -c model_providers.garcon.wire_api="responses" -c model_providers.garcon.requires_openai_auth=true`,
-					note: 'The built-in provider ignores base URL overrides under a ChatGPT login; a custom provider also uses plain HTTP rather than websockets, which is what lets the proxy read usage. Only model calls are routed.'
+					note: 'A custom provider is required under a ChatGPT login. Only model calls are routed.'
 				},
 				{
 					title: 'Same thing in ~/.codex/config.toml',
@@ -57,7 +57,7 @@ export function snippetsFor(base: string, harness: string, provider: string, acc
 				{
 					title: '~/.openclaw/openclaw.json',
 					text: `{\n  models: {\n    mode: "merge",\n    providers: {\n      ${key}: { baseUrl: "${url}${suffix}" },\n    },\n  },\n}`,
-					note: 'Each OpenClaw adapter appends its own endpoint path (/v1/messages, /responses, /chat/completions). Keys stay in OpenClaw; the proxy forwards Authorization and x-api-key untouched.'
+					note: 'Keys stay in OpenClaw.'
 				}
 			];
 		}
@@ -68,8 +68,8 @@ export function snippetsFor(base: string, harness: string, provider: string, acc
 					title: '~/.hermes/config.yaml',
 					text: `providers:\n  ${provider}:\n    base_url: ${url}${suffix}`,
 					note: provider === 'anthropic'
-						? 'Hermes uses the Anthropic SDK for api_mode anthropic_messages and appends /v1/messages itself.'
-						: 'Hermes appends /chat/completions and requests stream_options.include_usage, which is what lets the proxy count tokens.'
+						? 'For api_mode anthropic_messages.'
+						: 'Hermes requests include_usage, so tokens are counted.'
 				}
 			];
 			if (provider === 'openai') out.push({ title: 'One-off, without editing config', text: `OPENAI_BASE_URL=${url}${suffix} hermes` });
@@ -80,7 +80,7 @@ export function snippetsFor(base: string, harness: string, provider: string, acc
 				{
 					title: 'Base URL for any OpenAI- or Anthropic-compatible client',
 					text: url + (provider === 'openai' ? '/v1' : provider === 'openrouter' ? '/api/v1' : provider === 'chatgpt' ? '/backend-api' : ''),
-					note: 'Rows are tagged with this harness name. OpenAI-compatible clients only get token counts on streamed replies when they send stream_options: {"include_usage": true}.'
+					note: 'Streamed replies need stream_options: {"include_usage": true} for token counts.'
 				}
 			];
 	}

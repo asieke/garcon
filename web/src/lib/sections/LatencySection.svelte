@@ -81,10 +81,7 @@
 </p>
 
 {#if measuredN === 0}
-	<p class="empty">
-		No requests since this measurement shipped yet ({n(totalN)} older requests on record don't have it) —
-		overhead detail appears as new requests come through.
-	</p>
+	<p class="empty">No overhead measurements in this window yet ({n(totalN)} older requests predate them).</p>
 {:else}
 	<h2 class="spaced">Proxy overhead over time</h2>
 	<TimeSeriesChart
@@ -97,7 +94,6 @@
 			{ key: 'dispatch', label: 'Dispatch', color: 'var(--series-4)', values: dispatchSeries }
 		]}
 	/>
-	<p class="caption">Dispatch is usually an imperceptible sliver next to connect — that's the point: proxying this way costs almost nothing on its own.</p>
 
 	<h2 class="spaced">Connection setup breakdown</h2>
 	{#if connectionBreakdown}
@@ -109,13 +105,9 @@
 				{ key: 'tls', label: 'TLS handshake', value: connectionBreakdown.tls, color: 'var(--series-5)' }
 			]}
 		/>
-		<p class="caption">
-			Median duration of each phase across the {n(freshDialN)} fresh dial{freshDialN === 1 ? '' : 's'} in this
-			window (phases run one after another within a single dial, not simultaneously — this shows where that
-			time typically goes, not one specific connection).
-		</p>
+		<p class="caption">Median per phase across {n(freshDialN)} fresh dial{freshDialN === 1 ? '' : 's'}.</p>
 	{:else}
-		<p class="caption">Every request in this window reused a warm pooled connection — no fresh dials to break down.</p>
+		<p class="caption">All requests reused pooled connections.</p>
 	{/if}
 
 	<h2 class="spaced">By harness</h2>

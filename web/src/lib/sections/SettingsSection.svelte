@@ -3,7 +3,7 @@
 	import { n, when, duration, usd } from '../format';
 	import { HARNESSES, harnessLabel, harnessVar, providerOf, sortHarnesses, type Row } from '../usage';
 	import { PROVIDERS, HARNESS_PROVIDERS, baseUrl, snippetsFor } from '../connect';
-	import { loadOverrides, saveOverrides, PRICE_FIELDS, PRICE_RULES, type Price } from '../pricing';
+	import { loadOverrides, saveOverrides, PRICE_FIELDS, type Price } from '../pricing';
 	import { keyProblem, DOCS_URL, type SettingsResponse } from '../sync';
 
 	let { rows, pollMs, now }: { rows: Row[]; pollMs: number; now: number } = $props();
@@ -146,7 +146,7 @@
 
 <h2>Proxy</h2>
 {#if configError}
-	<p class="empty">Could not read /api/config. The proxy may be an older build; rebuild with <code>./install.sh</code>.</p>
+	<p class="empty">Could not read /api/config; rebuild with <code>./install.sh</code>.</p>
 {:else if !config}
 	<p class="caption">Loading…</p>
 {:else}
@@ -162,10 +162,6 @@
 		<div><small>Raw data</small><code>{base}/api/usage</code></div>
 		<div><small>Started</small><span>{when(config.started)}</span></div>
 	</div>
-	<p class="caption">
-		The proxy binds to loopback only, stores no credentials, and forwards every request unchanged. Each line of the
-		usage log is one completion call: account, model, status, latency and the token counts the provider reported.
-	</p>
 {/if}
 
 <h2 class="spaced">Providers</h2>
@@ -199,9 +195,7 @@
 	</table>
 </div>
 <p class="caption">
-	Every request path is <code>/&lt;harness&gt;/&lt;account&gt;/&lt;provider&gt;/…</code>. Claude Code and Codex talk to one
-	provider each, so their URLs omit the segment:
-	{#if config}{#each Object.entries(config.implicit_harnesses) as [h, p], i}{i ? ', ' : ''}<code>/{h}/</code> implies {p}{/each}.{/if}
+	Paths are <code>/&lt;harness&gt;/&lt;account&gt;/&lt;provider&gt;/…</code>{#if config}; {#each Object.entries(config.implicit_harnesses) as [h, p], i}{i ? ', ' : ''}<code>/{h}/</code> implies {p}{/each}{/if}.
 </p>
 
 <h2 class="spaced">Harnesses</h2>
@@ -211,7 +205,6 @@
 	{/each}
 	<span class="chip"><i style="background: var(--text-muted)"></i>Anything else<span class="sub">any provider</span></span>
 </div>
-<p class="caption">Known harnesses get a fixed colour across every chart. Any other name in a base URL is accepted and drawn in grey.</p>
 
 <h2 class="spaced">Connections seen</h2>
 <div class="scroll">
@@ -273,24 +266,16 @@
 		{#if s.note}<p class="caption">{s.note}</p>{/if}
 	</div>
 {/each}
-<p class="caption">
-	The account is only a label the proxy records; use the login the harness actually signs in with so usage lines up
-	with the right subscription. Verify with one short call and a new row in the Logs tab.
-</p>
+<p class="caption">Use the login the harness signs in with. Verify with one call and a new row in Logs.</p>
 
 <h2 class="spaced">Sync</h2>
 {#if syncError}
-	<p class="empty">Could not read /api/settings. The proxy may be an older build; rebuild with <code>./install.sh</code>.</p>
+	<p class="empty">Could not read /api/settings; rebuild with <code>./install.sh</code>.</p>
 {:else if !sync}
 	<p class="caption">Loading…</p>
 {:else}
 	<label class="switch"><input type="checkbox" bind:checked={form.sync_enabled} onchange={touch} /> Enable Supabase sync</label>
-	<p class="caption">
-		Off: Garcon never contacts the network. On: this device's usage rows are upserted into a table in a Supabase project you
-		own, and other devices' rows are pulled in, so every dashboard shows the union with a Device filter.
-		<a href={DOCS_URL} target="_blank" rel="noopener">Setup guide</a>: creating the project and table, connecting more
-		machines, what leaves this machine, troubleshooting.
-	</p>
+	<p class="caption">Off: no network calls. On: rows are exchanged with your Supabase project. <a href={DOCS_URL} target="_blank" rel="noopener">Setup guide</a></p>
 	<div class="builder">
 		<label>Device name <input type="text" placeholder="work laptop" bind:value={form.device_name} oninput={touch} /></label>
 		<label>Project URL <input type="text" placeholder="https://abcdefghijklmnopqrst.supabase.co" bind:value={form.url} oninput={touch} /></label>
@@ -318,7 +303,7 @@
 			</div>
 			<div><small>Rows from other devices</small><span>{n(sync.status.remote_rows)}</span></div>
 		{:else}
-			<div><small>Status</small><span>Sync is off. Nothing is sent or fetched.</span></div>
+			<div><small>Status</small><span>Off</span></div>
 		{/if}
 	</div>
 	{#if sync.settings.sync_enabled && sync.status.devices.length}
@@ -348,11 +333,9 @@
 			</ul>
 			<button onclick={clearOverrides}>Reset all to list prices</button>
 		{:else}
-			<span>None. {PRICE_RULES.length} list-price rules apply; edit any model on the Cost tab.</span>
+			<span>None; edit on the Cost view.</span>
 		{/if}
 	</div>
-	<div><small>Theme</small><span>Follows the operating system's light or dark setting.</span></div>
-	<div><small>Filters</small><span>Time range, harness and account filters are per page load and scope every tab except this one.</span></div>
 </div>
 
 <style>
@@ -539,6 +522,9 @@
 		height: 16px;
 		margin: 0;
 		accent-color: var(--series-1);
+	}
+	.switch + .caption {
+		margin-bottom: 12px;
 	}
 	.builder + .caption.error {
 		margin-top: 0;

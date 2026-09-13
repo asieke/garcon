@@ -83,7 +83,7 @@
 
 <h2>Timeline</h2>
 <SessionTimeline {sessions} {from} to={now} {now} isLive={(s) => isLive(s, now, gapMs)} {granularity} />
-<p class="caption">One lane per account; bar length is wall-clock time from the first request to the end of the last. A green dot marks a session that may still be going.</p>
+<p class="caption">One lane per account. Green dot: possibly still running.</p>
 
 <h2 class="spaced">Sessions</h2>
 <div class="scroll">
@@ -156,7 +156,7 @@
 								</tbody>
 							</table>
 							{#if s.rows.length > DETAIL_LIMIT}<p class="note">First {DETAIL_LIMIT} of {n(s.rows.length)} requests.</p>{/if}
-							<p class="note">Busy share above 100% means requests overlapped, which is what parallel subagents look like.</p>
+							<p class="note">Busy over 100% means overlapping requests.</p>
 						</td>
 					</tr>
 				{/if}
@@ -167,7 +167,7 @@
 	</table>
 </div>
 {#if sessions.length > TABLE_LIMIT}
-	<p class="note">Showing the latest {TABLE_LIMIT} of {n(sessions.length)} sessions.</p>
+	<p class="note">Latest {TABLE_LIMIT} of {n(sessions.length)} sessions.</p>
 {/if}
 
 <style>

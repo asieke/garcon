@@ -258,7 +258,7 @@
 			</span>
 		</header>
 		<main id="main-content" tabindex="-1">
-			<div class="page-heading"><div><p class="eyebrow">{tab === 'settings' ? 'Workspace administration' : 'Usage intelligence'}</p><h1 bind:this={heading} tabindex="-1">{currentView.label}</h1><p class="description">{currentView.description}</p></div></div>
+			<div class="page-heading"><div><h1 bind:this={heading} tabindex="-1">{currentView.label}</h1><p class="description">{currentView.description}</p></div></div>
 			{#if tab !== 'settings'}
 				<div class="filters" aria-label="Usage filters">
 					<div class="period"><span class="filter-label" id="period-label">Time range</span><div class="seg" role="group" aria-labelledby="period-label">
@@ -270,16 +270,16 @@
 					{#if days !== 7 || harnessFilter !== 'all' || accountFilter !== 'all' || deviceFilter !== 'all'}<button class="reset" onclick={() => { days = 7; harnessFilter = 'all'; accountFilter = 'all'; deviceFilter = 'all'; }}>Reset filters</button>{/if}
 				</div>
 			{/if}
-			{#if stale}<p class="notice" role="status">Unable to refresh usage. {lastSync ? 'Showing the last available data.' : 'Usage data is unavailable.'} Retrying every 10 seconds.</p>{/if}
+			{#if stale}<p class="notice" role="status">Proxy unreachable; retrying.</p>{/if}
 			<div class="view-content">
 {#if tab === 'settings'}
 	<SettingsSection {rows} pollMs={POLL_MS} {now} />
 {:else if loading}
-	<p class="loading" role="status">Loading usage data…</p>
+	<p class="loading" role="status">Loading…</p>
 {:else if !lastSync}
-	<p class="empty-state">Waiting for the local instance to reconnect.</p>
+	<p class="empty-state">Proxy unreachable.</p>
 {:else if !visible.length}
-	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Your usage story starts here'}</h2><p>{rows.length ? 'Try a wider time range or choose another harness or account.' : 'Connect a coding agent to Garcon to start exploring requests, tokens, and performance.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = 'all'; accountFilter = 'all'; deviceFilter = 'all'; }}>Show all usage</button>{:else}<a href="?view=settings">Set up a connection →</a>{/if}</div>
+	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'No usage yet'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Point a coding agent at the proxy.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = 'all'; accountFilter = 'all'; deviceFilter = 'all'; }}>Show all usage</button>{:else}<a href="?view=settings">Connect a harness</a>{/if}</div>
 {:else}
 	{#if tab === 'overview'}
 		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />
@@ -347,8 +347,9 @@
 	.status-dot.offline { background: var(--text-muted); }
 	main { max-width: 1600px; margin: 0 auto; padding: 34px 36px 64px; }
 	.page-heading { margin-bottom: 26px; }
-	.eyebrow { text-transform: uppercase; letter-spacing: .12em; color: var(--accent); font-size: 10px; font-weight: 650; margin: 0 0 8px; }
 	h1 { font-size: 30px; line-height: 1.2; letter-spacing: -.8px; }
+	/* The heading takes focus after navigation for screen readers; a visible ring there is noise. */
+	h1:focus { outline: none; }
 	.description { color: var(--text-secondary); font-size: 13px; margin: 10px 0 0; }
 	.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 28px; }
 	label, .filter-label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; font-weight: 550; }
