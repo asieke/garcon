@@ -69,7 +69,7 @@
 	{errorCounts}
 	series={harnessSeries}
 />
-<p class="caption">Red dots mark buckets that had at least one error — hover for the count.</p>
+<p class="caption">Red dots mark buckets with errors.</p>
 
 <style>
 	.tiles {

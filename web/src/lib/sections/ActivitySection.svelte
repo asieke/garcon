@@ -93,18 +93,15 @@
 
 <h2>{metricLabel} by hour and weekday</h2>
 <Heatmap rowLabels={weekdayRows} colLabels={hourCols} cells={matrix} formatValue={fmt} cellTitle={hourTitle} legendLabel={metricLabel} ariaLabel="{metricLabel} by hour of day and weekday" />
-<p class="caption">
-	Local time. Each cell sums every {metricLabel.toLowerCase()} that started in that hour on that weekday across the window.
-	{#if days === 1}Today shows a single day; widen the window to see weekly patterns.{/if}
-</p>
+<p class="caption">Local time.{#if days === 1} Widen the window for weekly patterns.{/if}</p>
 
 <h2 class="spaced">Calendar</h2>
 <Heatmap rowLabels={weekdayRows} colLabels={grid.monthLabels} cells={calendarCells} formatValue={fmt} cellTitle={calendarTitle} legendLabel={metricLabel} ariaLabel="{metricLabel} per day" />
-<p class="caption">One column per week, Monday at the top. Faint cells fall outside the selected window.</p>
+<p class="caption">Weeks as columns, Monday first.</p>
 
 <h2 class="spaced">By weekday</h2>
 <RankedBarChart items={byWeekday} formatValue={fmt} color="var(--series-1)" />
-<p class="caption">Totals per weekday in calendar order, so the weekly rhythm reads without the grid.</p>
+<p class="caption">Totals per weekday.</p>
 
 <style>
 	.controls {

@@ -172,9 +172,9 @@
 </div>
 <p class="note">
 	{#if sorted.length > LIMIT}
-		Showing 1 to {LIMIT} of {n(sorted.length)} matching requests. Narrow the time range or filters to see the rest, or export everything as CSV.
+		First {LIMIT} of {n(sorted.length)}. Narrow the filters or export CSV for the rest.
 	{:else if sorted.length}
-		Showing {n(sorted.length)} of {n(rows.length)} requests in this window. Click a row for detail.
+		{n(sorted.length)} of {n(rows.length)} requests.
 	{/if}
 </p>
 

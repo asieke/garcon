@@ -75,21 +75,18 @@
 </p>
 
 {#if !measured}
-	<p class="empty">
-		No requests in this window carry first-byte timing ({n(rows.length)} requests on record predate it). Speed detail
-		appears as new requests come through.
-	</p>
+	<p class="empty">No first-byte timing in this window yet ({n(rows.length)} requests predate it).</p>
 {:else}
 	<div class="pair">
 		<div>
 			<h2 class="spaced">Generation speed by model</h2>
 			<RankedBarChart items={speedRanked} formatValue={(v) => tps(v)} color="var(--series-3)" />
-			<p class="caption">Median output tokens per second; higher is faster.</p>
+			<p class="caption">Median output tokens/s.</p>
 		</div>
 		<div>
 			<h2 class="spaced">Time to first byte by model</h2>
 			<RankedBarChart items={ttftRanked} formatValue={msFmt} color="var(--series-2)" />
-			<p class="caption">Median wait before the first byte; lower is better. Long contexts push this up.</p>
+			<p class="caption">Median time to first byte.</p>
 		</div>
 	</div>
 
@@ -104,11 +101,7 @@
 		xLog
 		yLog
 	/>
-	<p class="caption">
-		Both axes are logarithmic. Points along a rising diagonal are limited by generation speed; points far above it
-		waited a long time before streaming started, usually a large context or provider queueing.
-		{#if scatterCapped}Showing the {n(SCATTER_CAP)} most recent requests.{/if}
-	</p>
+	<p class="caption">Log axes.{#if scatterCapped} Latest {n(SCATTER_CAP)} requests.{/if}</p>
 {/if}
 
 <div class="pair">
@@ -121,8 +114,7 @@
 			markers={rows.length ? [{ label: 'p50', value: percentile(contexts, 50) }, { label: 'p95', value: percentile(contexts, 95) }] : []}
 			color="var(--series-1)"
 		/>
-		<p class="caption">Cache reads count as context: Claude Code resends the whole conversation each turn.</p>
-	</div>
+			</div>
 	<div>
 		<h2 class="spaced">Output tokens per request</h2>
 		<Histogram
@@ -132,7 +124,7 @@
 			markers={rows.length ? [{ label: 'p50', value: percentile(outputs, 50) }, { label: 'p95', value: percentile(outputs, 95) }] : []}
 			color="var(--series-3)"
 		/>
-		<p class="caption">Logarithmic bins: most calls are short tool decisions, a few are long generations.</p>
+		<p class="caption">Log bins.</p>
 	</div>
 </div>
 

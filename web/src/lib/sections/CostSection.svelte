@@ -201,7 +201,6 @@
 		{ key: 'output', label: 'Output', value: totalCost.output, color: 'var(--series-6)' }
 	]}
 />
-<p class="caption">Output tokens cost five times input on every model here, so a small share of output tokens can be most of the bill.</p>
 
 <h2 class="spaced">Cost by account</h2>
 <RankedBarChart items={byAccount} formatValue={usd} color="var(--series-1)" />
@@ -247,7 +246,7 @@
 </div>
 
 <h2 class="spaced">Pricing</h2>
-<p class="caption">USD per million tokens. Edit a cell to override the list price for that model in this browser; the proxy never stores prices.</p>
+<p class="caption">USD per 1M tokens. Edits override list prices in this browser only.</p>
 <div class="scroll">
 	<table class="pricing">
 		<thead>
@@ -285,10 +284,7 @@
 		</tbody>
 	</table>
 </div>
-<p class="caption">
-	List prices read on 2026-09-13 from the Anthropic and OpenAI pricing pages. Cache read on Claude Fable 5.1 is
-	0.025× input; every other Claude model is 0.1×. OpenAI has no cache-write charge.
-</p>
+<p class="caption">List prices as of 2026-09-13.</p>
 
 <style>
 	.tiles {
