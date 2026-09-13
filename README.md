@@ -184,4 +184,4 @@ supabase/            sync table schema            .claude/    agent skills
 `go test ./...`; `cd web && npm run check && npm run dev` (proxies `/api` to a running garcon).
 Release: `scripts/release.sh X.Y.Z` cross-compiles for four platforms into one `ai-garcon`
 package and publishes it (`npm login` first; `--dry-run` only builds).
-Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `connect-supabase`.
+Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `connect-supabase`, `commit-garcon`.

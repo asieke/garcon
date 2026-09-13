@@ -3,13 +3,15 @@
 	import { harnessLabel, harnessVar, shortModel, contextOf, genSpeed, providerOf, type Row } from '../usage';
 	import { toCsv, download } from '../csv';
 
-	let { rows }: { rows: Row[] } = $props();
+	// showDevice: the page turns it on while sync is enabled, when rows can come from several machines.
+	let { rows, showDevice = false }: { rows: Row[]; showDevice?: boolean } = $props();
 
 	const LIMIT = 300;
-	type SortKey = 'time' | 'account' | 'harness' | 'model' | 'status' | 'ms' | 'connect' | 'input' | 'cache_read' | 'cache_write' | 'output';
-	const COLUMNS: { key: SortKey; label: string; num?: boolean }[] = [
+	type SortKey = 'time' | 'account' | 'device' | 'harness' | 'model' | 'status' | 'ms' | 'connect' | 'input' | 'cache_read' | 'cache_write' | 'output';
+	const ALL_COLUMNS: { key: SortKey; label: string; num?: boolean }[] = [
 		{ key: 'time', label: 'Time' },
 		{ key: 'account', label: 'Account' },
+		{ key: 'device', label: 'Device' },
 		{ key: 'harness', label: 'Harness' },
 		{ key: 'model', label: 'Model' },
 		{ key: 'status', label: 'Status', num: true },
@@ -20,6 +22,7 @@
 		{ key: 'cache_write', label: 'Cache write', num: true },
 		{ key: 'output', label: 'Output', num: true }
 	];
+	const COLUMNS = $derived(showDevice ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.key !== 'device'));
 
 	let status = $state<'all' | 'ok' | 'error'>('all');
 	let modelFilter = $state('all');
@@ -45,7 +48,7 @@
 			if (status === 'error' && r.status < 400) return;
 			if (status === 'ok' && r.status >= 400) return;
 			if (modelFilter !== 'all' && r.model !== modelFilter) return;
-			if (q && !r.model.toLowerCase().includes(q) && !r.account.toLowerCase().includes(q) && !String(r.status).includes(q)) return;
+			if (q && !r.model.toLowerCase().includes(q) && !r.account.toLowerCase().includes(q) && !String(r.status).includes(q) && !(showDevice && (r.device ?? '').toLowerCase().includes(q))) return;
 			out.push({ r, id: `${r.time}-${i}` });
 		});
 		return out;
@@ -55,6 +58,8 @@
 		switch (key) {
 			case 'connect':
 				return r.connect_ms ?? -1;
+			case 'device':
+				return r.device ?? '';
 			default:
 				return r[key];
 		}
@@ -70,6 +75,13 @@
 	});
 	const shown = $derived(sorted.slice(0, LIMIT));
 
+	// The device column can disappear when sync is turned off; fall back to time rather than sort by a hidden column.
+	$effect(() => {
+		if (!showDevice && sortKey === 'device') {
+			sortKey = 'time';
+			sortDir = 'desc';
+		}
+	});
 	function sortBy(key: SortKey) {
 		if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
 		else {
@@ -112,7 +124,7 @@
 		<option value="all">All models</option>
 		{#each models as m (m)}<option value={m}>{shortModel(m)}</option>{/each}
 	</select>
-	<input type="search" placeholder="Search model, account or status…" bind:value={search} />
+	<input type="search" placeholder={showDevice ? 'Search model, account, device or status…' : 'Search model, account or status…'} bind:value={search} />
 	<button class="export" onclick={exportCsv} disabled={!sorted.length}>Export CSV ({n(sorted.length)})</button>
 </div>
 
@@ -134,6 +146,7 @@
 				{@const open = openId === id}
 				<tr class="row" class:error={r.status >= 400} class:open tabindex="0" role="button" aria-expanded={open} title={fullTimestamp(r.time)} onclick={() => toggle(id)} onkeydown={(e) => onKey(e, id)}>
 					<td>{when(r.time)}</td><td>{r.account}</td>
+					{#if showDevice}<td>{r.device || '—'}</td>{/if}
 					<td><i class="dot" style="background: {harnessVar(r.harness)}"></i>{harnessLabel(r.harness)}</td>
 					<td>{r.model || '—'}</td>
 					<td class="num">{r.status}</td>
@@ -145,9 +158,10 @@
 				{#if open}
 					{@const speed = genSpeed(r)}
 					<tr class="detail">
-						<td colspan="11">
+						<td colspan={COLUMNS.length}>
 							<div class="kv">
 								<div><small>Timestamp</small><b>{fullTimestamp(r.time)}</b></div>
+								{#if showDevice}<div><small>Device</small><b>{r.device || '—'}</b></div>{/if}
 								<div><small>Model</small><b>{r.model || '—'}</b></div>
 								<div><small>Provider</small><b>{providerOf(r)}</b></div>
 								<div><small>Status</small><b>{r.status}</b></div>
@@ -165,7 +179,7 @@
 					</tr>
 				{/if}
 			{:else}
-				<tr><td colspan="11">No requests match these filters.</td></tr>
+				<tr><td colspan={COLUMNS.length}>No requests match these filters.</td></tr>
 			{/each}
 		</tbody>
 	</table>

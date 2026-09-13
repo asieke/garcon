@@ -43,7 +43,7 @@
 				<dt>Sessions</dt><dd>Requests grouped into coding sessions per account, harness and device, with a timeline and per-session tokens, peak context and cost.</dd>
 				<dt>Activity</dt><dd>Hour-of-day and calendar heatmaps, streaks, peak concurrency.</dd>
 				<dt>Performance, Latency</dt><dd>Generation speed and time-to-first-byte by model; the proxy's own connection overhead versus upstream time.</dd>
-				<dt>Logs</dt><dd>Sortable, filterable request table with CSV export.</dd>
+				<dt>Logs</dt><dd>Sortable, filterable request table with CSV export; a Device column appears while sync is on.</dd>
 				<dt>Settings</dt><dd>How the instance is wired, a snippet builder for connecting harnesses, the sync switch and its status, browser-side state. For another machine, reuse the project URL and secret key with a distinct device name; see the <a href="sync.html#sync-others">join instructions</a>.</dd>
 			</dl>
 			<p>If the dashboard becomes unreachable, run <code>garcon doctor</code>. After an update, <code>garcon doctor --wait 10s</code> can wait for the new version to start. Sync is optional; leaving it off still lets this machine record and display usage.</p>

@@ -45,7 +45,8 @@ external fonts or UI dependencies. Harnesses, accounts and devices use multi-sel
 listboxes (nothing selected means all; fully keyboard-operable) so new values
 cannot expand the toolbar indefinitely. A Device select joins them only
 once sync has pulled in rows from a second machine; a single-device install never
-shows it.
+shows it. The Logs table adds a Device column whenever sync is enabled, and the
+sidebar brand shows the running version (the npm package version for npm installs).
 
 At widths of 760px and below, a disclosure menu replaces the persistent sidebar.
 It stays in document flow, closes on navigation or Escape, and supports normal
