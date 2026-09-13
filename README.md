@@ -177,7 +177,7 @@ through all of this.
 The table has row level security enabled with no policies, so only the secret key, which
 bypasses RLS, can read or write it. What leaves the machine, per call: device name, time,
 harness, account, provider, model, status, latency and token counts. Never prompts, replies
-or keys. The [documentation](https://asieke.github.io/garcon/#sync) covers the mechanics,
+or keys. The [documentation](https://asieke.github.io/garcon/sync.html) covers the mechanics,
 the security model, file locations and troubleshooting.
 
 ## Dashboard development

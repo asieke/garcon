@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Sync across devices · Garcon</title>
+	<meta name="description" content="Off by default. See every machine's usage in one dashboard through a Supabase project you own.">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+	<nav class="side" aria-label="Documentation">
+		<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">g.</span><span><strong>Garcon</strong><small>Documentation</small></span></a>
+		<h2>Start</h2>
+		<a class="nav" href="index.html">Overview</a>
+		<a class="nav" href="install.html">Install</a>
+		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="dashboard.html">Dashboard</a>
+		<h2>Sync</h2>
+		<a class="nav" href="sync.html" aria-current="page">Sync across devices</a>
+		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
+		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
+		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
+		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
+		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
+		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
+		<h2>Reference</h2>
+		<a class="nav" href="api.html">HTTP API</a>
+		<a class="nav" href="files.html">Files and skills</a>
+		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
+	</nav>
+
+	<main id="top">
+		<h1>Sync across devices</h1>
+		<p class="lede">Off by default. See every machine's usage in one dashboard through a Supabase project you own.</p>
+
+		<section id="sync">
+			<p>Off by default. Garcon makes no network calls of its own until <strong>Enable Supabase sync</strong> is switched on in Settings; recording never depends on it and the local log stays each machine's source of truth. When it is on, every completion call is upserted into one table in a Supabase project you own, and the other machines' rows are pulled into a local cache, so each dashboard shows the union with a Device filter and sessions kept apart per machine.</p>
+			<div class="callout"><p>Only you can read the table. It has row level security enabled with no policies, so the project's <em>secret</em> key (which bypasses RLS) is the only key that can touch it; the publishable key sees nothing. The secret key is stored owner-only on each machine and sent only to your project URL.</p></div>
+
+			<h3 id="sync-first">First machine</h3>
+			<p>The <a href="https://supabase.com/docs/guides/cli">Supabase CLI</a> does the whole setup, and the secret key goes straight from the CLI into the proxy without being printed. Log in once with <code>supabase login</code>, then from the repository:</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>./connect-supabase.sh --name "work laptop"</code></pre></div>
+			<ol class="steps">
+				<li><strong>Checks</strong> that garcon answers and the CLI is logged in (<code>supabase orgs list</code>).</li>
+				<li><strong>Creates a project</strong> named <code>garcon</code> on the free tier in <code>us-east-1</code>, or the <code>--region</code> you pass. If you belong to several organisations, pass <code>--org-id</code> (the script lists them). The generated database password is printed once; Garcon never needs it, so keep it in your password manager. To reuse a project you already have, pass <code>--project-ref &lt;ref&gt;</code> and this step is skipped.</li>
+				<li><strong>Applies the table</strong> from <code>supabase/garcon_usage.sql</code> through the Management API (<code>supabase db query --linked --project-ref …</code>): no link step, no database password.</li>
+				<li><strong>Fetches the secret key</strong> with <code>supabase projects api-keys --reveal</code> and pipes it, with the device name and the switch turned on, into <code>PUT /api/settings</code>. The proxy probes the table with those credentials before storing anything.</li>
+			</ol>
+			<p>The <code>--name</code> is this machine's label in the Device filter and the devices table. It is a label only: a hidden device id identifies the machine, so you can rename it any time in Settings, and every machine needs a distinct name.</p>
+
+			<h3 id="sync-table">The table</h3>
+			<p>If you would rather not use the CLI, run this in the project's SQL editor (SQL Editor → New query → Run). It is idempotent: run it again after upgrading Garcon if Settings reports a missing column.</p>
+			<div class="block"><div class="label"><span>supabase/garcon_usage.sql</span><button class="copy" type="button">Copy</button></div><pre><code>create table if not exists public.garcon_usage (
+  id            text primary key,           -- sha256 of device id + the row's fields
+  device_id     text not null,              -- random id generated once per machine
+  device        text not null,              -- the machine's display name
+  time          bigint not null,            -- unix milliseconds
+  harness       text not null,
+  account       text not null,
+  provider      text not null,
+  model         text not null,
+  status        integer not null,
+  ms            bigint not null,
+  queue_us      bigint,
+  reused        boolean,
+  connect_ms    bigint,
+  dns_ms        bigint,
+  tcp_ms        bigint,
+  tls_ms        bigint,
+  first_byte_ms bigint,
+  input         bigint not null,            -- uncached input tokens
+  cache_read    bigint not null,
+  cache_write   bigint not null,
+  output        bigint not null,
+  synced_at     timestamptz not null default now()
+);
+create index if not exists garcon_usage_synced_at on public.garcon_usage (synced_at, id);
+create index if not exists garcon_usage_device_time on public.garcon_usage (device_id, time);
+-- No policies on purpose: only the project's secret key (which bypasses row level
+-- security) can read or write this table. The publishable key sees nothing.
+alter table public.garcon_usage enable row level security;</code></pre></div>
+			<p>Then in Settings → Sync: device name, project URL (<code>https://&lt;ref&gt;.supabase.co</code>, the ref is the 20-letter id in the project's dashboard URL), the secret key (Project Settings → API Keys → <code>sb_secret_…</code>), switch on, Save.</p>
+
+			<h3 id="sync-others">Other machines</h3>
+			<p>The project and table already exist, so a second machine only needs the URL and the key. Either rerun the script there with the CLI logged in:</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>./connect-supabase.sh --name "home desktop" --project-ref &lt;ref&gt;</code></pre></div>
+			<p>or open Settings → Sync in that machine's dashboard, give it a different device name, paste the project URL and the secret key, switch sync on and Save. Without a browser, the same thing over HTTP (omit <code>key</code> on later saves to keep the stored one):</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>curl -s -X PUT -H 'Content-Type: application/json' http://127.0.0.1:4141/api/settings \
+  -d '{"sync_enabled":true,"device_name":"home desktop","url":"https://&lt;ref&gt;.supabase.co","key":"&lt;sb_secret_…&gt;"}'</code></pre></div>
+			<p>Save probes the table with the exact credentials first and refuses to store a configuration that does not work. Within a minute of both machines being on, each one's dashboard lists the other under Settings → Sync and the Device filter appears in the filter bar.</p>
+
+			<h3 id="sync-security">Security and privacy</h3>
+			<ul>
+				<li><strong>What leaves a machine</strong>, per completion call: device name, time, harness, account, provider, model, HTTP status, latency figures and the four token counts. Never prompts, replies, API keys or session ids.</li>
+				<li><strong>Where the key lives</strong>: <code>~/.config/garcon/config.json</code>, mode 0600, on each machine. The dashboard API never returns it (only whether one is stored) and it is sent only to the project URL. <code>./install.sh --uninstall</code> deletes the file.</li>
+				<li><strong>Which key</strong>: a new-format secret key (<code>sb_secret_…</code>) or a legacy <code>service_role</code> JWT. Publishable and anon keys are rejected on Save: they get the anon role, and with RLS on they would silently see nothing.</li>
+				<li><strong>The switch is absolute</strong>: off means no push, no pull, no probe. Turning it off keeps the settings; <em>Forget key</em> also removes the key.</li>
+				<li><strong>Local only</strong>: the proxy binds to loopback and the settings endpoint additionally requires a JSON content type and a loopback <code>Host</code> header, so a web page cannot change them.</li>
+			</ul>
+			<h3 id="sync-how">How it works</h3>
+			<ul>
+				<li>Each row's <code>id</code> is a hash of the machine's device id and the row's fields, so history backfills with stable ids and re-sending is a harmless upsert (<code>Prefer: resolution=merge-duplicates</code>).</li>
+				<li>Pushes go in batches of 500 with exponential backoff; a first enable backfills the whole local log. The push cursor is persisted so a restart never re-uploads.</li>
+				<li>Pulls run every minute, ordered by the server-side <code>synced_at</code>, with a five-minute overlap deduplicated by id so a slow commit is never missed. Other machines' rows are cached in <code>~/.local/share/garcon/remote.jsonl</code> and shown even while offline.</li>
+				<li>Renaming a device is free: the id in <code>sync.json</code> is what identifies the machine, and recreating the config never turns a machine into a "new" device.</li>
+			</ul>
+
+			<h3 id="sync-troubleshooting">Troubleshooting</h3>
+			<p>Settings → Sync shows the last push and pull error. <code>curl -s http://127.0.0.1:4141/api/settings</code> shows the same as JSON.</p>
+			<dl>
+				<dt>Invalid JWT</dt><dd>The key is publishable, or a legacy key was pasted with a typo. Use the <code>sb_secret_</code> key.</dd>
+				<dt>PGRST204 / could not find column</dt><dd>The table is older than Garcon. Rerun the SQL above, then <code>alter table public.garcon_usage add column …</code> for anything still missing.</dd>
+				<dt>relation "garcon_usage" does not exist</dt><dd>The SQL was not run, or ran in another project.</dd>
+				<dt>pending never drains</dt><dd>Read the push error; pushes retry with backoff up to five minutes and resume as soon as the cause is fixed. Flipping the switch off and on wakes the loop immediately.</dd>
+				<dt>A machine appears twice</dt><dd><code>sync.json</code> was deleted, so it got a new device id and re-pushed its history under it. <code>delete from public.garcon_usage where device_id = '&lt;old id&gt;'</code> if it matters.</dd>
+				<dt>Rotate the key</dt><dd>Create a new secret key in Supabase, paste it in Settings, Save, then revoke the old one.</dd>
+				<dt>Start over</dt><dd>Switch sync off, delete <code>remote.jsonl</code> (the next pull rebuilds it), and drop the table if you no longer want the data in the cloud.</dd>
+			</dl>
+		</section>
+
+		<nav class="pager" aria-label="Pages"><a href="dashboard.html"><small>Previous</small>Dashboard</a><a class="next" href="api.html"><small>Next</small>HTTP API</a></nav>
+	</main>
+</div>
+<script>
+	for (const b of document.querySelectorAll('.copy')) {
+		b.addEventListener('click', async () => {
+			const code = b.closest('.block').querySelector('pre').innerText;
+			try { await navigator.clipboard.writeText(code); b.textContent = 'Copied'; }
+			catch { b.textContent = 'Select and copy'; }
+			setTimeout(() => (b.textContent = 'Copy'), 1500);
+		});
+	}
+</script>
+<script>
+	// Highlight the sub-section in view as the reader scrolls; the page works without it.
+	const subs = [...document.querySelectorAll('.side a.sub')];
+	const heads = subs.map((a) => document.getElementById(a.dataset.target)).filter(Boolean);
+	if (heads.length && 'IntersectionObserver' in window) {
+		const mark = (id) => subs.forEach((a) => a.classList.toggle('active', a.dataset.target === id));
+		let current = heads[0].id;
+		const pick = () => {
+			const line = window.innerHeight * 0.3;
+			let best = heads[0];
+			for (const h of heads) if (h.getBoundingClientRect().top <= line) best = h;
+			if (best.id !== current) { current = best.id; mark(current); }
+		};
+		addEventListener('scroll', pick, { passive: true });
+		pick();
+	}
+</script>
+</body>
+</html>

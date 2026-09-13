@@ -1,6 +1,6 @@
 /** Settings → Sync: types for /api/settings. Setup instructions live in the documentation site
  * (docs/ in the repository), not in the dashboard. */
-export const DOCS_URL = 'https://asieke.github.io/garcon/';
+export const DOCS_URL = 'https://asieke.github.io/garcon/sync.html';
 
 export type SyncSettings = { sync_enabled: boolean; device_name: string; url: string; key_set: boolean };
 

@@ -288,7 +288,7 @@
 	<p class="caption">
 		Off: Garcon never contacts the network. On: this device's usage rows are upserted into a table in a Supabase project you
 		own, and other devices' rows are pulled in, so every dashboard shows the union with a Device filter.
-		<a href="{DOCS_URL}#sync" target="_blank" rel="noopener">Setup guide</a>: creating the project and table, connecting more
+		<a href={DOCS_URL} target="_blank" rel="noopener">Setup guide</a>: creating the project and table, connecting more
 		machines, what leaves this machine, troubleshooting.
 	</p>
 	<div class="builder">
