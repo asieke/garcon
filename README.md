@@ -73,14 +73,14 @@ overhead vs upstream), Logs (CSV export), Settings. Raw rows: `/api/usage`.
 Off by default; with the switch off Garcon makes no network calls. On, each machine upserts
 its rows into a `garcon_usage` table in a Supabase project you own and pulls the others' rows
 in, so every dashboard shows the union with a Device filter. First machine, with the Supabase
-CLI logged in:
+CLI installed and logged in:
 
 ```sh
-scripts/connect-supabase.sh --name "work laptop"    # creates the project, applies supabase/garcon_usage.sql, stores the key
+garcon connect-supabase --name "work laptop"    # creates the project, applies the schema, stores the key
 ```
 
 Other machines: Settings → Sync, paste the project URL and `sb_secret_` key, or rerun the
-script with `--project-ref`. RLS is on with no policies, so only the secret key can read the
+command with `--project-ref`. RLS is on with no policies, so only the secret key can read the
 table. Per call, only device, time, harness, account, provider, model, status, latency and
 token counts leave the machine. Key in `~/.config/garcon/config.json` (0600); device id and
 cursors in `~/.local/share/garcon/sync.json`. Details: [docs](https://asieke.github.io/garcon/sync.html).
@@ -96,7 +96,7 @@ internal/syncer/     Supabase push/pull and /api/settings
 internal/service/    systemd and launchd management
 internal/dashboard/  embedded build output of web/
 web/                 SvelteKit dashboard          docs/       GitHub Pages site
-scripts/             install, connect-supabase, release
+scripts/             install.sh (source builds), release.sh
 npm/                 ai-garcon and its platform packages
 supabase/            sync table schema            .claude/    agent skills
 ```

@@ -20,6 +20,7 @@ import (
 	"garcon/internal/dashboard"
 	"garcon/internal/proxy"
 	"garcon/internal/service"
+	"garcon/internal/setup"
 	"garcon/internal/store"
 	"garcon/internal/syncer"
 )
@@ -42,8 +43,14 @@ type config struct {
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "help", "-h", "--help":
+			fmt.Println("usage: garcon [-listen ADDR] [-data FILE] [-config FILE]\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --name LABEL [--project-ref REF] | --print-sql\n       garcon version")
+			return
 		case "service":
 			service.Main(os.Args[2:])
+			return
+		case "connect-supabase":
+			setup.Main(os.Args[2:])
 			return
 		case "version", "-version", "--version":
 			fmt.Println("garcon", version)

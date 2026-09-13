@@ -39,19 +39,19 @@
 			<div class="callout"><p>Only you can read the table. It has row level security enabled with no policies, so the project's <em>secret</em> key (which bypasses RLS) is the only key that can touch it; the publishable key sees nothing. The secret key is stored owner-only on each machine and sent only to your project URL.</p></div>
 
 			<h3 id="sync-first">First machine</h3>
-			<p>The <a href="https://supabase.com/docs/guides/cli">Supabase CLI</a> does the whole setup, and the secret key goes straight from the CLI into the proxy without being printed. Log in once with <code>supabase login</code>, then from the repository:</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>scripts/connect-supabase.sh --name "work laptop"</code></pre></div>
+			<p>The <a href="https://supabase.com/docs/guides/cli">Supabase CLI</a> does the whole setup, and the secret key goes straight from the CLI into the proxy without being printed. Log in once with <code>supabase login</code>, then, on the machine that runs garcon:</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon connect-supabase --name "work laptop"</code></pre></div>
 			<ol class="steps">
 				<li><strong>Checks</strong> that garcon answers and the CLI is logged in (<code>supabase orgs list</code>).</li>
-				<li><strong>Creates a project</strong> named <code>garcon</code> on the free tier in <code>us-east-1</code>, or the <code>--region</code> you pass. If you belong to several organisations, pass <code>--org-id</code> (the script lists them). The generated database password is printed once; Garcon never needs it, so keep it in your password manager. To reuse a project you already have, pass <code>--project-ref &lt;ref&gt;</code> and this step is skipped.</li>
-				<li><strong>Applies the table</strong> from <code>supabase/garcon_usage.sql</code> through the Management API (<code>supabase db query --linked --project-ref …</code>): no link step, no database password.</li>
+				<li><strong>Creates a project</strong> named <code>garcon</code> on the free tier in <code>us-east-1</code>, or the <code>--region</code> you pass. If you belong to several organisations, pass <code>--org-id</code> (the command lists them). The generated database password is printed once; Garcon never needs it, so keep it in your password manager. To reuse a project you already have, pass <code>--project-ref &lt;ref&gt;</code> and this step is skipped.</li>
+				<li><strong>Applies the table</strong> from the schema embedded in the binary (<code>garcon connect-supabase --print-sql</code> prints it) through the Management API (<code>supabase db query --linked --project-ref …</code>): no link step, no database password.</li>
 				<li><strong>Fetches the secret key</strong> with <code>supabase projects api-keys --reveal</code> and pipes it, with the device name and the switch turned on, into <code>PUT /api/settings</code>. The proxy probes the table with those credentials before storing anything.</li>
 			</ol>
 			<p>The <code>--name</code> is this machine's label in the Device filter and the devices table. It is a label only: a hidden device id identifies the machine, so you can rename it any time in Settings, and every machine needs a distinct name.</p>
 
 			<h3 id="sync-table">The table</h3>
-			<p>If you would rather not use the CLI, run this in the project's SQL editor (SQL Editor → New query → Run). It is idempotent: run it again after upgrading Garcon if Settings reports a missing column.</p>
-			<div class="block"><div class="label"><span>supabase/garcon_usage.sql</span><button class="copy" type="button">Copy</button></div><pre><code>create table if not exists public.garcon_usage (
+			<p>If you would rather not use the CLI, run this in the project's SQL editor (SQL Editor → New query → Run); <code>garcon connect-supabase --print-sql</code> prints the same text. It is idempotent: run it again after upgrading Garcon if Settings reports a missing column.</p>
+			<div class="block"><div class="label"><span>garcon connect-supabase --print-sql</span><button class="copy" type="button">Copy</button></div><pre><code>create table if not exists public.garcon_usage (
   id            text primary key,           -- sha256 of device id + the row's fields
   device_id     text not null,              -- random id generated once per machine
   device        text not null,              -- the machine's display name
@@ -83,8 +83,8 @@ alter table public.garcon_usage enable row level security;</code></pre></div>
 			<p>Then in Settings → Sync: device name, project URL (<code>https://&lt;ref&gt;.supabase.co</code>, the ref is the 20-letter id in the project's dashboard URL), the secret key (Project Settings → API Keys → <code>sb_secret_…</code>), switch on, Save.</p>
 
 			<h3 id="sync-others">Other machines</h3>
-			<p>The project and table already exist, so a second machine only needs the URL and the key. Either rerun the script there with the CLI logged in:</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>scripts/connect-supabase.sh --name "home desktop" --project-ref &lt;ref&gt;</code></pre></div>
+			<p>The project and table already exist, so a second machine only needs the URL and the key. Either rerun the command there with the CLI logged in:</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon connect-supabase --name "home desktop" --project-ref &lt;ref&gt;</code></pre></div>
 			<p>or open Settings → Sync in that machine's dashboard, give it a different device name, paste the project URL and the secret key, switch sync on and Save. Without a browser, the same thing over HTTP (omit <code>key</code> on later saves to keep the stored one):</p>
 			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>curl -s -X PUT -H 'Content-Type: application/json' http://127.0.0.1:4141/api/settings \
   -d '{"sync_enabled":true,"device_name":"home desktop","url":"https://&lt;ref&gt;.supabase.co","key":"&lt;sb_secret_…&gt;"}'</code></pre></div>

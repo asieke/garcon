@@ -275,7 +275,11 @@
 	<p class="caption">Loading…</p>
 {:else}
 	<label class="switch"><input type="checkbox" bind:checked={form.sync_enabled} onchange={touch} /> Enable Supabase sync</label>
-	<p class="caption">Off: no network calls. On: rows are exchanged with your Supabase project. <a href={DOCS_URL} target="_blank" rel="noopener">Setup guide</a></p>
+	<p class="caption">
+		Off: no network calls. On: rows are exchanged with your Supabase project. First machine:
+		<code>garcon connect-supabase --name "work laptop"</code> (needs the Supabase CLI); others paste the URL and key below.
+		<a href={DOCS_URL} target="_blank" rel="noopener">Setup guide</a>
+	</p>
 	<div class="builder">
 		<label>Device name <input type="text" placeholder="work laptop" bind:value={form.device_name} oninput={touch} /></label>
 		<label>Project URL <input type="text" placeholder="https://abcdefghijklmnopqrst.supabase.co" bind:value={form.url} oninput={touch} /></label>
