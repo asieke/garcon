@@ -3,11 +3,16 @@
    so every chart follows the same palette without per-component color logic. */
 :root {
 	color-scheme: light;
-	--page: #f9f9f7;
-	--surface: #fcfcfb;
-	--text-primary: #0b0b0b;
-	--text-secondary: #52514e;
-	--text-muted: #898781;
+	--page: #f4f6f8;
+	--sidebar: #fbfcfd;
+	--accent: #246456;
+	--accent-soft: #e7f1ed;
+	--accent-border: #c9dfd5;
+	--nav-hover: #edf0f3;
+	--surface: #ffffff;
+	--text-primary: #202a35;
+	--text-secondary: #586575;
+	--text-muted: #677586;
 	--grid: #e1e0d9;
 	--baseline: #c3c2b7;
 	--border: rgba(11, 11, 11, 0.1);
@@ -45,13 +50,18 @@
 @media (prefers-color-scheme: dark) {
 	:root {
 		color-scheme: dark;
-		--page: #0d0d0d;
-		--surface: #1a1a19;
-		--text-primary: #ffffff;
-		--text-secondary: #c3c2b7;
-		--text-muted: #898781;
-		--grid: #2c2c2a;
-		--baseline: #383835;
+		--page: #11171e;
+		--sidebar: #151d26;
+		--accent: #83cfb6;
+		--accent-soft: #203a35;
+		--accent-border: #31584b;
+		--nav-hover: #202c38;
+		--surface: #19232e;
+		--text-primary: #edf2f7;
+		--text-secondary: #b3c0cd;
+		--text-muted: #93a3b5;
+		--grid: #2b3845;
+		--baseline: #405060;
 		--border: rgba(255, 255, 255, 0.1);
 
 		--series-1: #3987e5;
@@ -97,3 +107,11 @@ h3 {
 .tabular {
 	font-variant-numeric: tabular-nums;
 }
+
+:where(a, button, select, input, summary, [tabindex]):focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+}
+button, select, input { font-family: inherit; }
+button:not(:disabled), select { cursor: pointer; }
+::selection { background: var(--accent-soft); color: var(--text-primary); }

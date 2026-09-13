@@ -208,7 +208,7 @@
 	}
 	.pair {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 		gap: 0 32px;
 	}
 	.scroll {

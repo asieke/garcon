@@ -41,8 +41,8 @@
 
 <style>
 	.tile {
-		padding: 14px 16px;
-		border-radius: 8px;
+		padding: 18px;
+		border-radius: 10px;
 		border: 1px solid var(--border);
 		background: var(--surface);
 		display: flex;
@@ -56,11 +56,13 @@
 	.row {
 		display: flex;
 		align-items: baseline;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		gap: 8px;
 	}
 	b {
-		font-size: 26px;
+		font-size: 28px;
+		letter-spacing: -.8px;
 		font-weight: 600;
 		white-space: nowrap;
 	}
