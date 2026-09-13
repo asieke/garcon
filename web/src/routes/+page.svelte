@@ -349,6 +349,8 @@
 	.page-heading { margin-bottom: 26px; }
 	.eyebrow { text-transform: uppercase; letter-spacing: .12em; color: var(--accent); font-size: 10px; font-weight: 650; margin: 0 0 8px; }
 	h1 { font-size: 30px; line-height: 1.2; letter-spacing: -.8px; }
+	/* The heading takes focus after navigation for screen readers; a visible ring there is noise. */
+	h1:focus { outline: none; }
 	.description { color: var(--text-secondary); font-size: 13px; margin: 10px 0 0; }
 	.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 28px; }
 	label, .filter-label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; font-weight: 550; }

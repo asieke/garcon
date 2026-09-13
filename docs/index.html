@@ -33,6 +33,7 @@
 	<main id="top">
 		<h1>Garcon</h1>
 		<p class="lede">Observability for coding agents. One tiny local proxy sits in front of Claude Code, Codex, OpenClaw, Hermes or anything else you run, records what every call cost in tokens, and shows it all in one dashboard, across accounts, tools and, with sync on, every machine you work from.</p>
+		<figure class="shot"><img src="images/overview.png" width="1440" height="960" alt="The Garcon dashboard's Overview: request, token, cache-hit, error-rate and latency tiles with deltas against the prior period, and a requests-by-harness chart over seven days." loading="eager"><figcaption>The Overview, on synthetic data: two accounts, three tools, seven days.</figcaption></figure>
 
 		<section id="problem">
 			<h2>The problem</h2>
@@ -119,6 +120,7 @@
 				<li><strong>Every request</strong>: a sortable, filterable log with CSV export, and a JSON endpoint for anything else.</li>
 				<li><strong>Every machine</strong>: switch on <a href="sync.html">sync</a> and each dashboard shows the union of all your devices, pulled from a table in your own Supabase project.</li>
 			</ul>
+			<figure class="shot"><img src="images/sessions.png" width="1440" height="960" alt="The Sessions view: a per-account timeline of coding sessions and a table with duration, requests, models, tokens, peak context and estimated cost per session." loading="lazy"><figcaption>Sessions: a burst of calls from one account and tool becomes one row, with its models, peak context and estimated cost.</figcaption></figure>
 		</section>
 
 		<section id="records">
