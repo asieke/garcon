@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Garcon documentation</title>
-	<meta name="description" content="A local pass-through proxy for coding agents that records usage per account. Two Go files with no dependencies, a dashboard embedded in the binary, and optional sync across your machines through a Supabase project you own.">
+	<meta name="description" content="Garcon puts one tiny local proxy in front of every coding agent you run, records what each call cost in tokens, and shows it all in one dashboard, across accounts, tools and machines.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -32,10 +32,52 @@
 
 	<main id="top">
 		<h1>Garcon</h1>
-		<p class="lede">A local pass-through proxy for coding agents that records usage per account. Two Go files with no dependencies, a dashboard embedded in the binary, and optional sync across your machines through a Supabase project you own.</p>
+		<p class="lede">Observability for coding agents. One tiny local proxy sits in front of Claude Code, Codex, OpenClaw, Hermes or anything else you run, records what every call cost in tokens, and shows it all in one dashboard, across accounts, tools and, with sync on, every machine you work from.</p>
 
-		<section id="overview">
-			<p>Each agent is pointed at <code>http://127.0.0.1:4141/&lt;harness&gt;/&lt;account&gt;/&lt;provider&gt;/</code>, where <code>harness</code> names the tool, <code>account</code> is the login it uses (an email), and <code>provider</code> is the upstream. The proxy forwards every request unchanged and streams the reply back. Completion calls are appended to a local log with the model and the token counts the provider reported: uncached input, cache read, cache write and output. No limits, no retries, nothing rewritten, no credentials stored.</p>
+		<section id="problem">
+			<h2>The problem</h2>
+			<p>Coding agents burn tokens on your behalf all day, and the evidence is scattered. Each tool keeps its own logs in its own format, each provider shows a different slice of the bill, subscription plans hide the per-call cost entirely, and none of it lines up across the laptop, the desktop and the server you also run agents on. Questions that should be trivial are not: which account is doing the work, which model, how much context is being re-read every turn, how much of that is cache hits, how fast the model is streaming, and what all of it would cost at list price.</p>
+			<p>The usual answer is a gateway such as <a href="https://github.com/BerriAI/litellm">LiteLLM</a>: put a proxy in the path of every LLM call and observe the traffic there instead of in each tool. That is exactly the value proposition of Garcon. The difference is where the line is drawn.</p>
+		</section>
+
+		<section id="what">
+			<h2>What Garcon does</h2>
+			<figure class="diagram">
+				<svg viewBox="0 0 760 300" role="img" aria-labelledby="diagram-title" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">
+					<title id="diagram-title">Harnesses send requests through Garcon to providers; Garcon records usage locally, serves a dashboard, and optionally syncs with other machines through a Supabase project.</title>
+					<defs>
+						<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-muted)"/></marker>
+					</defs>
+					<g fill="var(--surface)" stroke="var(--border)">
+						<rect x="10" y="20" width="150" height="34" rx="6"/><rect x="10" y="66" width="150" height="34" rx="6"/><rect x="10" y="112" width="150" height="34" rx="6"/><rect x="10" y="158" width="150" height="34" rx="6"/>
+						<rect x="600" y="20" width="150" height="34" rx="6"/><rect x="600" y="66" width="150" height="34" rx="6"/><rect x="600" y="112" width="150" height="34" rx="6"/><rect x="600" y="158" width="150" height="34" rx="6"/>
+					</g>
+					<g fill="var(--text)" text-anchor="middle">
+						<text x="85" y="42">Claude Code</text><text x="85" y="88">Codex</text><text x="85" y="134">OpenClaw, Hermes</text><text x="85" y="180">any other client</text>
+						<text x="675" y="42">api.anthropic.com</text><text x="675" y="88">chatgpt.com</text><text x="675" y="134">api.openai.com</text><text x="675" y="180">openrouter.ai</text>
+					</g>
+					<rect x="290" y="20" width="180" height="172" rx="10" fill="var(--accent-soft)" stroke="var(--accent-border)"/>
+					<text x="380" y="52" text-anchor="middle" font-weight="700" font-size="16" fill="var(--accent)">Garcon</text>
+					<text x="380" y="74" text-anchor="middle" fill="var(--text-secondary)">127.0.0.1:4141</text>
+					<g fill="var(--text)" text-anchor="middle" font-size="12">
+						<text x="380" y="106">forwards every request</text><text x="380" y="124">unchanged, streams the reply</text>
+						<text x="380" y="150">records model + tokens</text><text x="380" y="168">per harness and account</text>
+					</g>
+					<g stroke="var(--text-muted)" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+						<path d="M160 37H290"/><path d="M160 83H290"/><path d="M160 129H290"/><path d="M160 175H290"/>
+						<path d="M470 37H600"/><path d="M470 83H600"/><path d="M470 129H600"/><path d="M470 175H600"/>
+					</g>
+					<g stroke="var(--text-muted)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"><path d="M340 192V230"/><path d="M420 192V230"/></g>
+					<rect x="240" y="230" width="140" height="50" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+					<text x="310" y="251" text-anchor="middle" fill="var(--text)">usage.jsonl</text>
+					<text x="310" y="268" text-anchor="middle" fill="var(--text-secondary)" font-size="11">and the dashboard</text>
+					<rect x="400" y="230" width="140" height="50" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-dasharray="4 3"/>
+					<text x="470" y="251" text-anchor="middle" fill="var(--text)">your Supabase</text>
+					<text x="470" y="268" text-anchor="middle" fill="var(--text-secondary)" font-size="11">optional: other machines</text>
+				</svg>
+				<figcaption>Every agent points at a local URL that names the tool, the account and the provider. Nothing about the request or the reply is changed; Garcon only reads the usage block the provider already sends back.</figcaption>
+			</figure>
+			<p>Each agent is pointed at <code>http://127.0.0.1:4141/&lt;harness&gt;/&lt;account&gt;/&lt;provider&gt;/</code>, where <code>harness</code> names the tool, <code>account</code> is the login it uses (an email), and <code>provider</code> is the upstream. Completion calls are appended to a local log with the model and the token counts the provider reported: uncached input, cache read, cache write and output. Claude Code and Codex talk to one provider each, so their URLs omit the segment: <code>/claude/&lt;account&gt;/</code> implies <code>anthropic</code> and <code>/codex/&lt;account&gt;/</code> implies <code>chatgpt</code>.</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Segment</th><th>Upstream</th><th>Recorded calls</th></tr></thead>
 				<tbody>
@@ -45,7 +87,52 @@
 					<tr><td><code>chatgpt</code></td><td>chatgpt.com</td><td><code>/backend-api/codex/responses</code> (ChatGPT-subscription Codex)</td></tr>
 				</tbody>
 			</table></div>
-			<p>Claude Code and Codex talk to one provider each, so their URLs omit the segment: <code>/claude/&lt;account&gt;/</code> implies <code>anthropic</code> and <code>/codex/&lt;account&gt;/</code> implies <code>chatgpt</code>. Any other harness name works and needs the provider segment.</p>
+			<p>Because it is a pure pass-through, it works with subscription logins too: Claude Code on a claude.ai plan and Codex on a ChatGPT plan keep authenticating exactly as before, and Garcon still sees the token counts those calls report. That is the case a gateway that re-issues requests under its own keys cannot cover.</p>
+		</section>
+
+		<section id="compare">
+			<h2>Compared with a gateway like LiteLLM</h2>
+			<p>Same idea, different scope. A gateway is a piece of infrastructure: it fronts many providers, translates between APIs, routes and retries, issues virtual keys, enforces budgets, and stores its telemetry in a database it runs. Garcon deliberately does none of that. It is one binary that does one job for one person, and it keeps the data on the machine unless you say otherwise.</p>
+			<div class="scroll"><table class="compare">
+				<thead><tr><th></th><th>Garcon</th><th>LiteLLM-style gateway</th></tr></thead>
+				<tbody>
+					<tr><th>Observability across tools, accounts and machines</th><td>Yes</td><td>Yes</td></tr>
+					<tr><th>Requests and replies</th><td>Forwarded byte for byte; the provider's own auth, streaming and errors pass straight through</td><td>Normalised to one API, re-issued with the gateway's keys</td></tr>
+					<tr><th>Subscription logins (claude.ai, ChatGPT plans)</th><td>Work unchanged; usage is still recorded</td><td>Generally not; the gateway needs API keys</td></tr>
+					<tr><th>Routing, retries, fallbacks, budgets, virtual keys</th><td>None, by design</td><td>Yes, that is the product</td></tr>
+					<tr><th>Where the data lives</th><td>A JSONL file in your home directory; optionally a table in a Supabase project you own</td><td>The gateway's Postgres, or a hosted logging service</td></tr>
+					<tr><th>Footprint</th><td>Two Go files, no dependencies, one binary with the dashboard inside it, loopback only</td><td>A Python service plus its database, usually a container or a hosted deployment</td></tr>
+					<tr><th>Setup</th><td>One install script, then a base URL per agent</td><td>A config file of models and keys, a deployment, then a base URL per client</td></tr>
+					<tr><th>Multiple people or teams</th><td>No; one person, any number of machines</td><td>Yes</td></tr>
+				</tbody>
+			</table></div>
+			<p>If you need a control plane for a team, run a gateway. If you want to know what your own agents are doing, with nothing to operate and nothing leaving your machine unless you choose, that is Garcon.</p>
+		</section>
+
+		<section id="get">
+			<h2>What you get</h2>
+			<ul>
+				<li><strong>One picture of everything</strong>: requests, tokens and their composition by harness, account, model and device, over any time range, with period-over-period deltas.</li>
+				<li><strong>Cost you can reason about</strong>: estimated spend at published list prices (never a bill; subscriptions bill differently), cache savings, blended price per million tokens, run rate, and an editable price table.</li>
+				<li><strong>Sessions</strong>: calls grouped into coding sessions per account, tool and machine, with context growth, peak context, busy time and cost per session.</li>
+				<li><strong>Performance</strong>: generation speed and time to first byte by model, latency against output size, and the proxy's own overhead measured separately so it is never confused with the model's time.</li>
+				<li><strong>Every request</strong>: a sortable, filterable log with CSV export, and a JSON endpoint for anything else.</li>
+				<li><strong>Every machine</strong>: switch on <a href="sync.html">sync</a> and each dashboard shows the union of all your devices, pulled from a table in your own Supabase project.</li>
+			</ul>
+		</section>
+
+		<section id="records">
+			<h2>What it records, and what it never touches</h2>
+			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard binds to loopback only and stores no credentials. With sync off, which is the default, Garcon makes no network calls of its own at all.</p>
+		</section>
+
+		<section id="start">
+			<h2>Quick start</h2>
+			<ol class="steps">
+				<li><strong><a href="install.html">Install</a></strong><code>./install.sh --service</code> builds the dashboard and the binary and runs it at login.</li>
+				<li><strong><a href="connect.html">Point an agent at it</a></strong>one environment variable for Claude Code, a provider entry for Codex, a base URL for anything else. Make one short call and watch the row appear.</li>
+				<li><strong><a href="sync.html">Add your other machines</a></strong>when you want them in the same picture: one script on the first machine, a URL and a key on the rest.</li>
+			</ol>
 		</section>
 
 		<nav class="pager" aria-label="Pages"><span></span><a class="next" href="install.html"><small>Next</small>Install</a></nav>
