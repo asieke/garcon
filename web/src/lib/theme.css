@@ -1,0 +1,97 @@
+/* Design tokens. Light values on :root; dark values re-declared for OS dark mode.
+   Charts reference these by role (var(--series-1), var(--status-critical), ...)
+   so every chart follows the same palette without per-component color logic. */
+:root {
+	color-scheme: light;
+	--page: #f9f9f7;
+	--surface: #fcfcfb;
+	--text-primary: #0b0b0b;
+	--text-secondary: #52514e;
+	--text-muted: #898781;
+	--grid: #e1e0d9;
+	--baseline: #c3c2b7;
+	--border: rgba(11, 11, 11, 0.1);
+
+	--series-1: #2a78d6; /* blue */
+	--series-2: #eb6834; /* orange */
+	--series-3: #1baf7a; /* aqua */
+	--series-4: #eda100; /* yellow */
+	--series-5: #e87ba4; /* magenta */
+	--series-6: #008300; /* green */
+	--series-7: #4a3aa7; /* violet */
+	--series-8: #e34948; /* red */
+
+	--harness-claude: var(--series-2);
+	--harness-codex: var(--series-1);
+
+	/* Sequential ramp (one hue, blue), low → high. Heat-cells near zero recede toward the surface. */
+	--seq-1: #cde2fb;
+	--seq-2: #9ec5f4;
+	--seq-3: #6da7ec;
+	--seq-4: #3987e5;
+	--seq-5: #256abf;
+	--seq-6: #184f95;
+	--seq-7: #0d366b;
+	--seq-empty: #efeeea;
+
+	--status-good: #0ca30c;
+	--status-warning: #fab219;
+	--status-serious: #ec835a;
+	--status-critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		color-scheme: dark;
+		--page: #0d0d0d;
+		--surface: #1a1a19;
+		--text-primary: #ffffff;
+		--text-secondary: #c3c2b7;
+		--text-muted: #898781;
+		--grid: #2c2c2a;
+		--baseline: #383835;
+		--border: rgba(255, 255, 255, 0.1);
+
+		--series-1: #3987e5;
+		--series-2: #d95926;
+		--series-3: #199e70;
+		--series-4: #c98500;
+		--series-5: #d55181;
+		--series-6: #008300;
+		--series-7: #9085e9;
+		--series-8: #e66767;
+
+		/* Dark flips the anchor: near-zero is the darkest step (recedes into the dark surface). */
+		--seq-1: #0d366b;
+		--seq-2: #104281;
+		--seq-3: #1c5cab;
+		--seq-4: #2a78d6;
+		--seq-5: #5598e7;
+		--seq-6: #86b6ef;
+		--seq-7: #b7d3f6;
+		--seq-empty: #222220;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--page);
+	color: var(--text-primary);
+	font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+	font-weight: 600;
+	margin: 0;
+}
+
+.tabular {
+	font-variant-numeric: tabular-nums;
+}
