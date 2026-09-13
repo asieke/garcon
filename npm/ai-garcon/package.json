@@ -20,18 +20,19 @@
     "garcon": "bin/garcon.js"
   },
   "files": [
-    "bin"
+    "bin",
+    "dist",
+    "README.md"
   ],
-  "scripts": {
-    "postinstall": "node bin/postinstall.js"
-  },
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "engines": {
     "node": ">=18"
-  },
-  "optionalDependencies": {
-    "ai-garcon-linux-x64": "0.1.0",
-    "ai-garcon-linux-arm64": "0.1.0",
-    "ai-garcon-darwin-x64": "0.1.0",
-    "ai-garcon-darwin-arm64": "0.1.0"
   }
 }

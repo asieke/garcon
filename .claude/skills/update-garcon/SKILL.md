@@ -11,10 +11,8 @@ Two ways to install, so first find out which one is in use: `which garcon`. A pa
 **npm install:**
 
 ```sh
-npm i -g ai-garcon@latest
+npm i -g ai-garcon@latest && garcon service restart
 ```
-
-The package's post-install step restarts a running service, so nothing else is needed.
 
 **Source build**, from the repository checkout:
 
