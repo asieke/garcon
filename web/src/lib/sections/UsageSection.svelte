@@ -7,14 +7,12 @@
 	let {
 		buckets,
 		granularity,
-		claudeTokenSeries,
-		codexTokenSeries,
+		harnessTokenSeries,
 		totals
 	}: {
 		buckets: number[];
 		granularity: Granularity;
-		claudeTokenSeries: number[];
-		codexTokenSeries: number[];
+		harnessTokenSeries: { key: string; label: string; color: string; values: number[] }[];
 		totals: Totals;
 	} = $props();
 </script>
@@ -25,10 +23,7 @@
 	{granularity}
 	mode="stacked-area"
 	formatValue={n}
-	series={[
-		{ key: 'codex', label: 'Codex', color: 'var(--harness-codex)', values: codexTokenSeries },
-		{ key: 'claude', label: 'Claude', color: 'var(--harness-claude)', values: claudeTokenSeries }
-	]}
+	series={harnessTokenSeries}
 />
 
 <h2 class="spaced">Token composition, this window</h2>

@@ -23,7 +23,10 @@
 		hasLatencyDetail,
 		proxyOverheadMs,
 		meanDefined,
-		minTime
+		minTime,
+		sortHarnesses,
+		harnessLabel,
+		harnessVar
 	} from '$lib/usage';
 
 	const WINDOWS = [
@@ -48,7 +51,7 @@
 	let rows = $state<Row[]>([]);
 	let days = $state(7);
 	let tab = $state<(typeof TABS)[number][0]>('overview');
-	let harnessFilter = $state<'all' | 'claude' | 'codex'>('all');
+	let harnessFilter = $state('all');
 	let accountFilter = $state('all');
 	let now = $state(Date.now());
 	let lastSync = $state<number | null>(null);
@@ -73,6 +76,7 @@
 	});
 
 	const accountsAll = $derived([...new Set(rows.map((r) => r.account))].sort());
+	const harnessesAll = $derived(sortHarnesses(rows.map((r) => r.harness)));
 	const slots = $derived(accountSlots(accountsAll));
 	function colorForAccount(a: string): string {
 		const slot = slots.get(a);
@@ -106,13 +110,23 @@
 	const buckets = $derived(bucketRange(chartFrom, now, granularity));
 	const grouped = $derived(groupByBucket(visible, granularity));
 
-	const claudeSeries = $derived(seriesFor(buckets, grouped, (rs) => rs.filter((r) => r.harness === 'claude').length));
-	const codexSeries = $derived(seriesFor(buckets, grouped, (rs) => rs.filter((r) => r.harness === 'codex').length));
-	const claudeTokenSeries = $derived(
-		seriesFor(buckets, grouped, (rs) => rs.filter((r) => r.harness === 'claude').reduce((s, r) => s + tokensOf(r), 0))
+	// One series per harness present in the window, in registry order so colours and stacking stay put.
+	const harnessesVisible = $derived(sortHarnesses(visible.map((r) => r.harness)));
+	const harnessSeries = $derived(
+		harnessesVisible.map((h) => ({
+			key: h,
+			label: harnessLabel(h),
+			color: harnessVar(h),
+			values: seriesFor(buckets, grouped, (rs) => rs.filter((r) => r.harness === h).length)
+		}))
 	);
-	const codexTokenSeries = $derived(
-		seriesFor(buckets, grouped, (rs) => rs.filter((r) => r.harness === 'codex').reduce((s, r) => s + tokensOf(r), 0))
+	const harnessTokenSeries = $derived(
+		harnessesVisible.map((h) => ({
+			key: h,
+			label: harnessLabel(h),
+			color: harnessVar(h),
+			values: seriesFor(buckets, grouped, (rs) => rs.filter((r) => r.harness === h).reduce((s, r) => s + tokensOf(r), 0))
+		}))
 	);
 	const tokensTrend = $derived(seriesFor(buckets, grouped, (rs) => rs.reduce((s, r) => s + tokensOf(r), 0)));
 	const latencyTrend = $derived(
@@ -234,8 +248,9 @@
 	</nav>
 	<nav class="seg">
 		<button class:active={harnessFilter === 'all'} onclick={() => (harnessFilter = 'all')}>All harnesses</button>
-		<button class:active={harnessFilter === 'claude'} onclick={() => (harnessFilter = 'claude')}>Claude</button>
-		<button class:active={harnessFilter === 'codex'} onclick={() => (harnessFilter = 'codex')}>Codex</button>
+		{#each harnessesAll as h (h)}
+			<button class:active={harnessFilter === h} onclick={() => (harnessFilter = h)}>{harnessLabel(h)}</button>
+		{/each}
 	</nav>
 	<select bind:value={accountFilter}>
 		<option value="all">All accounts</option>
@@ -253,9 +268,9 @@
 	<p class="loading">Loading…</p>
 {:else}
 	{#if tab === 'overview'}
-		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {claudeSeries} {codexSeries} {errorCounts} {tokensTrend} {latencyTrend} />
+		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />
 	{:else if tab === 'usage'}
-		<UsageSection {buckets} {granularity} {claudeTokenSeries} {codexTokenSeries} {totals} />
+		<UsageSection {buckets} {granularity} {harnessTokenSeries} {totals} />
 	{:else if tab === 'models'}
 		<ModelsSection {modelGroups} />
 	{:else if tab === 'accounts'}

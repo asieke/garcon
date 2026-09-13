@@ -2,6 +2,8 @@ export type Row = {
 	time: number;
 	harness: string;
 	account: string;
+	/** Absent on rows logged before multi-provider support; see providerOf. */
+	provider?: string;
 	model: string;
 	status: number;
 	ms: number;
@@ -127,12 +129,33 @@ export function accountSlots(accounts: Iterable<string>): Map<string, number | n
 	return map;
 }
 
+/** Known harnesses, in display order. Each has a colour token in theme.css; anything else
+ * (a harness name someone made up in a base URL) is still accepted and drawn in muted ink. */
+export const HARNESSES: { key: string; label: string }[] = [
+	{ key: 'claude', label: 'Claude' },
+	{ key: 'codex', label: 'Codex' },
+	{ key: 'openclaw', label: 'OpenClaw' },
+	{ key: 'hermes', label: 'Hermes' }
+];
+const HARNESS_LABEL = new Map(HARNESSES.map((h) => [h.key, h.label]));
+const HARNESS_ORDER = new Map(HARNESSES.map((h, i) => [h.key, i]));
+
 export function harnessLabel(h: string): string {
-	return h === 'codex' ? 'Codex' : h === 'claude' ? 'Claude' : h;
+	return HARNESS_LABEL.get(h) ?? (h ? h.charAt(0).toUpperCase() + h.slice(1) : h);
 }
 
 export function harnessVar(h: string): string {
-	return h === 'claude' ? 'var(--harness-claude)' : 'var(--harness-codex)';
+	return HARNESS_LABEL.has(h) ? `var(--harness-${h})` : 'var(--text-muted)';
+}
+
+/** Known harnesses first in registry order, then anything else alphabetically. */
+export function sortHarnesses(hs: Iterable<string>): string[] {
+	return [...new Set(hs)].sort((a, b) => (HARNESS_ORDER.get(a) ?? 99) - (HARNESS_ORDER.get(b) ?? 99) || a.localeCompare(b));
+}
+
+/** The upstream a row went to. Rows from before the provider segment existed imply it from the harness. */
+export function providerOf(r: Row): string {
+	return r.provider ?? (r.harness === 'codex' ? 'chatgpt' : 'anthropic');
 }
 
 export function seriesFor(buckets: number[], grouped: Map<number, Row[]>, reduce: (rows: Row[]) => number): number[] {

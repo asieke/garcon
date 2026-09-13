@@ -1,8 +1,11 @@
-// Garcon: a local pass-through proxy for Claude Code and Codex that records usage.
+// Garcon: a local pass-through proxy for coding agents that records usage.
 //
-// Point a harness at http://127.0.0.1:4141/<harness>/<account>/ and every request
-// is forwarded verbatim to the provider. Completion calls are recorded with the
-// model and tokens the provider reports. The dashboard is served at /.
+// Point a harness at http://127.0.0.1:4141/<harness>/<account>/<provider>/ and
+// every request is forwarded verbatim to that provider. Claude Code and Codex
+// each talk to exactly one provider, so their URLs omit the provider segment:
+// /claude/<account>/ goes to Anthropic and /codex/<account>/ to chatgpt.com.
+// Completion calls are recorded with the model and tokens the provider reports.
+// The dashboard is served at /.
 package main
 
 import (
@@ -28,18 +31,57 @@ import (
 //go:embed all:web/build
 var web embed.FS
 
-var upstream = map[string]*url.URL{
-	"claude": {Scheme: "https", Host: "api.anthropic.com"},
-	"codex":  {Scheme: "https", Host: "chatgpt.com"},
+var providers = map[string]*url.URL{
+	"anthropic":  {Scheme: "https", Host: "api.anthropic.com"},
+	"openai":     {Scheme: "https", Host: "api.openai.com"},
+	"openrouter": {Scheme: "https", Host: "openrouter.ai"},
+	"chatgpt":    {Scheme: "https", Host: "chatgpt.com"},
+}
+
+// Harnesses whose URLs predate the provider segment and imply it.
+var implicitProvider = map[string]string{"claude": "anthropic", "codex": "chatgpt"}
+
+type route struct {
+	harness, account, provider, rest string
+	target                           *url.URL
+}
+
+// parseRoute splits /<harness>/<account>/[<provider>/]<rest>. Anything that does not
+// resolve to a known provider is not a proxy request (it is a dashboard asset).
+func parseRoute(path string) (route, bool) {
+	harness, rest, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+	account, rest, _ := strings.Cut(rest, "/")
+	if harness == "" || account == "" {
+		return route{}, false
+	}
+	provider, ok := implicitProvider[harness]
+	if !ok {
+		provider, rest, _ = strings.Cut(rest, "/")
+	}
+	target := providers[provider]
+	if target == nil {
+		return route{}, false
+	}
+	return route{harness: harness, account: account, provider: provider, rest: rest, target: target}, true
+}
+
+// isCompletion reports whether an upstream path is a model call worth recording:
+// Anthropic Messages, OpenAI Responses (also Codex's chatgpt.com backend) or
+// OpenAI-compatible chat completions (OpenAI, OpenRouter, Hermes, OpenClaw).
+func isCompletion(rest string) bool {
+	return strings.HasSuffix(rest, "/messages") || strings.HasSuffix(rest, "/responses") || strings.HasSuffix(rest, "/chat/completions")
 }
 
 type record struct {
-	Time       int64  `json:"time"` // unix milliseconds
-	Harness    string `json:"harness"`
-	Account    string `json:"account"`
-	Model      string `json:"model"`
-	Status     int    `json:"status"`
-	Ms         int64  `json:"ms"`
+	Time    int64  `json:"time"` // unix milliseconds
+	Harness string `json:"harness"`
+	Account string `json:"account"`
+	// Provider is omitted on rows recorded before harnesses other than Claude Code
+	// and Codex were supported; those imply anthropic and chatgpt respectively.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model"`
+	Status   int    `json:"status"`
+	Ms       int64  `json:"ms"`
 
 	// The fields below isolate every part of Ms that garcon itself controls,
 	// via net/http/httptrace, so total latency (almost entirely the provider
@@ -75,7 +117,9 @@ type record struct {
 	Output     int64 `json:"output"`
 }
 
-// usage matches both the Anthropic and OpenAI usage objects.
+// usage matches the Anthropic Messages, OpenAI Responses and OpenAI chat
+// completions usage objects (OpenRouter and other compatible servers use the
+// chat completions shape).
 type usage struct {
 	Input      int64 `json:"input_tokens"`
 	Output     int64 `json:"output_tokens"`
@@ -84,6 +128,13 @@ type usage struct {
 	Details    struct {
 		Cached int64 `json:"cached_tokens"`
 	} `json:"input_tokens_details"`
+	// Chat completions naming. Reasoning tokens are billed as, and included in,
+	// completion_tokens, so no separate field is needed.
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	PromptDetails    struct {
+		Cached int64 `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
 }
 
 // event is one response body or SSE data line. Model and usage sit at the top
@@ -113,9 +164,9 @@ func fold(body []byte, rec *record) {
 				rec.Model = e.Model
 			}
 			if u := e.Usage; u != nil {
-				rec.Input = max(rec.Input, u.Input-u.Details.Cached)
-				rec.Output = max(rec.Output, u.Output)
-				rec.CacheRead = max(rec.CacheRead, u.CacheRead, u.Details.Cached)
+				rec.Input = max(rec.Input, u.Input-u.Details.Cached, u.PromptTokens-u.PromptDetails.Cached)
+				rec.Output = max(rec.Output, u.Output, u.CompletionTokens)
+				rec.CacheRead = max(rec.CacheRead, u.CacheRead, u.Details.Cached, u.PromptDetails.Cached)
 				rec.CacheWrite = max(rec.CacheWrite, u.CacheWrite)
 			}
 		}
@@ -172,15 +223,9 @@ func load(path string) {
 	}
 }
 
-func proxy(w http.ResponseWriter, r *http.Request) {
-	harness, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	account, rest, _ := strings.Cut(rest, "/")
-	target := upstream[harness]
-	if target == nil || account == "" {
-		http.NotFound(w, r)
-		return
-	}
-	completion := strings.HasSuffix(rest, "/messages") || strings.HasSuffix(rest, "/responses")
+func proxy(w http.ResponseWriter, r *http.Request, rt route) {
+	target, rest := rt.target, rt.rest
+	completion := isCompletion(rest)
 	start := time.Now()
 
 	var tGetConn, tGotConn, tDNSStart, tDNSDone, tTCPStart, tTCPDone, tTLSStart, tTLSDone, tFirstByte time.Time
@@ -209,7 +254,7 @@ func proxy(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 			res.Body = &tap{ReadCloser: res.Body, done: func(b []byte) {
-				rec := record{Time: start.UnixMilli(), Harness: harness, Account: account,
+				rec := record{Time: start.UnixMilli(), Harness: rt.harness, Account: rt.account, Provider: rt.provider,
 					Status: res.StatusCode, Ms: time.Since(start).Milliseconds()}
 				if !tGetConn.IsZero() {
 					us := tGetConn.Sub(start).Microseconds()
@@ -251,15 +296,20 @@ func main() {
 	load(*data)
 
 	site, _ := fs.Sub(web, "web/build")
-	http.Handle("/", http.FileServerFS(site))
+	static := http.FileServerFS(site)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if rt, ok := parseRoute(r.URL.Path); ok {
+			proxy(w, r, rt)
+			return
+		}
+		static.ServeHTTP(w, r)
+	})
 	http.HandleFunc("/api/usage", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		mu.Lock()
 		defer mu.Unlock()
 		json.NewEncoder(w).Encode(records)
 	})
-	http.HandleFunc("/claude/", proxy)
-	http.HandleFunc("/codex/", proxy)
 	log.Printf("garcon listening on http://%s, logging to %s", *listen, *data)
 	log.Fatal(http.ListenAndServe(*listen, nil))
 }

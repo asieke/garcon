@@ -23,6 +23,8 @@
 
 	--harness-claude: var(--series-2);
 	--harness-codex: var(--series-1);
+	--harness-openclaw: var(--series-7);
+	--harness-hermes: var(--series-6);
 
 	/* Sequential ramp (one hue, blue), low → high. Heat-cells near zero recede toward the surface. */
 	--seq-1: #cde2fb;

@@ -69,8 +69,14 @@ export const PRICE_FIELDS: { key: keyof Price; label: string }[] = [
 	{ key: 'output', label: 'Output' }
 ];
 
+/** OpenRouter reports ids as "anthropic/claude-sonnet-5"; the rules match the bare id. */
+function bareModel(model: string): string {
+	return model.replace(/^[a-z0-9_.-]+\//i, '');
+}
+
 export function listRuleFor(model: string): PriceRule | null {
-	return PRICE_RULES.find((r) => r.match.test(model)) ?? null;
+	const bare = bareModel(model);
+	return PRICE_RULES.find((r) => r.match.test(model) || r.match.test(bare)) ?? null;
 }
 
 export type Resolved = { price: Price; source: 'override' | 'list'; rule: PriceRule | null } | { price: null; source: 'none'; rule: null };

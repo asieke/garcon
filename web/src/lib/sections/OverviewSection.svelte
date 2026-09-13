@@ -9,8 +9,7 @@
 		prevTotals,
 		buckets,
 		granularity,
-		claudeSeries,
-		codexSeries,
+		harnessSeries,
 		errorCounts,
 		tokensTrend,
 		latencyTrend
@@ -19,14 +18,13 @@
 		prevTotals: Totals | null;
 		buckets: number[];
 		granularity: Granularity;
-		claudeSeries: number[];
-		codexSeries: number[];
+		harnessSeries: { key: string; label: string; color: string; values: number[] }[];
 		errorCounts: number[];
 		tokensTrend: number[];
 		latencyTrend: number[];
 	} = $props();
 
-	const requestsTrend = $derived(buckets.map((_, i) => (claudeSeries[i] ?? 0) + (codexSeries[i] ?? 0)));
+	const requestsTrend = $derived(buckets.map((_, i) => harnessSeries.reduce((s, h) => s + (h.values[i] ?? 0), 0)));
 
 	const reqDelta = $derived(prevTotals ? deltaPct(totals.n, prevTotals.n) : null);
 	const tokDelta = $derived(prevTotals ? deltaPct(tokensOf(totals), tokensOf(prevTotals)) : null);
@@ -69,10 +67,7 @@
 	mode="stacked-area"
 	formatValue={n}
 	{errorCounts}
-	series={[
-		{ key: 'codex', label: 'Codex', color: 'var(--harness-codex)', values: codexSeries },
-		{ key: 'claude', label: 'Claude', color: 'var(--harness-claude)', values: claudeSeries }
-	]}
+	series={harnessSeries}
 />
 <p class="caption">Red dots mark buckets that had at least one error — hover for the count.</p>
 
