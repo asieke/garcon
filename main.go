@@ -14,6 +14,7 @@ import (
 	"embed"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -30,6 +31,9 @@ import (
 
 //go:embed all:web/build
 var web embed.FS
+
+// version is stamped at build time: go build -ldflags "-X main.version=1.2.3".
+var version = "dev"
 
 var providers = map[string]*url.URL{
 	"anthropic":  {Scheme: "https", Host: "api.anthropic.com"},
@@ -319,6 +323,14 @@ func proxy(w http.ResponseWriter, r *http.Request, rt route) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "service" {
+		serviceMain(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "-version" || os.Args[1] == "--version") {
+		fmt.Println("garcon", version)
+		return
+	}
 	listen := flag.String("listen", "127.0.0.1:4141", "address to listen on")
 	data := flag.String("data", filepath.Join(os.Getenv("HOME"), ".local/share/garcon/usage.jsonl"), "usage log")
 	settingsFile := flag.String("config", filepath.Join(os.Getenv("HOME"), ".config/garcon/config.json"), "settings file")

@@ -1,0 +1,18 @@
+{
+  "name": "ai-garcon",
+  "version": "0.0.0",
+  "description": "Observability for coding agents: a local pass-through proxy that records what Claude Code, Codex and other agents spend in tokens, with a dashboard and optional cross-device sync.",
+  "keywords": ["claude-code", "codex", "llm", "proxy", "usage", "tokens", "observability"],
+  "repository": "github:asieke/garcon",
+  "homepage": "https://asieke.github.io/garcon/",
+  "bin": { "garcon": "bin/garcon.js" },
+  "files": ["bin"],
+  "scripts": { "postinstall": "node bin/postinstall.js" },
+  "engines": { "node": ">=18" },
+  "optionalDependencies": {
+    "ai-garcon-linux-x64": "0.0.0",
+    "ai-garcon-linux-arm64": "0.0.0",
+    "ai-garcon-darwin-x64": "0.0.0",
+    "ai-garcon-darwin-arm64": "0.0.0"
+  }
+}

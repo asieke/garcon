@@ -1,0 +1,10 @@
+{
+  "name": "ai-garcon-darwin-x64",
+  "version": "0.0.0",
+  "description": "Garcon binary for darwin x64. Install ai-garcon instead.",
+  "repository": "github:asieke/garcon",
+  "homepage": "https://asieke.github.io/garcon/",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/garcon"]
+}

@@ -1,9 +1,0 @@
-[Unit]
-Description=Garcon local LLM usage proxy
-
-[Service]
-ExecStart=%h/.local/bin/garcon
-Restart=always
-
-[Install]
-WantedBy=default.target

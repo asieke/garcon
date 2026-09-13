@@ -1,0 +1,10 @@
+{
+  "name": "ai-garcon-linux-arm64",
+  "version": "0.0.0",
+  "description": "Garcon binary for linux arm64. Install ai-garcon instead.",
+  "repository": "github:asieke/garcon",
+  "homepage": "https://asieke.github.io/garcon/",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "files": ["bin/garcon"]
+}
