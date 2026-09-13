@@ -31,10 +31,9 @@ Go 1.27+ and Node 22+ (`mise install` provides both). macOS and Linux.
 ```sh
 ./install.sh            # build, install ~/.local/bin/garcon
 ./install.sh --service  # also run now and at every login (systemd user unit / LaunchAgent)
+./install.sh --update   # pull the latest main, rebuild, restart
 ./install.sh --uninstall
-```
-
-Rerun after pulling; it restarts the service. Flags: `-listen 127.0.0.1:4141`,
+``` Flags: `-listen 127.0.0.1:4141`,
 `-data ~/.local/share/garcon/usage.jsonl`, `-config ~/.config/garcon/config.json`.
 
 ## Connect a harness
@@ -88,4 +87,4 @@ cursors in `~/.local/share/garcon/sync.json`. Details: [docs](https://asieke.git
 ## Development
 
 `go test ./...`; `cd web && npm run check && npm run dev` (proxies `/api` to a running garcon).
-Agent skills in `.claude/skills/`: `install-garcon`, `add-provider`, `connect-supabase`.
+Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `connect-supabase`.

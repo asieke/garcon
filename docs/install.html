@@ -38,8 +38,9 @@
 			<p>Needs Go 1.27+ and Node 22+ (<code>mise install</code> in the repository provides both). Works on macOS and Linux.</p>
 			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/asieke/garcon &amp;&amp; cd garcon
 ./install.sh            # build dashboard + binary, install ~/.local/bin/garcon
-./install.sh --service  # also run it now and at every login</code></pre></div>
-			<p><code>--service</code> creates a systemd user unit <code>garcon</code> on Linux (<code>systemctl --user status garcon</code>, <code>journalctl --user -u garcon</code>) or a LaunchAgent <code>dev.garcon</code> on macOS (log in <code>~/Library/Logs/garcon.log</code>). Rerun <code>./install.sh</code> after pulling changes; it restarts a running service. <code>./install.sh --uninstall</code> removes the service, the binary and the settings file but keeps the usage log.</p>
+./install.sh --service  # also run it now and at every login
+./install.sh --update   # later: pull the latest main, rebuild, restart</code></pre></div>
+			<p><code>--service</code> creates a systemd user unit <code>garcon</code> on Linux (<code>systemctl --user status garcon</code>, <code>journalctl --user -u garcon</code>) or a LaunchAgent <code>dev.garcon</code> on macOS (log in <code>~/Library/Logs/garcon.log</code>). <code>./install.sh --update</code> fast-forwards <code>main</code>, rebuilds and restarts a running service (it refuses to run over uncommitted changes). <code>./install.sh --uninstall</code> removes the service, the binary and the settings file but keeps the usage log.</p>
 			<p>By hand: <code>garcon [-listen 127.0.0.1:4141] [-data ~/.local/share/garcon/usage.jsonl] [-config ~/.config/garcon/config.json]</code>.</p>
 		</section>
 

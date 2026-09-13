@@ -3,6 +3,7 @@
 #   ./install.sh              build + install; restarts the service if one is running
 #   ./install.sh --service    also run it in the background now and at every login
 #                             (systemd user unit on Linux, LaunchAgent on macOS)
+#   ./install.sh --update     pull the latest main, then build + install + restart
 #   ./install.sh --uninstall  stop and remove the service, the binary and the settings file
 #                             (which holds the Supabase key, if sync was set up)
 set -euo pipefail
@@ -16,8 +17,8 @@ PLIST="$HOME/Library/LaunchAgents/dev.garcon.plist"
 MODE="${1:-}"
 
 case "$MODE" in
-	""|--service|--uninstall) ;;
-	*) sed -n '2,6p' "$0"; exit 2 ;;
+	""|--service|--update|--uninstall) ;;
+	*) sed -n '2,8p' "$0"; exit 2 ;;
 esac
 
 if [ "$MODE" = --uninstall ]; then
@@ -31,6 +32,26 @@ if [ "$MODE" = --uninstall ]; then
 	rm -f "$BIN" "$HOME/.config/garcon/config.json"
 	echo "garcon removed, with ~/.config/garcon/config.json (usage log and sync state kept in ~/.local/share/garcon)"
 	exit 0
+fi
+
+if [ "$MODE" = --update ]; then
+	command -v git >/dev/null || { echo "need git" >&2; exit 1; }
+	git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git checkout; clone github.com/asieke/garcon and run from there" >&2; exit 1; }
+	if [ -n "$(git status --porcelain)" ]; then
+		echo "uncommitted changes in $(pwd); commit or stash them before updating" >&2; exit 1
+	fi
+	branch="$(git rev-parse --abbrev-ref HEAD)"
+	[ "$branch" = main ] || { echo "switching from $branch to main"; git checkout -q main; }
+	before="$(git rev-parse --short HEAD)"
+	git pull -q --ff-only origin main
+	after="$(git rev-parse --short HEAD)"
+	if [ "$before" = "$after" ]; then
+		echo "already up to date at $after; rebuilding anyway"
+	else
+		echo "updated $before -> $after:"
+		git --no-pager log --oneline "$before..$after" | sed 's/^/  /'
+	fi
+	exec "$0" # the freshly pulled script does the build, in case its steps changed
 fi
 
 for tool in go npm; do

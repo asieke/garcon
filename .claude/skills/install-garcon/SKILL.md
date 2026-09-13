@@ -14,7 +14,8 @@ what the proxy does and how harnesses are pointed at it.
 2. **Build and install**: `./install.sh` builds the dashboard and the binary and installs
    `~/.local/bin/garcon`. Add `--service` to also run it now and at every login:
    a systemd user unit named `garcon` on Linux, a LaunchAgent `dev.garcon` on macOS.
-   The same command is the upgrade path; it restarts a running service.
+   To upgrade later, `./install.sh --update` pulls the latest `main` first (the
+   `update-garcon` skill).
 3. **Verify**: `curl -s http://127.0.0.1:4141/api/usage` returns a JSON array and
    http://127.0.0.1:4141 shows the dashboard. Linux: `systemctl --user status garcon`.
    macOS: `launchctl print gui/$(id -u)/dev.garcon`; log in `~/Library/Logs/garcon.log`.
