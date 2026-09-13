@@ -56,6 +56,7 @@
 	});
 	let harnessFilter = $state('all');
 	let accountFilter = $state('all');
+	let deviceFilter = $state('all');
 	let now = $state(Date.now());
 	let lastSync = $state<number | null>(null);
 	let stale = $state(false);
@@ -80,6 +81,8 @@
 
 	const accountsAll = $derived([...new Set(rows.map((r) => r.account))].sort());
 	const harnessesAll = $derived(sortHarnesses(rows.map((r) => r.harness)));
+	// Only meaningful once sync has pulled another machine's rows in; the filter stays hidden until then.
+	const devicesAll = $derived([...new Set(rows.map((r) => r.device ?? ''))].filter(Boolean).sort());
 	const slots = $derived(accountSlots(accountsAll));
 	function colorForAccount(a: string): string {
 		const slot = slots.get(a);
@@ -90,6 +93,7 @@
 		rows.filter((r) => {
 			if (harnessFilter !== 'all' && r.harness !== harnessFilter) return false;
 			if (accountFilter !== 'all' && r.account !== accountFilter) return false;
+			if (deviceFilter !== 'all' && r.device !== deviceFilter) return false;
 			return true;
 		})
 	);
@@ -262,7 +266,8 @@
 					</div></div>
 					<label><span id="harness-label">Harness</span><select aria-labelledby="harness-label" bind:value={harnessFilter}><option value="all">All harnesses</option>{#each harnessesAll as h}<option value={h}>{harnessLabel(h)}</option>{/each}</select></label>
 					<label><span id="account-label">Account</span><select aria-labelledby="account-label" bind:value={accountFilter}><option value="all">All accounts</option>{#each accountsAll as a}<option value={a}>{a}</option>{/each}</select></label>
-					{#if days !== 7 || harnessFilter !== 'all' || accountFilter !== 'all'}<button class="reset" onclick={() => { days = 7; harnessFilter = 'all'; accountFilter = 'all'; }}>Reset filters</button>{/if}
+					{#if devicesAll.length > 1}<label><span id="device-label">Device</span><select aria-labelledby="device-label" bind:value={deviceFilter}><option value="all">All devices</option>{#each devicesAll as d}<option value={d}>{d}</option>{/each}</select></label>{/if}
+					{#if days !== 7 || harnessFilter !== 'all' || accountFilter !== 'all' || deviceFilter !== 'all'}<button class="reset" onclick={() => { days = 7; harnessFilter = 'all'; accountFilter = 'all'; deviceFilter = 'all'; }}>Reset filters</button>{/if}
 				</div>
 			{/if}
 			{#if stale}<p class="notice" role="status">Unable to refresh usage. {lastSync ? 'Showing the last available data.' : 'Usage data is unavailable.'} Retrying every 10 seconds.</p>{/if}
@@ -274,7 +279,7 @@
 {:else if !lastSync}
 	<p class="empty-state">Waiting for the local instance to reconnect.</p>
 {:else if !visible.length}
-	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Your usage story starts here'}</h2><p>{rows.length ? 'Try a wider time range or choose another harness or account.' : 'Connect a coding agent to Garcon to start exploring requests, tokens, and performance.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = 'all'; accountFilter = 'all'; }}>Show all usage</button>{:else}<a href="?view=settings">Set up a connection →</a>{/if}</div>
+	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Your usage story starts here'}</h2><p>{rows.length ? 'Try a wider time range or choose another harness or account.' : 'Connect a coding agent to Garcon to start exploring requests, tokens, and performance.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = 'all'; accountFilter = 'all'; deviceFilter = 'all'; }}>Show all usage</button>{:else}<a href="?view=settings">Set up a connection →</a>{/if}</div>
 {:else}
 	{#if tab === 'overview'}
 		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />

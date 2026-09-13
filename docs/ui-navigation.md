@@ -30,7 +30,9 @@ The content hierarchy is page title and purpose, shared filters, then metrics an
 charts. Existing analytics retain their calculations and chart colors. Shared
 surface, text, focus, and navigation tokens provide light and dark skins without
 external fonts or UI dependencies. Harnesses and accounts use labeled selects so
-new values cannot expand the toolbar indefinitely.
+new values cannot expand the toolbar indefinitely. A Device select joins them only
+once sync has pulled in rows from a second machine; a single-device install never
+shows it.
 
 At widths of 760px and below, a disclosure menu replaces the persistent sidebar.
 It stays in document flow, closes on navigation or Escape, and supports normal

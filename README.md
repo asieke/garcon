@@ -1,8 +1,9 @@
 # Garcon
 
 A local pass-through proxy for coding agents (Claude Code, Codex, OpenClaw,
-Hermes) that records usage per account. One Go file with no dependencies, plus a
-SvelteKit dashboard embedded in the binary.
+Hermes) that records usage per account. Two Go files with no dependencies, plus a
+SvelteKit dashboard embedded in the binary. Optionally syncs across your machines
+through a Supabase project you own (see [Sync across devices](#sync-across-devices)).
 
 Each agent is pointed at `http://127.0.0.1:4141/<harness>/<account>/<provider>/`,
 where `<harness>` names the tool, `<account>` is the login it uses (an email), and
@@ -39,10 +40,11 @@ The sidebar becomes a menu on phones. Views can be bookmarked (for example,
 - **Logs**: sortable, filterable request table with per-request detail and CSV export.
 - **Settings**: how this instance is wired (listen address, usage log, providers and their
   upstreams, every harness and account seen), a snippet builder that produces the exact
-  configuration for pointing any harness at any provider, and browser-side state such as
-  custom prices. Backed by `GET /api/config`.
+  configuration for pointing any harness at any provider, the cross-device sync switch and
+  its status, and browser-side state such as custom prices. Backed by `GET /api/config` and
+  `GET`/`PUT /api/settings`.
 
-Raw data: http://127.0.0.1:4141/api/usage.
+Raw data: http://127.0.0.1:4141/api/usage (this device's rows, then any pulled in by sync).
 
 ## Install
 
@@ -61,7 +63,8 @@ Rerun `./install.sh` after pulling changes; it restarts a running service.
 `./install.sh --uninstall` removes the service and binary but keeps the usage log.
 An agent can do all of this from the `install-garcon` skill in `.claude/skills/`.
 
-To run it by hand instead: `garcon [-listen 127.0.0.1:4141] [-data ~/.local/share/garcon/usage.jsonl]`.
+To run it by hand instead: `garcon [-listen 127.0.0.1:4141] [-data ~/.local/share/garcon/usage.jsonl]
+[-config ~/.config/garcon/config.json]`.
 
 ## Pointing a harness at it
 
@@ -139,6 +142,49 @@ that name, and the dashboard lists it alongside the known ones. OpenAI-compatibl
 clients only get token counts when they request usage in streamed replies
 (`stream_options: {"include_usage": true}`); a client that does not is recorded
 with zero tokens.
+
+## Sync across devices
+
+Off by default. Garcon makes no network calls of its own until **Enable Supabase sync** is
+switched on in Settings; recording never depends on it, and the local log stays this
+machine's source of truth. When it is on, every completion call is upserted into one table
+in a Supabase project you own, and the other machines' rows are pulled into a local cache
+(`~/.local/share/garcon/remote.jsonl`), so each dashboard shows the union with a Device
+filter and sessions kept apart per machine.
+
+**First machine**, with the [Supabase CLI](https://supabase.com/docs/guides/cli) logged in
+(`supabase login`):
+
+```sh
+./connect-supabase.sh --name "work laptop"
+```
+
+That creates a free-tier project called `garcon` (pass `--project-ref` to reuse one you
+have, `--org-id` if you belong to several organisations, `--region` to pick one), applies
+[`supabase/garcon_usage.sql`](supabase/garcon_usage.sql), fetches the project's secret key
+and hands it to the proxy through `PUT /api/settings`, so the key is never printed.
+
+**Every other machine**: Settings → Sync, give it a distinct device name, paste the project
+URL (`https://<ref>.supabase.co`) and the **secret** key (Project Settings → API Keys,
+`sb_secret_…`), switch sync on, Save. Or rerun the script with `--project-ref`. Save probes
+the table with the exact credentials first and refuses to store a configuration that does
+not work; a missing column after an upgrade shows up here, and rerunning the SQL file (it is
+idempotent) fixes it. The `connect-supabase` skill in `.claude/skills/` walks an agent
+through all of this.
+
+How it works: the table has row level security enabled with no policies, so only the secret
+key, which bypasses RLS, can read or write it; the publishable key sees nothing. Each row's
+id is a hash of a random per-machine device id and the row's fields, so history backfills
+with stable ids and re-sending is a harmless upsert. Pushes go in batches of 500 with
+backoff; pulls run every minute, ordered by the server-side `synced_at`, with a five-minute
+overlap deduplicated by id. What leaves the machine, per call: device name, time, harness,
+account, provider, model, status, latency and token counts. Never prompts, replies or keys.
+
+Files: the switch, device name, URL and key in `~/.config/garcon/config.json` (owner-only;
+`./install.sh --uninstall` removes it); the device id and push/pull cursors in
+`~/.local/share/garcon/sync.json`, which is why recreating the config never turns this
+machine into a "new" device. Renaming a device is free: the name is a label, the id is
+what identifies the machine.
 
 ## Dashboard development
 

@@ -3,7 +3,8 @@
 #   ./install.sh              build + install; restarts the service if one is running
 #   ./install.sh --service    also run it in the background now and at every login
 #                             (systemd user unit on Linux, LaunchAgent on macOS)
-#   ./install.sh --uninstall  stop and remove the service and the binary
+#   ./install.sh --uninstall  stop and remove the service, the binary and the settings file
+#                             (which holds the Supabase key, if sync was set up)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -27,8 +28,8 @@ if [ "$MODE" = --uninstall ]; then
 		launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
 		rm -f "$PLIST"
 	fi
-	rm -f "$BIN"
-	echo "garcon removed (usage log kept at ~/.local/share/garcon/usage.jsonl)"
+	rm -f "$BIN" "$HOME/.config/garcon/config.json"
+	echo "garcon removed, with ~/.config/garcon/config.json (usage log and sync state kept in ~/.local/share/garcon)"
 	exit 0
 fi
 
