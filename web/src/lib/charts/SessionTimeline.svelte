@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { thinTicks, harnessLabel, harnessVar, shortModel } from '../usage';
+	import { thinTicks, harnessLabel, harnessVar, shortModel, sortHarnesses } from '../usage';
 	import { dayLabel, hourLabel, timeLabel, when, duration, n } from '../format';
 	import type { Session } from '../sessions';
 
@@ -59,6 +59,7 @@
 	const span = $derived(Math.max(1, to - from));
 
 	const accounts = $derived([...new Set(sessions.map((s) => s.account))].sort());
+	const harnesses = $derived(sortHarnesses(sessions.map((s) => s.harness)));
 	const lanes = $derived.by(() => {
 		if (accounts.length <= MAX_LANES) return accounts;
 		return [...accounts.slice(0, MAX_LANES - 1), 'Other accounts'];
@@ -97,8 +98,9 @@
 
 <div class="timeline" bind:clientWidth={containerWidth}>
 	<div class="legend">
-		<span class="key"><i style="background: var(--harness-claude)"></i>Claude</span>
-		<span class="key"><i style="background: var(--harness-codex)"></i>Codex</span>
+		{#each harnesses as h (h)}
+			<span class="key"><i style="background: {harnessVar(h)}"></i>{harnessLabel(h)}</span>
+		{/each}
 		<span class="key"><i class="live"></i>Live</span>
 	</div>
 	{#if containerWidth > 0 && sessions.length > 0}

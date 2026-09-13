@@ -1,9 +1,10 @@
-import { contextOf, genSpeed, type Row } from './usage';
+import { contextOf, genSpeed, providerOf, type Row } from './usage';
 
 const COLUMNS = [
 	'time',
 	'harness',
 	'account',
+	'provider',
 	'model',
 	'status',
 	'ms',
@@ -38,6 +39,7 @@ export function toCsv(rows: Row[]): string {
 				new Date(r.time).toISOString(),
 				r.harness,
 				r.account,
+				providerOf(r),
 				r.model,
 				r.status,
 				r.ms,

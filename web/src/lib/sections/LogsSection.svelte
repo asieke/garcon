@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { n, when, fullTimestamp, ms as msFmt, us as usFmt, tps, pct } from '../format';
-	import { harnessLabel, harnessVar, shortModel, contextOf, genSpeed, type Row } from '../usage';
+	import { harnessLabel, harnessVar, shortModel, contextOf, genSpeed, providerOf, type Row } from '../usage';
 	import { toCsv, download } from '../csv';
 
 	let { rows }: { rows: Row[] } = $props();
@@ -149,6 +149,7 @@
 							<div class="kv">
 								<div><small>Timestamp</small><b>{fullTimestamp(r.time)}</b></div>
 								<div><small>Model</small><b>{r.model || '—'}</b></div>
+								<div><small>Provider</small><b>{providerOf(r)}</b></div>
 								<div><small>Status</small><b>{r.status}</b></div>
 								<div><small>Context</small><b>{n(contextOf(r))}</b><span class="sub">{n(r.input)} input, {n(r.cache_read)} cache read, {n(r.cache_write)} cache write</span></div>
 								<div><small>Output</small><b>{n(r.output)}</b></div>

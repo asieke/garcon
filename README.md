@@ -1,16 +1,19 @@
 # Garcon
 
-A local pass-through proxy for Claude Code and Codex that records usage. One Go
-file with no dependencies, plus a SvelteKit dashboard embedded in the binary.
+A local pass-through proxy for coding agents (Claude Code, Codex, OpenClaw,
+Hermes) that records usage per account. One Go file with no dependencies, plus a
+SvelteKit dashboard embedded in the binary.
 
-Each of the six coding-agent profiles is pointed at
-`http://127.0.0.1:4141/<harness>/<account>/`, where `<harness>` is `claude` or
-`codex` and `<account>` is the profile's email. The proxy forwards the request
-unchanged to `api.anthropic.com` or `chatgpt.com` and streams the reply back.
-Completion calls (`/v1/messages`, `/codex/responses`) are appended to
-`~/.local/share/garcon/usage.jsonl` with the model and token counts the provider
-reported: uncached input, cache read, cache write and output. No limits, no
-retries, nothing rewritten.
+Each agent is pointed at `http://127.0.0.1:4141/<harness>/<account>/<provider>/`,
+where `<harness>` names the tool, `<account>` is the login it uses (an email), and
+`<provider>` is the upstream: `anthropic`, `openai`, `openrouter` or `chatgpt`.
+Claude Code and Codex talk to one provider each, so their URLs omit the segment:
+`/claude/<account>/` goes to `api.anthropic.com` and `/codex/<account>/` to
+`chatgpt.com`. The proxy forwards every request unchanged and streams the reply
+back. Completion calls (`…/messages`, `…/responses`, `…/chat/completions`) are
+appended to `~/.local/share/garcon/usage.jsonl` with the model and token counts
+the provider reported: uncached input, cache read, cache write and output. No
+limits, no retries, nothing rewritten.
 
 Dashboard: http://127.0.0.1:4141, scoped by a shared time-range/harness/account filter bar:
 
@@ -71,6 +74,60 @@ overrides under a ChatGPT login; a custom provider also uses plain HTTP instead 
 the websocket transport, which is what lets the proxy read the usage. Only Codex's
 model calls are routed; its plugin, app and usage-limit traffic goes to chatgpt.com
 directly (those endpoints rely on cookies that do not survive a plain-HTTP proxy).
+
+### OpenClaw
+
+OpenClaw's built-in providers accept a `baseUrl` override in `~/.openclaw/openclaw.json`
+(or an agent's `models.json`). Each adapter appends its own path (`/v1/messages`,
+`/v1/responses`, `/v1/chat/completions`), so the base URL ends at the provider segment:
+
+```json5
+{
+  models: {
+    mode: "merge",
+    providers: {
+      anthropic:  { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/anthropic" },
+      openai:     { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/openai/v1" },
+      openrouter: { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/openrouter/api/v1" },
+    },
+  },
+}
+```
+
+Keys stay in OpenClaw's own config or environment; the proxy forwards the
+`Authorization` and `x-api-key` headers untouched. The `openai-codex` (ChatGPT OAuth)
+provider talks to `chatgpt.com/backend-api`, so its base URL is
+`http://127.0.0.1:4141/openclaw/me@example.com/chatgpt/backend-api`.
+
+### Hermes
+
+Hermes uses OpenAI-compatible chat completions by default (OpenRouter, or any
+`base_url` ending in `/v1`) and native Anthropic Messages for `api_mode:
+anthropic_messages`. It appends `/chat/completions` or `/v1/messages` itself and asks
+for `stream_options.include_usage`, which is what lets the proxy see token counts.
+In `~/.hermes/config.yaml`:
+
+```yaml
+providers:
+  openrouter:
+    base_url: http://127.0.0.1:4141/hermes/me@example.com/openrouter/api/v1
+  anthropic:
+    base_url: http://127.0.0.1:4141/hermes/me@example.com/anthropic
+  openai:
+    base_url: http://127.0.0.1:4141/hermes/me@example.com/openai/v1
+```
+
+or, for a one-off, `OPENAI_BASE_URL=http://127.0.0.1:4141/hermes/me@example.com/openai/v1`.
+OpenRouter reports models as `anthropic/claude-sonnet-5`; the Cost tab prices those by
+the bare id.
+
+### Anything else
+
+Any harness name works: `/<name>/<account>/<provider>/…` records rows tagged with
+that name, and the dashboard lists it alongside the known ones. OpenAI-compatible
+clients only get token counts when they request usage in streamed replies
+(`stream_options: {"include_usage": true}`); a client that does not is recorded
+with zero tokens.
 
 ## Dashboard development
 

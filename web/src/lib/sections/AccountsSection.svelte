@@ -2,7 +2,7 @@
 	import RankedBarChart from '../charts/RankedBarChart.svelte';
 	import Sparkline from '../charts/Sparkline.svelte';
 	import { n, pct } from '../format';
-	import { tokensOf, avgMs, errorRate, harnessLabel, type Totals } from '../usage';
+	import { tokensOf, avgMs, errorRate, harnessLabel, harnessVar, type Totals } from '../usage';
 
 	let {
 		accountGroups
@@ -27,7 +27,7 @@
 			<div class="head">
 				<span class="name" title={g.account}>{g.account}</span>
 				<span class="badges">
-					{#each g.harnesses as h}<span class="badge" style="color: {h === 'claude' ? 'var(--harness-claude)' : 'var(--harness-codex)'}">{harnessLabel(h)}</span>{/each}
+					{#each g.harnesses as h}<span class="badge"><i style="background: {harnessVar(h)}"></i>{harnessLabel(h)}</span>{/each}
 				</span>
 			</div>
 			<div class="row">
@@ -88,6 +88,16 @@
 		font-size: 10px;
 		font-weight: 600;
 		letter-spacing: 0.03em;
+		color: var(--text-secondary);
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.badge i {
+		width: 7px;
+		height: 7px;
+		border-radius: 2px;
+		display: inline-block;
 	}
 	.row {
 		display: grid;

@@ -3,7 +3,7 @@
 	import TimeSeriesChart from '../charts/TimeSeriesChart.svelte';
 	import CompositionBar from '../charts/CompositionBar.svelte';
 	import { ms as msFmt, us as usFmt, pct, n } from '../format';
-	import { harnessLabel, type Granularity } from '../usage';
+	import { harnessLabel, harnessVar, type Granularity } from '../usage';
 
 	type HarnessRow = {
 		harness: string;
@@ -137,7 +137,7 @@
 			<tbody>
 				{#each byHarness as row (row.harness)}
 					<tr>
-						<td style="color: {row.harness === 'claude' ? 'var(--harness-claude)' : 'var(--harness-codex)'}">{harnessLabel(row.harness)}</td>
+						<td><i class="dot" style="background: {harnessVar(row.harness)}"></i>{harnessLabel(row.harness)}</td>
 						<td class="num">{n(row.count)}</td>
 						<td class="num">{Math.round(row.p50)}ms</td>
 						<td class="num">{Math.round(row.p95)}ms</td>
@@ -212,5 +212,13 @@
 	}
 	.num {
 		text-align: right;
+	}
+	.dot {
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		border-radius: 2px;
+		margin-right: 6px;
+		vertical-align: middle;
 	}
 </style>
