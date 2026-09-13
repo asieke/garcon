@@ -56,14 +56,14 @@ if [ -z "$REF" ]; then
 fi
 
 echo "applying supabase/garcon_usage.sql to $REF…"
-supabase db query --project-ref "$REF" -f supabase/garcon_usage.sql >/dev/null
+supabase db query --linked --project-ref "$REF" -f supabase/garcon_usage.sql >/dev/null
 
 echo "fetching the secret key and handing it to garcon…"
 response="$(supabase projects api-keys --project-ref "$REF" --reveal -o json \
 	| jq --arg name "$NAME" --arg url "https://$REF.supabase.co" \
-		'[.[] | .api_key // .key // empty | select(startswith("sb_secret_"))][0] as $key
-		 | if $key == null then error("no sb_secret_ key found; create one under Project Settings > API Keys") else empty end
-		 | {sync_enabled: true, device_name: $name, url: $url, key: $key}' \
+		'[.[] | .api_key // empty | select(startswith("sb_secret_"))][0] as $key
+		 | if $key == null then error("no sb_secret_ key found; create one under Project Settings > API Keys")
+		   else {sync_enabled: true, device_name: $name, url: $url, key: $key} end' \
 	| curl -s -X PUT -H 'Content-Type: application/json' -d @- -w '\n%{http_code}' "$GARCON/api/settings")"
 code="${response##*$'\n'}"
 if [ "$code" != 200 ]; then
