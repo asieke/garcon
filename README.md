@@ -15,7 +15,11 @@ appended to `~/.local/share/garcon/usage.jsonl` with the model and token counts
 the provider reported: uncached input, cache read, cache write and output. No
 limits, no retries, nothing rewritten.
 
-Dashboard: http://127.0.0.1:4141, scoped by a shared time-range/harness/account filter bar:
+Dashboard: http://127.0.0.1:4141. A grouped sidebar organizes Analytics, Explore, and
+Diagnostics, with Settings in a separate Administration area. Usage views share
+time-range/harness/account filters; Settings always describes the whole instance.
+The sidebar becomes a menu on phones. Views can be bookmarked (for example,
+`/?view=cost`) and support browser Back/Forward. See the [UI design notes](docs/ui-navigation.md).
 
 - **Overview**, **Usage**, **Models**, **Accounts**: request and token volume, composition, rankings.
 - **Cost**: estimated spend at published pay-as-you-go list prices (never a bill: subscriptions
@@ -122,11 +126,11 @@ providers:
 ```
 
 or, for a one-off, `OPENAI_BASE_URL=http://127.0.0.1:4141/hermes/me@example.com/openai/v1`.
-OpenRouter reports models as `anthropic/claude-sonnet-5`; the Cost tab prices those by
+OpenRouter reports models as `anthropic/claude-sonnet-5`; the Cost view prices those by
 the bare id.
 
 The `add-provider` skill in `.claude/skills/` walks an agent through any of these, and the
-Settings tab generates the same snippets for a chosen harness, provider and account.
+Settings page generates the same snippets for a chosen harness, provider and account.
 
 ### Anything else
 

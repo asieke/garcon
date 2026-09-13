@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { afterNavigate } from '$app/navigation';
+	import { page } from '$app/state';
+	import { browser } from '$app/environment';
+	import Sidebar from '$lib/navigation/Sidebar.svelte';
+	import { views, viewFromParam } from '$lib/navigation/views';
 	import OverviewSection from '$lib/sections/OverviewSection.svelte';
 	import UsageSection from '$lib/sections/UsageSection.svelte';
 	import ModelsSection from '$lib/sections/ModelsSection.svelte';
@@ -36,24 +41,19 @@
 		['30 days', 30],
 		['All', 0]
 	] as const;
-	const TABS = [
-		['overview', 'Overview'],
-		['usage', 'Usage'],
-		['cost', 'Cost'],
-		['models', 'Models'],
-		['accounts', 'Accounts'],
-		['sessions', 'Sessions'],
-		['activity', 'Activity'],
-		['performance', 'Performance'],
-		['latency', 'Latency'],
-		['logs', 'Logs'],
-		['settings', 'Settings']
-	] as const;
 	const POLL_MS = 10_000;
 
 	let rows = $state<Row[]>([]);
 	let days = $state(7);
-	let tab = $state<(typeof TABS)[number][0]>('overview');
+	const tab = $derived(viewFromParam(browser ? page.url.searchParams.get('view') : null));
+	let menuOpen = $state(false);
+	let heading: HTMLHeadingElement;
+	const currentView = $derived(views.find(view => view.id === tab)!);
+	function navigate() { menuOpen = false; }
+	afterNavigate(() => {
+		menuOpen = false;
+		heading?.focus();
+	});
 	let harnessFilter = $state('all');
 	let accountFilter = $state('all');
 	let now = $state(Date.now());
@@ -234,41 +234,47 @@
 	const loading = $derived(lastSync === null && !stale);
 </script>
 
-<svelte:head><title>Garcon</title></svelte:head>
+<svelte:head><title>{currentView.label} · Garcon</title></svelte:head>
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && menuOpen) { menuOpen = false; document.getElementById('menu-toggle')?.focus(); } }} />
 
-<header>
-	<h1>Garcon</h1>
-	<span class="sync" class:stale>
-		{#if stale}Connection lost — retrying…{:else if lastSync}Synced {when(lastSync)}{:else}Connecting…{/if}
-	</span>
-</header>
-
-<div class="filters">
-	<nav class="seg">
-		{#each WINDOWS as [label, d]}
-			<button class:active={days === d} onclick={() => (days = d)}>{label}</button>
-		{/each}
-	</nav>
-	<nav class="seg">
-		<button class:active={harnessFilter === 'all'} onclick={() => (harnessFilter = 'all')}>All harnesses</button>
-		{#each harnessesAll as h (h)}
-			<button class:active={harnessFilter === h} onclick={() => (harnessFilter = h)}>{harnessLabel(h)}</button>
-		{/each}
-	</nav>
-	<select bind:value={accountFilter}>
-		<option value="all">All accounts</option>
-		{#each accountsAll as a}<option value={a}>{a}</option>{/each}
-	</select>
-</div>
-
-<nav class="tabs">
-	{#each TABS as [key, label]}
-		<button class:active={tab === key} onclick={() => (tab = key)}>{label}</button>
-	{/each}
-</nav>
-
-{#if loading}
-	<p class="loading">Loading…</p>
+<a class="skip-link" href="#main-content" onclick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
+<div class="app-shell">
+	<aside class:open={menuOpen}>
+		<a class="brand" href="?view=overview" onclick={navigate}><span class="brand-mark" aria-hidden="true">g.</span><span>Garcon<small>AGENT OBSERVABILITY</small></span></a>
+		<div class="navigation" id="primary-navigation"><Sidebar active={tab} onnavigate={navigate} /></div>
+		<div class="sidebar-footer"><span class="status-dot" class:offline={stale || !lastSync}></span>Local instance</div>
+	</aside>
+	<div class="workspace">
+		<header class="topbar">
+			<button id="menu-toggle" class="menu-toggle" aria-expanded={menuOpen} aria-controls="primary-navigation" onclick={() => { menuOpen = !menuOpen; if (menuOpen) window.scrollTo({ top: 0, behavior: 'instant' }); }}>{menuOpen ? 'Close menu' : 'Menu'}</button>
+			<div class="breadcrumb">{currentView.group}<span aria-hidden="true">/</span><strong>{currentView.label}</strong></div>
+			<span class="sync" class:stale title={lastSync ? new Date(lastSync).toLocaleString() : undefined}>
+				<span class="status-dot" class:offline={stale || !lastSync}></span>
+				{#if stale}Connection lost{:else if lastSync}Synced {when(lastSync)}{:else}Connecting…{/if}
+			</span>
+		</header>
+		<main id="main-content" tabindex="-1">
+			<div class="page-heading"><div><p class="eyebrow">{tab === 'settings' ? 'Workspace administration' : 'Usage intelligence'}</p><h1 bind:this={heading} tabindex="-1">{currentView.label}</h1><p class="description">{currentView.description}</p></div></div>
+			{#if tab !== 'settings'}
+				<div class="filters" aria-label="Usage filters">
+					<div class="period"><span class="filter-label" id="period-label">Time range</span><div class="seg" role="group" aria-labelledby="period-label">
+						{#each WINDOWS as [label, d]}<button class:active={days === d} aria-pressed={days === d} onclick={() => days = d}>{label}</button>{/each}
+					</div></div>
+					<label><span id="harness-label">Harness</span><select aria-labelledby="harness-label" bind:value={harnessFilter}><option value="all">All harnesses</option>{#each harnessesAll as h}<option value={h}>{harnessLabel(h)}</option>{/each}</select></label>
+					<label><span id="account-label">Account</span><select aria-labelledby="account-label" bind:value={accountFilter}><option value="all">All accounts</option>{#each accountsAll as a}<option value={a}>{a}</option>{/each}</select></label>
+					{#if days !== 7 || harnessFilter !== 'all' || accountFilter !== 'all'}<button class="reset" onclick={() => { days = 7; harnessFilter = 'all'; accountFilter = 'all'; }}>Reset filters</button>{/if}
+				</div>
+			{/if}
+			{#if stale}<p class="notice" role="status">Unable to refresh usage. {lastSync ? 'Showing the last available data.' : 'Usage data is unavailable.'} Retrying every 10 seconds.</p>{/if}
+			<div class="view-content">
+{#if tab === 'settings'}
+	<SettingsSection {rows} pollMs={POLL_MS} {now} />
+{:else if loading}
+	<p class="loading" role="status">Loading usage data…</p>
+{:else if !lastSync}
+	<p class="empty-state">Waiting for the local instance to reconnect.</p>
+{:else if !visible.length}
+	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Your usage story starts here'}</h2><p>{rows.length ? 'Try a wider time range or choose another harness or account.' : 'Connect a coding agent to Garcon to start exploring requests, tokens, and performance.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = 'all'; accountFilter = 'all'; }}>Show all usage</button>{:else}<a href="?view=settings">Set up a connection →</a>{/if}</div>
 {:else}
 	{#if tab === 'overview'}
 		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />
@@ -310,91 +316,69 @@
 		<PerformanceSection rows={visible} />
 	{:else if tab === 'logs'}
 		<LogsSection rows={visible} />
-	{:else if tab === 'settings'}
-		<SettingsSection {rows} pollMs={POLL_MS} {now} />
 	{/if}
 {/if}
 
+			</div>
+		</main>
+	</div>
+</div>
+
 <style>
-	:global(body) {
-		margin: 0 auto;
-		max-width: 1200px;
-		padding: 24px 16px 64px;
-	}
-	header {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 12px;
-		margin-bottom: 20px;
-	}
-	h1 {
-		font-size: 20px;
-	}
-	.sync {
-		font-size: 12px;
-		color: var(--text-muted);
-	}
-	.sync.stale {
-		color: var(--status-critical);
-	}
-	.filters {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 10px;
-		margin-bottom: 16px;
-		padding-bottom: 16px;
-		border-bottom: 1px solid var(--border);
-	}
-	.seg {
-		display: flex;
-		gap: 4px;
-	}
-	button {
-		font: inherit;
-		padding: 4px 12px;
-		border-radius: 6px;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		background: none;
-		color: inherit;
-	}
-	button.active {
-		background: var(--text-primary);
-		color: var(--page);
-		border-color: var(--text-primary);
-	}
-	select {
-		font: inherit;
-		padding: 4px 10px;
-		border-radius: 6px;
-		border: 1px solid var(--border);
-		background: var(--surface);
-		color: inherit;
-		max-width: 220px;
-	}
-	.tabs {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-bottom: 24px;
-	}
-	.tabs button {
-		border: none;
-		border-radius: 0;
-		padding: 8px 4px;
-		border-bottom: 2px solid transparent;
-		color: var(--text-secondary);
-	}
-	.tabs button.active {
-		background: none;
-		color: var(--text-primary);
-		border-bottom-color: var(--series-1);
-		font-weight: 600;
-	}
-	.loading {
-		color: var(--text-muted);
+	.app-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100dvh; }
+	aside { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--border); }
+	.brand { display: flex; align-items: center; gap: 11px; padding: 26px 24px; color: var(--text-primary); text-decoration: none; font-size: 20px; font-weight: 650; letter-spacing: -.5px; }
+	.brand-mark { display: grid; place-items: center; width: 34px; height: 38px; background: var(--accent); color: var(--surface); border-radius: 10px; font-size: 26px; }
+	.brand small { display: block; font-size: 8px; color: var(--text-muted); letter-spacing: .12em; margin-top: 2px; }
+	.navigation { padding: 12px; flex: 1; overflow-y: auto; }
+	.sidebar-footer { padding: 20px 26px; font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
+	.workspace { min-width: 0; }
+	.topbar { position: sticky; top: 0; z-index: 10; height: 65px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 36px; background: var(--surface); }
+	.breadcrumb { display: flex; align-items: center; gap: 14px; color: var(--text-muted); font-size: 12px; }
+	.breadcrumb strong { color: var(--text-secondary); font-weight: 500; }
+	.sync { display: flex; gap: 7px; align-items: center; font-size: 11px; color: var(--text-muted); }
+	.sync.stale { color: var(--status-critical); }
+	.status-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--status-good); }
+	.status-dot.offline { background: var(--text-muted); }
+	main { max-width: 1600px; margin: 0 auto; padding: 34px 36px 64px; }
+	.page-heading { margin-bottom: 26px; }
+	.eyebrow { text-transform: uppercase; letter-spacing: .12em; color: var(--accent); font-size: 10px; font-weight: 650; margin: 0 0 8px; }
+	h1 { font-size: 30px; line-height: 1.2; letter-spacing: -.8px; }
+	.description { color: var(--text-secondary); font-size: 13px; margin: 10px 0 0; }
+	.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 28px; }
+	label, .filter-label { display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); font-size: 11px; font-weight: 550; }
+	.filter-label { margin-bottom: 6px; }
+	label { flex: 1; min-width: 140px; max-width: 280px; }
+	.seg { display: flex; gap: 3px; background: var(--page); border: 1px solid var(--border); border-radius: 7px; padding: 3px; }
+	button, select { font: inherit; color: var(--text-primary); border: 1px solid var(--border); background: var(--surface); border-radius: 6px; min-height: 36px; padding: 7px 12px; }
+	button { cursor: pointer; }
+	.seg button { min-height: 28px; padding: 4px 12px; border: 0; background: transparent; font-size: 12px; color: var(--text-secondary); }
+	.seg button.active { background: var(--accent); color: var(--surface); }
+	select { width: 100%; font-size: 12px; }
+	.reset { color: var(--accent); background: none; border-color: transparent; font-size: 12px; }
+	.view-content { min-width: 0; }
+	.notice { padding: 12px 16px; color: var(--status-critical); border: 1px solid var(--border); border-radius: 8px; }
+	.loading, .empty-state { padding: 48px 24px; text-align: center; color: var(--text-secondary); border: 1px dashed var(--border); border-radius: 12px; }
+	.empty-state h2 { font-size: 18px; color: var(--text-primary); }
+	.empty-state a { color: var(--accent); }
+	.menu-toggle { display: none; }
+	.skip-link { position: fixed; left: 16px; top: -100px; z-index: 20; background: var(--surface); color: var(--accent); padding: 12px; }
+	.skip-link:focus { top: 8px; }
+	@media (max-width: 1100px) { main { padding: 28px 24px 48px; } .topbar { padding: 0 24px; } .app-shell { grid-template-columns: 200px minmax(0, 1fr); } }
+	@media (max-width: 760px) {
+		.app-shell { display: flex; flex-direction: column; }
+		aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+		.brand { padding: 14px 20px; }
+		.navigation, .sidebar-footer { display: none; }
+		aside.open .navigation { display: block; max-height: 55dvh; padding: 12px 20px; }
+		.menu-toggle { display: block; font-size: 12px; }
+		.topbar { height: auto; min-height: 60px; padding: 12px 20px; flex-wrap: wrap; gap: 10px; }
+		.breadcrumb { margin-right: auto; gap: 8px; }
+		main { padding: 24px 16px 48px; }
+		h1 { font-size: 26px; }
+		.filters { gap: 12px; }
+		.period { width: 100%; }
+		.seg button { flex: 1; }
+		label { min-width: 0; max-width: none; width: 100%; flex-basis: 100%; }
 	}
 </style>
