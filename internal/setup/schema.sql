@@ -1,6 +1,6 @@
 -- Garcon cross-device sync: one row per completion call, upserted by every device.
 -- Idempotent: safe to run again after upgrading Garcon. Run it in the project's
--- SQL editor, or: supabase db query --project-ref <ref> -f supabase/garcon_usage.sql
+-- SQL editor, or let `garcon connect-supabase` apply it (`--print-sql` prints it).
 create table if not exists public.garcon_usage (
   id            text primary key,           -- sha256 of device id + the row's fields
   device_id     text not null,              -- random id generated once per machine

@@ -68,4 +68,4 @@ Edit `providers` in `main.go` (segment name → scheme and host), extend `isComp
 provider's completion path has a new suffix, and teach `fold` any new usage field names. Then
 add the provider to `PROVIDERS` and `HARNESS_PROVIDERS` in `web/src/lib/connect.ts`, a pricing
 rule in `web/src/lib/pricing.ts`, a case in `TestParseRoute`/`TestFold`, and the README table.
-Rebuild with `./install.sh`.
+Rebuild with `scripts/install.sh`.

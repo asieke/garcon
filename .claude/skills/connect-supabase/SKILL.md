@@ -41,14 +41,14 @@ told apart. The default is the hostname.
 ## 4. Create the project and schema (first machine)
 
 ```sh
-./connect-supabase.sh --name "<label>"
+garcon connect-supabase --name "<label>"
 ```
 
 Walk the user through what it does: picks the organisation (asks for `--org-id` if there is
 more than one), creates a project named `garcon` on the free tier in `us-east-1` (or
 `--region`), prints the generated database password once (Garcon never needs it; keep it in a
 password manager), waits for the project to become healthy, applies
-`supabase/garcon_usage.sql` through the Management API (no link step, no database
+the schema embedded in the binary (`garcon connect-supabase --print-sql` prints it) through the Management API (no link step, no database
 password), fetches the project's `sb_secret_` key with `supabase projects api-keys --reveal`
 and pipes it straight into `PUT /api/settings` with the device name and the switch on. The
 key is never printed and must never be pasted into the chat, the repo, `AGENTS.md` or a
@@ -70,7 +70,7 @@ RLS, may touch the table, and the publishable key then sees nothing. Never add p
 ## 5. Schema without the CLI
 
 If the user prefers the dashboard: Supabase → SQL Editor → New query → paste
-`supabase/garcon_usage.sql` (also shown with a Copy button in the documentation site, https://asieke.github.io/garcon/sync.html#sync-table) → Run →
+the schema embedded in the binary (`garcon connect-supabase --print-sql` prints it) (also shown with a Copy button in the documentation site, https://asieke.github.io/garcon/sync.html#sync-table) → Run →
 "Success. No rows returned". Check Table Editor shows `garcon_usage` with RLS enabled. The
 file is idempotent; rerun it after upgrading Garcon if Save reports a missing column.
 
@@ -80,7 +80,7 @@ Settings → Sync on that machine: device name (step 3, a different label), Proj
 `https://<ref>.supabase.co`, the **secret** key from Project Settings → API Keys (`sb_secret_…`;
 a `sb_publishable_…` key is rejected because it gets the anon role and RLS would hide every
 row; a legacy `service_role` JWT also works), switch **Enable Supabase sync** on, Save. Or,
-with the CLI logged in there: `./connect-supabase.sh --name "<label>" --project-ref <ref>`.
+with the CLI logged in there: `garcon connect-supabase --name "<label>" --project-ref <ref>`.
 
 Headless, without a browser:
 
@@ -106,7 +106,7 @@ answers 400 with the reason instead of storing a configuration that does not wor
 - **Invalid JWT**: the key is publishable, or a legacy key was pasted with a typo. Use the
   `sb_secret_` key.
 - **PGRST204 / could not find column**: schema older than Garcon. Rerun
-  `supabase/garcon_usage.sql`, then `alter table public.garcon_usage add column …` for
+  the schema embedded in the binary (`garcon connect-supabase --print-sql` prints it), then `alter table public.garcon_usage add column …` for
   anything the README lists that is still missing.
 - **relation "garcon_usage" does not exist**: the SQL was not run, or ran in another project.
 - **401**: the request did not look like it came from a server; only Garcon itself should

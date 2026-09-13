@@ -5,10 +5,21 @@ description: Update an installed Garcon to the latest main branch and restart it
 
 # Updating Garcon
 
-One command, from the repository checkout:
+Two ways to install, so first find out which one is in use: `which garcon`. A path under
+`npm root -g` means npm; `~/.local/bin/garcon` means a source build.
+
+**npm install:**
 
 ```sh
-./install.sh --update
+npm i -g ai-garcon@latest
+```
+
+The package's post-install step restarts a running service, so nothing else is needed.
+
+**Source build**, from the repository checkout:
+
+```sh
+scripts/install.sh --update
 ```
 
 It refuses to run with uncommitted changes, switches to `main` if needed, fast-forwards
@@ -34,8 +45,8 @@ untouched.
   (`mise install`).
 - **service did not come back**: `journalctl --user -u garcon -n 50` (Linux) or
   `~/Library/Logs/garcon.log` (macOS). The previous binary is gone at that point, so fix
-  forward; `git checkout <previous commit> && ./install.sh` rolls back.
+  forward; `git checkout <previous commit> && scripts/install.sh` rolls back.
 
 Not a git checkout (installed from a copied directory): clone
-`https://github.com/asieke/garcon`, run `./install.sh --service` there, and use that
+`https://github.com/asieke/garcon`, run `scripts/install.sh --service` there, and use that
 checkout from now on.
