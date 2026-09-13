@@ -1,0 +1,66 @@
+# Every merge into main publishes a new ai-garcon patch release to npm.
+#
+# The version is not stored in the repository: the next one is the highest of the latest
+# v* tag and the version on npm, plus one on the patch. A merge whose message contains
+# [minor] or [major] bumps that part instead. The workflow builds and publishes through
+# scripts/release.sh, then tags the commit and creates the GitHub release, so the tag,
+# npm and the version the dashboard shows always agree.
+#
+# Publishing uses npm trusted publishing (OIDC): npmjs.com > ai-garcon > Settings >
+# Trusted Publisher must list this repository and this file name. No npm token is stored.
+name: Release
+on:
+  push:
+    branches: [main]
+concurrency:
+  group: release
+  cancel-in-progress: false
+permissions:
+  contents: write # push the version tag, create the GitHub release
+  id-token: write # npm trusted publishing
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags decide the next version
+      - name: Toolchain versions from .mise.toml
+        id: tools
+        run: |
+          echo "go=$(sed -n 's/^go = "\(.*\)"/\1/p' .mise.toml)" >> "$GITHUB_OUTPUT"
+          echo "node=$(sed -n 's/^node = "\(.*\)"/\1/p' .mise.toml)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.tools.outputs.go }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.tools.outputs.node }}
+          registry-url: https://registry.npmjs.org
+      - name: Next version
+        id: version
+        run: |
+          set -euo pipefail
+          tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n1)
+          published=$(npm view ai-garcon version 2>/dev/null || echo 0.0.0)
+          base=$(printf '%s\n%s\n' "${tag#v}" "$published" | sort -V | tail -n1)
+          IFS=. read -r major minor patch <<<"$base"
+          message=$(git log -1 --pretty=%B)
+          case "$message" in
+            *"[major]"*) next="$((major + 1)).0.0" ;;
+            *"[minor]"*) next="$major.$((minor + 1)).0" ;;
+            *) next="$major.$minor.$((patch + 1))" ;;
+          esac
+          echo "last tag ${tag:-none}, npm $published, next $next"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+      - name: Test, build and publish
+        run: scripts/release.sh "${{ steps.version.outputs.version }}"
+      - name: Tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v="v${{ steps.version.outputs.version }}"
+          git tag "$v"
+          git push origin "$v"
+          gh release create "$v" --title "$v" --generate-notes
