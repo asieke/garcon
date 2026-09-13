@@ -115,6 +115,12 @@ type record struct {
 	CacheRead  int64 `json:"cache_read"`
 	CacheWrite int64 `json:"cache_write"`
 	Output     int64 `json:"output"`
+
+	// Sync fields (sync.go). Never written to usage.jsonl: Device is set in memory
+	// on local rows, and all three are on disk only for rows pulled from other devices.
+	ID       string `json:"id,omitempty"`
+	DeviceID string `json:"device_id,omitempty"`
+	Device   string `json:"device,omitempty"`
 }
 
 // usage matches the Anthropic Messages, OpenAI Responses and OpenAI chat
@@ -213,21 +219,32 @@ type config struct {
 func save(rec record) {
 	line, _ := json.Marshal(rec)
 	mu.Lock()
-	defer mu.Unlock()
+	rec.Device = cfg.DeviceName
 	records = append(records, rec)
 	if _, err := logFile.Write(append(line, '\n')); err != nil {
 		log.Print(err)
 	}
+	mu.Unlock()
+	wake()
 }
 
-func load(path string) {
-	os.MkdirAll(filepath.Dir(path), 0o700)
+func readRecords(path string) []record {
+	var out []record
 	data, _ := os.ReadFile(path)
 	for _, line := range bytes.Split(data, []byte("\n")) {
 		var rec record
 		if json.Unmarshal(line, &rec) == nil {
-			records = append(records, rec)
+			out = append(out, rec)
 		}
+	}
+	return out
+}
+
+func load(path string) {
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	for _, rec := range readRecords(path) {
+		rec.Device = cfg.DeviceName
+		records = append(records, rec)
 	}
 	var err error
 	if logFile, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err != nil {
@@ -304,8 +321,14 @@ func proxy(w http.ResponseWriter, r *http.Request, rt route) {
 func main() {
 	listen := flag.String("listen", "127.0.0.1:4141", "address to listen on")
 	data := flag.String("data", filepath.Join(os.Getenv("HOME"), ".local/share/garcon/usage.jsonl"), "usage log")
+	settingsFile := flag.String("config", filepath.Join(os.Getenv("HOME"), ".config/garcon/config.json"), "settings file")
 	flag.Parse()
+	listenAddr = *listen
+	loadSettings(*settingsFile)
 	load(*data)
+	loadState(filepath.Join(filepath.Dir(*data), "sync.json"))
+	loadRemote(filepath.Join(filepath.Dir(*data), "remote.jsonl"))
+	go syncLoop()
 
 	site, _ := fs.Sub(web, "web/build")
 	static := http.FileServerFS(site)
@@ -320,8 +343,10 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		mu.Lock()
 		defer mu.Unlock()
-		json.NewEncoder(w).Encode(records)
+		all := make([]record, 0, len(records)+len(remote))
+		json.NewEncoder(w).Encode(append(append(all, records...), remote...))
 	})
+	http.HandleFunc("/api/settings", handleSettings)
 	http.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		hosts := map[string]string{}

@@ -18,6 +18,8 @@ export type Row = {
 	cache_read: number;
 	cache_write: number;
 	output: number;
+	/** The machine that recorded the row: this one, or another device pulled in by sync. */
+	device?: string;
 };
 
 export type Totals = {

@@ -17,7 +17,7 @@ export const groups = [
 		{ id: 'logs', label: 'Logs', description: 'Inspect individual requests and export the details.' }
 	] },
 	{ label: 'Administration', items: [
-		{ id: 'settings', label: 'Settings', description: 'Manage connections, instance configuration, and browser preferences.' }
+		{ id: 'settings', label: 'Settings', description: 'Manage connections, cross-device sync, instance configuration, and browser preferences.' }
 	] }
 ] as const;
 export const views = groups.flatMap(group => group.items.map(item => ({ ...item, group: group.label })));
