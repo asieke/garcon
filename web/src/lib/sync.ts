@@ -1,8 +1,6 @@
-/** Settings → Sync: types for /api/settings and the one copy of the table schema. The SQL file
- * is the same one connect-supabase.sh applies, so the snippet, the script and the README agree. */
-import sql from '../../../supabase/garcon_usage.sql?raw';
-
-export const TABLE_SQL: string = sql;
+/** Settings → Sync: types for /api/settings. Setup instructions live in the documentation site
+ * (docs/ in the repository), not in the dashboard. */
+export const DOCS_URL = 'https://asieke.github.io/garcon/';
 
 export type SyncSettings = { sync_enabled: boolean; device_name: string; url: string; key_set: boolean };
 
