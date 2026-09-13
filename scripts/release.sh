@@ -9,7 +9,8 @@ V="${1:-}"; DRY="${2:-}"
 [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { sed -n '2,5p' "$0"; exit 2; }
 [ "$DRY" = "" ] || [ "$DRY" = --dry-run ] || { sed -n '2,5p' "$0"; exit 2; }
 if [ -z "$DRY" ]; then
-	[ -z "$(git status --porcelain)" ] || { echo "commit or stash changes first" >&2; exit 1; }
+	# Version bumps from an earlier attempt are fine; anything else must be committed first.
+	[ -z "$(git status --porcelain | grep -v 'npm/.*package\.json')" ] || { echo "commit or stash changes first" >&2; exit 1; }
 	npm whoami >/dev/null 2>&1 || { echo "not logged in to npm; run: npm login" >&2; exit 1; }
 fi
 TARGETS="linux-x64 linux-arm64 darwin-x64 darwin-arm64"
@@ -32,6 +33,7 @@ for t in $TARGETS; do (cd "npm/platforms/ai-garcon-$t" && npm publish --access p
 (cd npm/ai-garcon && npm publish --access public ${DRY:+--dry-run})
 if [ -z "$DRY" ]; then
 	git add npm/*/package.json npm/platforms/*/package.json
-	git commit -q -m "ai-garcon $V" && git tag "v$V"
-	echo "published ai-garcon@$V; push with: git push && git push --tags"
+	git diff --cached --quiet || git commit -q -m "ai-garcon $V"
+	git tag -f "v$V" >/dev/null
+	echo "published ai-garcon@$V; the version-bump commit and tag v$V are local: git push --tags, then open a PR for the commit (main is PR-only)"
 fi
