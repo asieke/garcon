@@ -270,14 +270,14 @@
 
 <h2 class="spaced">Sync</h2>
 {#if syncError}
-	<p class="empty">Could not read /api/settings; rebuild with <code>scripts/install.sh</code>.</p>
+	<p class="empty">Could not read settings. Run <code>garcon doctor</code> to check your installation.</p>
 {:else if !sync}
 	<p class="caption">Loading…</p>
 {:else}
 	<label class="switch"><input type="checkbox" bind:checked={form.sync_enabled} onchange={touch} /> Enable Supabase sync</label>
 	<p class="caption">
 		Off: no network calls. On: rows are exchanged with your Supabase project. First machine:
-		<code>garcon connect-supabase --name "work laptop"</code> (needs the Supabase CLI); others paste the URL and key below.
+		<code>garcon connect-supabase --create-project --name "work laptop"</code> (needs the Supabase CLI). Already have a project? Paste its URL and secret key below and give this machine a distinct name. The project table must exist before saving.
 		<a href={DOCS_URL} target="_blank" rel="noopener">Setup guide</a>
 	</p>
 	<div class="builder">

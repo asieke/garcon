@@ -14,6 +14,18 @@ continues to use all recorded accounts and harnesses, regardless of the selected
 analytics filters, and remains accessible when usage loading fails. Returning to
 analytics preserves the current filters during client navigation.
 
+## First use
+
+After `garcon setup` starts and verifies the proxy, an empty dashboard points the
+user to Settings → Connect a harness. It explains how to copy the configuration,
+restart the tool, and send a first request. A separate note points users with an
+existing Supabase project to Settings → Sync; sync remains optional. Once usage
+arrives, the normal analytics view replaces this guidance automatically.
+
+An empty filtered result continues to offer “Show all usage”; it must not be
+mistaken for a new installation. Settings stays accessible before any usage exists
+and includes a distinct-device-name reminder when joining an existing project.
+
 ## Design rationale
 
 - [Carbon's left-panel guidance](https://carbondesignsystem.com/components/UI-shell-left-panel/usage/)

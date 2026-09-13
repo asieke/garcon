@@ -41,7 +41,7 @@ told apart. The default is the hostname.
 ## 4. Create the project and schema (first machine)
 
 ```sh
-garcon connect-supabase --name "<label>"
+garcon connect-supabase --create-project --name "<label>"
 ```
 
 Walk the user through what it does: picks the organisation (asks for `--org-id` if there is
@@ -80,7 +80,7 @@ Settings → Sync on that machine: device name (step 3, a different label), Proj
 `https://<ref>.supabase.co`, the **secret** key from Project Settings → API Keys (`sb_secret_…`;
 a `sb_publishable_…` key is rejected because it gets the anon role and RLS would hide every
 row; a legacy `service_role` JWT also works), switch **Enable Supabase sync** on, Save. Or,
-with the CLI logged in there: `garcon connect-supabase --name "<label>" --project-ref <ref>`.
+with the CLI logged in there: `garcon connect-supabase --name "<label>" --project-ref <ref> --skip-schema`.
 
 Headless, without a browser:
 

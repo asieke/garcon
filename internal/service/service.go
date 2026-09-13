@@ -1,16 +1,17 @@
 // `garcon service <install|uninstall|restart|status>`: run the proxy in the
 // background and at every login, as a systemd user unit on Linux or a
-// LaunchAgent on macOS. The unit points at this executable, so an upgrade that
-// replaces the file in place (npm, install.sh) only needs a restart.
+// LaunchAgent on macOS. Install/restart refresh a stable private executable.
 package service
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -22,10 +23,14 @@ func Main(args []string) {
 	if len(args) > 0 {
 		cmd = args[0]
 	}
+	if len(args) > 1 {
+		fmt.Fprintln(os.Stderr, "usage: garcon service install|uninstall|restart|status")
+		os.Exit(2)
+	}
 	var err error
 	switch cmd {
 	case "install":
-		err = serviceInstall()
+		err = Install()
 	case "uninstall":
 		err = serviceUninstall()
 	case "restart":
@@ -40,6 +45,8 @@ func Main(args []string) {
 		os.Exit(1)
 	}
 }
+
+func Installed() bool { _, err := os.Stat(unitPath()); return err == nil }
 
 func home() string { h, _ := os.UserHomeDir(); return h }
 
@@ -58,7 +65,9 @@ func run(name string, args ...string) error {
 
 func quiet(name string, args ...string) bool { return exec.Command(name, args...).Run() == nil }
 
-func serviceInstall() error {
+// Install refreshes a private service binary so npm cache eviction and Node
+// version changes cannot remove the executable used at login.
+func Install() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -66,11 +75,27 @@ func serviceInstall() error {
 	if exe, err = filepath.EvalSymlinks(exe); err != nil {
 		return err
 	}
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return errors.New("services require macOS or Linux; run garcon in the foreground")
+	}
+	if os.Geteuid() == 0 {
+		return errors.New("run garcon setup as your normal user, without sudo")
+	}
+	if runtime.GOOS == "linux" && !quiet("systemctl", "--user", "show-environment") {
+		return errors.New("systemd user session unavailable; run garcon in a terminal, then garcon setup --no-service")
+	}
+	destination := filepath.Join(home(), ".local/share/garcon/bin/garcon")
+	if err := copyExecutable(exe, destination); err != nil {
+		return err
+	}
+	exe = destination
 	path := unitPath()
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	switch runtime.GOOS {
 	case "linux":
-		unit := "[Unit]\nDescription=Garcon local LLM usage proxy\n\n[Service]\nExecStart=" + exe + "\nRestart=always\n\n[Install]\nWantedBy=default.target\n"
+		unit := "[Unit]\nDescription=Garcon local LLM usage proxy\n\n[Service]\nExecStart=" + systemdQuote(exe) + "\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n"
 		if err := os.WriteFile(path, []byte(unit), 0o644); err != nil {
 			return err
 		}
@@ -87,11 +112,11 @@ func serviceInstall() error {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 	<key>Label</key><string>dev.garcon</string>
-	<key>ProgramArguments</key><array><string>` + exe + `</string></array>
+	<key>ProgramArguments</key><array><string>` + xmlText(exe) + `</string></array>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
-	<key>StandardOutPath</key><string>` + logs + `/garcon.log</string>
-	<key>StandardErrorPath</key><string>` + logs + `/garcon.log</string>
+	<key>StandardOutPath</key><string>` + xmlText(logs) + `/garcon.log</string>
+	<key>StandardErrorPath</key><string>` + xmlText(logs) + `/garcon.log</string>
 </dict></plist>
 `
 		if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
@@ -124,20 +149,13 @@ func serviceUninstall() error {
 	return nil
 }
 
-// serviceRestart is a no-op when no service is installed, so package
-// post-install hooks can call it unconditionally.
+// Restart refreshes the service executable after an npm or source update.
 func serviceRestart() error {
 	if _, err := os.Stat(unitPath()); err != nil {
 		fmt.Println("no service installed; nothing to restart")
 		return nil
 	}
-	switch runtime.GOOS {
-	case "linux":
-		return run("systemctl", "--user", "restart", unitName)
-	case "darwin":
-		return run("launchctl", "kickstart", "-k", fmt.Sprintf("gui/%d/dev.garcon", os.Getuid()))
-	}
-	return nil
+	return Install()
 }
 
 func serviceStatus() error {
@@ -147,14 +165,54 @@ func serviceStatus() error {
 	}
 	switch runtime.GOOS {
 	case "linux":
-		out, _ := exec.Command("systemctl", "--user", "is-active", unitName).Output()
+		out, err := exec.Command("systemctl", "--user", "is-active", unitName).Output()
 		fmt.Printf("systemd user unit %s: %s\n", unitName, strings.TrimSpace(string(out)))
+		if err != nil {
+			return errors.New("service is not active; run garcon setup or inspect journalctl --user -u garcon")
+		}
 	case "darwin":
 		if quiet("launchctl", "print", fmt.Sprintf("gui/%d/dev.garcon", os.Getuid())) {
 			fmt.Println("LaunchAgent dev.garcon: loaded")
 		} else {
-			fmt.Println("LaunchAgent dev.garcon: not loaded")
+			return errors.New("LaunchAgent dev.garcon is not loaded; run garcon setup")
 		}
 	}
 	return nil
+}
+
+func copyExecutable(src, dst string) error {
+	if src == dst {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.CreateTemp(filepath.Dir(dst), ".garcon-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(out.Name())
+	_, copyErr := io.Copy(out, in)
+	modeErr := out.Chmod(0o755)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if modeErr != nil {
+		return modeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(out.Name(), dst)
+}
+
+func systemdQuote(s string) string { return strconv.Quote(strings.ReplaceAll(s, "%", "%%")) }
+func xmlText(s string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&apos;").Replace(s)
 }

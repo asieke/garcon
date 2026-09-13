@@ -19,6 +19,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"garcon/internal/onboarding"
 )
 
 //go:embed schema.sql
@@ -27,14 +29,19 @@ var Schema string
 // Main runs the subcommand and exits non-zero on failure.
 func Main(args []string) {
 	fs := flag.NewFlagSet("garcon connect-supabase", flag.ExitOnError)
-	name := fs.String("name", "", "this machine's label in the dashboard (required)")
+	hostname, _ := os.Hostname()
+	name := fs.String("name", hostname, "this machine's label in the dashboard")
+	projectURL := fs.String("project-url", "", "join an existing project without the Supabase CLI (requires --key-stdin)")
+	keyStdin := fs.Bool("key-stdin", false, "read the secret key from stdin, not command arguments")
+	skipSchema := fs.Bool("skip-schema", false, "join an already configured project without applying SQL (requires --project-ref)")
+	create := fs.Bool("create-project", false, "create a new Supabase project; otherwise choose an existing project")
 	ref := fs.String("project-ref", "", "reuse an existing project instead of creating one")
 	org := fs.String("org-id", "", "organisation to create the project in (needed when you belong to several)")
 	region := fs.String("region", "us-east-1", "region for a new project")
 	garcon := fs.String("url", "http://127.0.0.1:4141", "the running garcon")
 	printSQL := fs.Bool("print-sql", false, "print the table schema and exit")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "usage: garcon connect-supabase --name \"work laptop\" [--project-ref REF] [--org-id ID] [--region R]\n       garcon connect-supabase --print-sql\n\n")
+		fmt.Fprint(os.Stderr, "usage: garcon connect-supabase --name \"work laptop\" [--create-project | --project-ref REF] [--org-id ID] [--region R]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n\n")
 		fs.PrintDefaults()
 	}
 	fs.Parse(args)
@@ -42,11 +49,43 @@ func Main(args []string) {
 		fmt.Print(Schema)
 		return
 	}
-	if *name == "" {
+	if fs.NArg() != 0 || strings.TrimSpace(*name) == "" {
 		fs.Usage()
 		os.Exit(2)
 	}
-	if err := run(*name, *ref, *org, *region, *garcon); err != nil {
+	base, err := onboarding.LocalURL(*garcon)
+	if err == nil && ((*projectURL != "") != *keyStdin) {
+		err = errors.New("use --project-url URL and --key-stdin together")
+	}
+	if err == nil && *projectURL != "" && (*ref != "" || *create || *skipSchema || *org != "") {
+		err = errors.New("--project-url cannot be combined with project creation or CLI project flags")
+	}
+	if err == nil && *skipSchema && *ref == "" {
+		err = errors.New("--skip-schema requires --project-ref")
+	}
+	if err == nil && *create && *ref != "" {
+		err = errors.New("choose --create-project or --project-ref, not both")
+	}
+	if err == nil && *projectURL == "" && *ref == "" && !*create {
+		err = errors.New("choose --create-project for a new Supabase project, --project-ref REF to reuse one, or --project-url URL --key-stdin to join without the CLI; sync is optional")
+	}
+	if err == nil {
+		if *projectURL != "" {
+			if _, err = onboarding.Health(base); err == nil {
+				var key []byte
+				key, err = io.ReadAll(io.LimitReader(os.Stdin, 8193))
+				if err == nil && (len(key) > 8192 || strings.TrimSpace(string(key)) == "") {
+					err = errors.New("stdin must contain a nonempty Supabase secret key (at most 8192 bytes)")
+				}
+				if err == nil {
+					err = save(*name, *projectURL, strings.TrimSpace(string(key)), base)
+				}
+			}
+		} else {
+			err = run(*name, *ref, *org, *region, base, *skipSchema)
+		}
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -62,13 +101,21 @@ func cli(args ...string) ([]byte, error) {
 	return out.Bytes(), err
 }
 
-func run(name, ref, org, region, garcon string) error {
+func run(name, ref, org, region, garcon string, skipSchema bool) error {
 	if _, err := exec.LookPath("supabase"); err != nil {
 		return errors.New("the Supabase CLI is not installed: https://supabase.com/docs/guides/cli")
 	}
-	if res, err := http.Get(garcon + "/api/settings"); err != nil || res.StatusCode != 200 {
-		return fmt.Errorf("garcon is not answering at %s (garcon service install)", garcon)
+	if _, err := onboarding.Health(garcon); err != nil {
+		return err
 	}
+	if !skipSchema {
+		// Check capabilities before creating any remote resource.
+		help, err := cli("db", "query", "--help")
+		if err != nil || !bytes.Contains(help, []byte("--project-ref")) {
+			return errors.New("update the Supabase CLI to a version supporting db query --project-ref, or run garcon connect-supabase --print-sql in the SQL editor and join with --project-url URL --key-stdin")
+		}
+	}
+
 	orgs, err := cli("orgs", "list", "-o", "json")
 	if err != nil {
 		return errors.New("not logged in to the Supabase CLI; run: supabase login")
@@ -97,18 +144,25 @@ func run(name, ref, org, region, garcon string) error {
 		}
 	}
 
-	fmt.Printf("applying the garcon_usage schema to %s…\n", ref)
-	tmp, err := os.CreateTemp("", "garcon-*.sql")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	tmp.WriteString(Schema)
-	tmp.Close()
-	if _, err := cli("db", "query", "--linked", "--project-ref", ref, "-f", tmp.Name()); err != nil {
-		return fmt.Errorf("schema failed: %w", err)
-	}
+	if !skipSchema {
+		fmt.Printf("applying the garcon_usage schema to %s…\n", ref)
+		tmp, err := os.CreateTemp("", "garcon-*.sql")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(tmp.Name())
+		if _, err := tmp.WriteString(Schema); err != nil {
+			tmp.Close()
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			return err
+		}
+		if _, err := cli("db", "query", "--linked", "--project-ref", ref, "-f", tmp.Name()); err != nil {
+			return fmt.Errorf("schema failed: %w; run garcon connect-supabase --print-sql in the project SQL editor, then retry with --project-ref %s --skip-schema", err, ref)
+		}
 
+	}
 	fmt.Println("fetching the secret key and handing it to garcon…")
 	keys, err := cli("projects", "api-keys", "--project-ref", ref, "--reveal", "-o", "json")
 	if err != nil {
@@ -119,24 +173,32 @@ func run(name, ref, org, region, garcon string) error {
 		return errors.New("no sb_secret_ key found; create one under Project Settings > API Keys and rerun")
 	}
 	url := "https://" + ref + ".supabase.co"
-	body, _ := json.Marshal(map[string]any{"sync_enabled": true, "device_name": name, "url": url, "key": key})
-	req, _ := http.NewRequest(http.MethodPut, garcon+"/api/settings", bytes.NewReader(body))
+	if err := save(name, url, key, garcon); err != nil {
+		return err
+	}
+	fmt.Printf("Another machine: garcon connect-supabase --name \"<its label>\" --project-ref %s --skip-schema\n", ref)
+	return nil
+}
+
+func save(name, projectURL, key, garcon string) error {
+	body, _ := json.Marshal(map[string]any{"sync_enabled": true, "device_name": name, "url": projectURL, "key": key})
+	req, err := http.NewRequest(http.MethodPut, garcon+"/api/settings", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := http.DefaultClient.Do(req)
+	res, err := onboarding.Client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		msg, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("garcon refused the settings (HTTP %d): %s", res.StatusCode, strings.TrimSpace(string(msg)))
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
+		// Even an unexpected server response must not echo the submitted secret.
+		detail := strings.ReplaceAll(strings.TrimSpace(string(msg)), key, "[redacted]")
+		return fmt.Errorf("settings were not saved (HTTP %d): %s; check the project URL, secret key and schema in Settings > Sync", res.StatusCode, detail)
 	}
-	fmt.Printf(`connected: sync is ON for %q -> %s
-  progress: %s/?view=settings
-  another machine: garcon connect-supabase --name "<its label>" --project-ref %s
-                   or paste the URL and the sb_secret_ key (Project Settings > API Keys)
-                   into Settings > Sync in its dashboard.
-`, name, url, garcon, ref)
+	fmt.Printf("Connected: sync is ON for %q. Table access verified; transfer runs in the background.\nProgress: %s/?view=settings (or garcon doctor)\n", name, garcon)
 	return nil
 }
 

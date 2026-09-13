@@ -281,7 +281,7 @@
 {:else if !lastSync}
 	<p class="empty-state">Proxy unreachable.</p>
 {:else if !visible.length}
-	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'No usage yet'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Point a coding agent at the proxy.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Show all usage</button>{:else}<a href="?view=settings">Connect a harness</a>{/if}</div>
+	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Garcon is ready for your first request'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Open Settings, choose your harness and account label, and copy the generated configuration. Restart your tool, then make one short request; it will appear here automatically.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Show all usage</button>{:else}<a href="?view=settings">Connect your first harness</a><p>Already using Garcon on another machine? Use Settings → Sync to join the same Supabase project. Sync is optional.</p>{/if}</div>
 {:else}
 	{#if tab === 'overview'}
 		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />

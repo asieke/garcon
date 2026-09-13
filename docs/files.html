@@ -38,13 +38,17 @@
 			<dl>
 				<dt>~/.local/share/garcon/usage.jsonl</dt><dd>This machine's log, one JSON object per completion call. Append-only; the format never changes with sync.</dd>
 				<dt>~/.local/share/garcon/remote.jsonl</dt><dd>Cache of other machines' rows pulled by sync. Safe to delete.</dd>
-				<dt>~/.local/share/garcon/sync.json</dt><dd>This machine's device id and the push and pull cursors.</dd>
-				<dt>~/.config/garcon/config.json</dt><dd>The sync switch, device name, project URL and secret key. Owner-only.</dd>
+				<dt>~/.local/share/garcon/sync.json</dt><dd>This machine's device id and the push and pull cursors. Keep it through upgrades. Do not copy it or the data directory to another machine: each machine must have its own identity.</dd>
+				<dt>~/.config/garcon/config.json</dt><dd>The sync switch, device name, project URL and secret key. Owner-only (0600); the API does not return the key.</dd>
+				<dt>~/.local/share/garcon/bin/garcon</dt><dd>The private service executable, copied from the installed package by setup or service restart. It survives npm cache cleanup and Node version changes.</dd>
+				<dt>~/.config/systemd/user/garcon.service</dt><dd>Linux autostart service. Inspect it with <code>garcon service status</code>; logs are available with <code>journalctl --user -u garcon</code>.</dd>
+				<dt>~/Library/LaunchAgents/dev.garcon.plist</dt><dd>macOS autostart service. Its log is <code>~/Library/Logs/garcon.log</code>.</dd>
 			</dl>
+			<p><code>garcon setup</code> and <code>garcon update</code> preserve usage, settings and device identity. <code>garcon service uninstall</code> stops autostart and keeps usage and settings; <code>npm uninstall -g ai-garcon</code> removes the npm command. The source installer’s <code>--uninstall</code> also removes the settings file. See <a href="install.html#uninstall">uninstall instructions</a> before removing the proxy.</p>
 		</section>
 		<section id="skills">
 			<h2>Agent skills</h2>
-			<p>The repository ships skills in <code>.claude/skills/</code> so a coding agent can do all of the above: <code>install-garcon</code> (install, remove), <code>update-garcon</code> (pull the latest main and restart), <code>add-provider</code> (point any harness at any provider), and <code>connect-supabase</code> (a guided walkthrough of the sync setup on the first and every further machine, including naming the machine and creating the project and table).</p>
+			<p>The repository ships skills in <code>.claude/skills/</code> so a coding agent can do all of the above: <code>install-garcon</code> (install, set up, remove), <code>update-garcon</code> (update an npm installation with <code>garcon update</code>, or pull and rebuild a source checkout), <code>add-provider</code> (point any harness at any provider), and <code>connect-supabase</code> (a guided walkthrough of the sync setup on the first and every further machine, including naming each machine, explicitly creating or reusing a project, and joining subsequent machines without applying SQL again).</p>
 			<p class="muted">Design notes for the dashboard navigation are in <a href="ui-navigation.md">ui-navigation.md</a>.</p>
 		</section>
 

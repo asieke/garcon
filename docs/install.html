@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Install · Garcon</title>
-	<meta name="description" content="Build, install and run Garcon as a background service on macOS or Linux.">
+	<meta name="description" content="Install, connect your first harness, and keep Garcon up to date.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -32,24 +32,45 @@
 
 	<main id="top">
 		<h1>Install</h1>
-		<p class="lede">Build, install and run Garcon as a background service on macOS or Linux.</p>
+		<p class="lede">Install, connect your first harness, and keep Garcon up to date.</p>
 
-		<section id="install">
-			<p>macOS and Linux, x64 and arm64. Needs Node 18+ for the installer; the proxy itself is one static binary.</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npm i -g ai-garcon
-garcon service install     # run now and at every login</code></pre></div>
-			<p><code>garcon service install</code> creates a systemd user unit <code>garcon</code> on Linux (<code>systemctl --user status garcon</code>, <code>journalctl --user -u garcon</code>) or a LaunchAgent <code>dev.garcon</code> on macOS (log in <code>~/Library/Logs/garcon.log</code>), pointing at the installed binary. <code>garcon service status</code>, <code>restart</code> and <code>uninstall</code> do what they say.</p>
-			<h3>Update</h3>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npm i -g ai-garcon@latest &amp;&amp; garcon service restart</code></pre></div>
-			<p>Settings, the usage log and sync state are untouched.</p>
-			<h3>From source</h3>
-			<p>Needs Go 1.27+ and Node 22+ (<code>mise install</code> in the repository provides both).</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/asieke/garcon &amp;&amp; cd garcon
-scripts/install.sh --service  # build dashboard + binary, install ~/.local/bin/garcon, run at login
-scripts/install.sh --update   # later: pull the latest main, rebuild, restart</code></pre></div>
-			<p><code>scripts/install.sh --update</code> fast-forwards <code>main</code>, rebuilds and restarts a running service (it refuses to run over uncommitted changes). <code>scripts/install.sh --uninstall</code> removes the service, the binary and the settings file but keeps the usage log.</p>
-			<p>By hand: <code>garcon [-listen 127.0.0.1:4141] [-data ~/.local/share/garcon/usage.jsonl] [-config ~/.config/garcon/config.json]</code>.</p>
-		</section>
+<section id="install">
+<p>macOS and Linux on x64 and arm64. Node 18+ runs the npm command; the background proxy is a standalone binary.</p>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npm install -g ai-garcon@latest
+garcon setup</code></pre></div>
+<p>Setup installs a service for your user, verifies the running version, and prints the dashboard link. Open Settings → Connect a harness, choose your tool and account label, and copy its configuration. Restart the tool and send one short request. The new row in Logs completes setup. Supabase is optional.</p>
+<p>Setup is safe to rerun and preserves usage and sync settings. Run it as your normal user, without sudo.</p>
+<h3 id="foreground">Try it first or run without a service</h3>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npx ai-garcon@latest   # foreground; Ctrl-C to stop</code></pre></div>
+<p>For an installed command, run <code>garcon</code> in one terminal and <code>garcon setup --no-service</code> in another. This also works in containers or Linux sessions without systemd. For a custom port, start <code>garcon -listen 127.0.0.1:4242</code>, then use <code>garcon setup --no-service --url http://127.0.0.1:4242</code>.</p>
+<h3 id="update">Update</h3>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon update</code></pre></div>
+<p>Updates the owning global npm installation, refreshes an installed service and waits for the new version. If no service is installed, the command explains how to start one or restart your foreground process. Usage, settings and device identity stay in place. Finish active agent requests first: restarting briefly interrupts the proxy.</p>
+<p>For older versions without the update command:</p>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npm install -g ai-garcon@latest
+garcon service restart
+garcon doctor --wait 10s</code></pre></div>
+<p>For npx setup, use <code>npx ai-garcon@latest setup</code> again. For a project-local dependency, run <code>npm install ai-garcon@latest</code>, then <code>npx garcon setup</code>. Source checkouts use <code>scripts/install.sh --update</code>.</p>
+<p>The service runs <code>~/.local/share/garcon/bin/garcon</code>, a private copy refreshed by setup and service restart. Clearing an npm cache or changing Node versions cannot delete it. After switching Node versions, reinstall the npm command and run setup.</p>
+<h3 id="another-machine">Another machine</h3>
+<p>Repeat installation and setup. Configure the harness on that machine too. To combine dashboards, open Settings → Sync, choose a different device name, and paste your existing project's URL and key. Do not copy <code>sync.json</code> or the data directory between machines. See <a href="sync.html#sync-others">joining an existing project</a>.</p>
+<h3 id="troubleshooting">Troubleshooting</h3>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon doctor
+garcon service status</code></pre></div>
+<p>Doctor checks the local server, installed/running versions, first-request progress and sync errors. It makes no direct Supabase calls. If the port belongs to another app, stop that app or use a custom foreground port. If Garcon is already running in a terminal, use <code>setup --no-service</code> or stop it before installing a service.</p>
+<p>Command not found: put <code>$(npm prefix -g)/bin</code> on PATH and restart the shell. Use <code>type -a garcon</code> to find duplicate installs. For EACCES, use a Node version manager or a user-owned npm prefix: <a href="https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/">npm's permissions guide</a>.</p>
+<p>Linux logs: <code>journalctl --user -u garcon</code>. macOS logs: <code>~/Library/Logs/garcon.log</code>.</p>
+<h3 id="uninstall">Uninstall</h3>
+<p>Restore your harnesses' original base URLs/providers first. Then stop the service before removing npm's command. Usage and settings remain for a later reinstall.</p>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon service uninstall
+npm uninstall -g ai-garcon</code></pre></div>
+<h3 id="source">From source</h3>
+<p>Needs Go 1.27+ and Node 22+ (<code>mise install</code> provides both).</p>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/asieke/garcon &amp;&amp; cd garcon
+scripts/install.sh --service
+scripts/install.sh --update   # later: pull and rebuild</code></pre></div>
+<p><code>scripts/install.sh --uninstall</code> removes the service, source-installed binary and settings file, keeping usage history. Foreground flags: <code>garcon [-listen ADDR] [-data FILE] [-config FILE]</code>.</p>
+</section>
 
 		<nav class="pager" aria-label="Pages"><a href="index.html"><small>Previous</small>Overview</a><a class="next" href="connect.html"><small>Next</small>Connect a harness</a></nav>
 	</main>

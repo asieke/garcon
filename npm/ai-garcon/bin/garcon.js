@@ -2,9 +2,10 @@
 'use strict';
 const { spawnSync } = require('node:child_process');
 const { target, binaryPath } = require('./resolve.js');
+if (process.argv[2] === 'update') process.exit(require('./update.js').update(process.argv.slice(3)));
 const bin = binaryPath();
 if (!bin) {
-	console.error(`ai-garcon: no prebuilt binary for ${target} (linux and macOS on x64 and arm64 are included).`);
+	console.error(`ai-garcon: binary missing for ${target}. Supported: linux/darwin on x64/arm64. Reinstall with npm install -g ai-garcon@latest.`);
 	console.error('Build from source instead: https://github.com/asieke/garcon');
 	process.exit(1);
 }
