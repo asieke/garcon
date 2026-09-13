@@ -62,6 +62,11 @@
 	let now = $state(Date.now());
 	let lastSync = $state<number | null>(null);
 	let stale = $state(false);
+	// The running binary's version, from /api/config: "0.1.1" for npm installs, a git describe for source builds, "dev" otherwise.
+	let version = $state('');
+	const versionLabel = $derived(/^\d/.test(version) ? `v${version}` : version);
+	// Sync on means rows can come from several machines, so the device becomes worth a column of its own.
+	let syncEnabled = $state(false);
 
 	async function refresh() {
 		try {
@@ -74,9 +79,19 @@
 		} catch {
 			stale = true;
 		}
+		try {
+			const res = await fetch('/api/settings');
+			if (res.ok) syncEnabled = Boolean((await res.json()).settings?.sync_enabled);
+		} catch {
+			// Settings are only needed for the device column; the usage poll already reports the outage.
+		}
 	}
 	$effect(() => {
 		refresh();
+		fetch('/api/config')
+			.then((r) => (r.ok ? r.json() : null))
+			.then((c) => { if (c?.version) version = c.version; })
+			.catch(() => {});
 		const timer = setInterval(refresh, POLL_MS);
 		return () => clearInterval(timer);
 	});
@@ -246,7 +261,7 @@
 <a class="skip-link" href="#main-content" onclick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
 <div class="app-shell">
 	<aside class:open={menuOpen}>
-		<a class="brand" href="?view=overview" onclick={navigate}><span class="brand-mark" aria-hidden="true">g.</span><span>Garcon<small>AGENT OBSERVABILITY</small></span></a>
+		<a class="brand" href="?view=overview" onclick={navigate}><span class="brand-mark" aria-hidden="true">g.</span><span>Garcon<small>{versionLabel}</small></span></a>
 		<div class="navigation" id="primary-navigation"><Sidebar active={tab} onnavigate={navigate} /></div>
 		<div class="sidebar-footer"><span class="status-dot" class:offline={stale || !lastSync}></span>Local instance</div>
 	</aside>
@@ -322,7 +337,7 @@
 	{:else if tab === 'performance'}
 		<PerformanceSection rows={visible} />
 	{:else if tab === 'logs'}
-		<LogsSection rows={visible} />
+		<LogsSection rows={visible} showDevice={syncEnabled} />
 	{/if}
 {/if}
 
@@ -336,7 +351,7 @@
 	aside { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--border); }
 	.brand { display: flex; align-items: center; gap: 11px; padding: 26px 24px; color: var(--text-primary); text-decoration: none; font-size: 20px; font-weight: 650; letter-spacing: -.5px; }
 	.brand-mark { display: grid; place-items: center; width: 34px; height: 38px; background: var(--accent); color: var(--surface); border-radius: 10px; font-size: 26px; }
-	.brand small { display: block; font-size: 8px; color: var(--text-muted); letter-spacing: .12em; margin-top: 2px; }
+	.brand small { display: block; min-height: 10px; font-size: 8px; color: var(--text-muted); letter-spacing: .12em; margin-top: 2px; }
 	.navigation { padding: 12px; flex: 1; overflow-y: auto; }
 	.sidebar-footer { padding: 20px 26px; font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
 	.workspace { min-width: 0; }
