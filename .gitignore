@@ -1,4 +1,4 @@
 /garcon
-/npm/platforms/*/bin/
+/npm/ai-garcon/dist/
 /internal/dashboard/build/*
 !/internal/dashboard/build/.gitkeep

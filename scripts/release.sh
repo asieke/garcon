@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the dashboard and the binary for every platform, then publish the npm packages.
-#   scripts/release.sh 0.1.0            publish ai-garcon@0.1.0 and its four platform packages
+#   scripts/release.sh 0.1.0            publish ai-garcon@0.1.0 (one package, four platform binaries inside)
 #   scripts/release.sh 0.1.0 --dry-run  build and show what would be published
 # Needs: go, npm (logged in: `npm login`), a clean checkout on main.
 set -euo pipefail
@@ -20,19 +20,14 @@ echo "== dashboard"; (cd web && npm ci --no-audit --no-fund --loglevel=error && 
 for t in $TARGETS; do
 	os=${t%-*}; cpu=${t#*-}
 	echo "== garcon $V for $t"
-	CGO_ENABLED=0 GOOS=$os GOARCH=$(goarch "$cpu") go build -trimpath -ldflags "-s -w -X main.version=$V" -o "npm/platforms/ai-garcon-$t/bin/garcon" ./cmd/garcon
-	(cd "npm/platforms/ai-garcon-$t" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
+	CGO_ENABLED=0 GOOS=$os GOARCH=$(goarch "$cpu") go build -trimpath -ldflags "-s -w -X main.version=$V" -o "npm/ai-garcon/dist/$t/garcon" ./cmd/garcon
 done
-(cd npm/ai-garcon && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null && node -e '
-	const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json"));
-	for (const k of Object.keys(p.optionalDependencies)) p.optionalDependencies[k] = process.argv[1];
-	fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "$V")
+(cd npm/ai-garcon && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
 
 echo "== publish"
-for t in $TARGETS; do (cd "npm/platforms/ai-garcon-$t" && npm publish --access public ${DRY:+--dry-run}); done
 (cd npm/ai-garcon && npm publish --access public ${DRY:+--dry-run})
 if [ -z "$DRY" ]; then
-	git add npm/*/package.json npm/platforms/*/package.json
+	git add npm/ai-garcon/package.json
 	git diff --cached --quiet || git commit -q -m "ai-garcon $V"
 	git tag -f "v$V" >/dev/null
 	echo "published ai-garcon@$V; the version-bump commit and tag v$V are local: git push --tags, then open a PR for the commit (main is PR-only)"

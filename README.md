@@ -28,7 +28,7 @@ harness name is accepted. `<account>` is a label: use the login the tool signs i
 
 ```sh
 npm i -g ai-garcon && garcon service install   # macOS and Linux, x64 and arm64
-npm i -g ai-garcon@latest                       # update: a running service restarts itself
+npm i -g ai-garcon@latest && garcon service restart   # update
 garcon service status|restart|uninstall
 ```
 
@@ -97,11 +97,11 @@ internal/service/    systemd and launchd management
 internal/dashboard/  embedded build output of web/
 web/                 SvelteKit dashboard          docs/       GitHub Pages site
 scripts/             install.sh (source builds), release.sh
-npm/                 ai-garcon and its platform packages
+npm/ai-garcon/       the npm package (shim, README, built binaries)
 supabase/            sync table schema            .claude/    agent skills
 ```
 
 `go test ./...`; `cd web && npm run check && npm run dev` (proxies `/api` to a running garcon).
-Release: `scripts/release.sh X.Y.Z` cross-compiles for four platforms and publishes `ai-garcon`
-plus its platform packages (`npm login` first; `--dry-run` only builds).
+Release: `scripts/release.sh X.Y.Z` cross-compiles for four platforms into one `ai-garcon`
+package and publishes it (`npm login` first; `--dry-run` only builds).
 Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `connect-supabase`.

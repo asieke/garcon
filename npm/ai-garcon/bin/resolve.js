@@ -1,11 +1,10 @@
-// Locate the prebuilt binary for this platform, installed as an optional dependency.
+// The package ships one static binary per platform under dist/<os>-<arch>/garcon.
 'use strict';
-const pkg = `ai-garcon-${process.platform}-${process.arch}`;
+const path = require('node:path');
+const fs = require('node:fs');
+const target = `${process.platform}-${process.arch}`;
 function binaryPath() {
-	try {
-		return require.resolve(`${pkg}/bin/garcon`);
-	} catch {
-		return null;
-	}
+	const p = path.join(__dirname, '..', 'dist', target, 'garcon');
+	return fs.existsSync(p) ? p : null;
 }
-module.exports = { pkg, binaryPath };
+module.exports = { target, binaryPath };
