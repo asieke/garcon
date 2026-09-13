@@ -182,6 +182,8 @@ supabase/            sync table schema            .claude/    agent skills
 ```
 
 `go test ./...`; `cd web && npm run check && npm run dev` (proxies `/api` to a running garcon).
-Release: `scripts/release.sh X.Y.Z` cross-compiles for four platforms into one `ai-garcon`
-package and publishes it (`npm login` first; `--dry-run` only builds).
+Release: every merge into `main` publishes a new patch version of `ai-garcon` to npm
+(`.github/workflows/release.yml`; `[minor]` or `[major]` in the PR title bumps that part).
+The version lives in the git tag and on npm, not in the repository; `scripts/release.sh
+X.Y.Z --dry-run` runs the same build locally.
 Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `connect-supabase`, `commit-garcon`.
