@@ -196,7 +196,19 @@ var (
 	mu      sync.Mutex
 	records = []record{}
 	logFile *os.File
+	started = time.Now()
 )
+
+// config is what the dashboard's Settings tab shows: how this instance is wired.
+type config struct {
+	Listen    string            `json:"listen"`
+	Data      string            `json:"data"`
+	Rows      int               `json:"rows"`
+	Bytes     int64             `json:"bytes"`
+	Started   int64             `json:"started"` // unix milliseconds
+	Providers map[string]string `json:"providers"`
+	Implicit  map[string]string `json:"implicit_harnesses"`
+}
 
 func save(rec record) {
 	line, _ := json.Marshal(rec)
@@ -309,6 +321,22 @@ func main() {
 		mu.Lock()
 		defer mu.Unlock()
 		json.NewEncoder(w).Encode(records)
+	})
+	http.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		hosts := map[string]string{}
+		for name, u := range providers {
+			hosts[name] = u.String()
+		}
+		var size int64
+		if st, err := os.Stat(*data); err == nil {
+			size = st.Size()
+		}
+		mu.Lock()
+		rows := len(records)
+		mu.Unlock()
+		json.NewEncoder(w).Encode(config{Listen: *listen, Data: *data, Rows: rows, Bytes: size,
+			Started: started.UnixMilli(), Providers: hosts, Implicit: implicitProvider})
 	})
 	log.Printf("garcon listening on http://%s, logging to %s", *listen, *data)
 	log.Fatal(http.ListenAndServe(*listen, nil))

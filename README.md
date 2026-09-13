@@ -33,6 +33,10 @@ Dashboard: http://127.0.0.1:4141, scoped by a shared time-range/harness/account 
 - **Latency**: the connection-setup overhead the proxy itself adds (via `connect_ms`/
   `first_byte_ms` on each record) versus upstream/model response time, which dominates.
 - **Logs**: sortable, filterable request table with per-request detail and CSV export.
+- **Settings**: how this instance is wired (listen address, usage log, providers and their
+  upstreams, every harness and account seen), a snippet builder that produces the exact
+  configuration for pointing any harness at any provider, and browser-side state such as
+  custom prices. Backed by `GET /api/config`.
 
 Raw data: http://127.0.0.1:4141/api/usage.
 
@@ -120,6 +124,9 @@ providers:
 or, for a one-off, `OPENAI_BASE_URL=http://127.0.0.1:4141/hermes/me@example.com/openai/v1`.
 OpenRouter reports models as `anthropic/claude-sonnet-5`; the Cost tab prices those by
 the bare id.
+
+The `add-provider` skill in `.claude/skills/` walks an agent through any of these, and the
+Settings tab generates the same snippets for a chosen harness, provider and account.
 
 ### Anything else
 
