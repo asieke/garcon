@@ -9,6 +9,7 @@
 	import SessionsSection from '$lib/sections/SessionsSection.svelte';
 	import ActivitySection from '$lib/sections/ActivitySection.svelte';
 	import PerformanceSection from '$lib/sections/PerformanceSection.svelte';
+	import SettingsSection from '$lib/sections/SettingsSection.svelte';
 	import { when } from '$lib/format';
 	import {
 		type Row,
@@ -45,8 +46,10 @@
 		['activity', 'Activity'],
 		['performance', 'Performance'],
 		['latency', 'Latency'],
-		['logs', 'Logs']
+		['logs', 'Logs'],
+		['settings', 'Settings']
 	] as const;
+	const POLL_MS = 10_000;
 
 	let rows = $state<Row[]>([]);
 	let days = $state(7);
@@ -71,7 +74,7 @@
 	}
 	$effect(() => {
 		refresh();
-		const timer = setInterval(refresh, 10_000);
+		const timer = setInterval(refresh, POLL_MS);
 		return () => clearInterval(timer);
 	});
 
@@ -307,6 +310,8 @@
 		<PerformanceSection rows={visible} />
 	{:else if tab === 'logs'}
 		<LogsSection rows={visible} />
+	{:else if tab === 'settings'}
+		<SettingsSection {rows} pollMs={POLL_MS} {now} />
 	{/if}
 {/if}
 
