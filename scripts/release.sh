@@ -19,9 +19,10 @@ fi
 TARGETS="linux-x64 linux-arm64 darwin-x64 darwin-arm64"
 goarch() { case "$1" in x64) echo amd64 ;; arm64) echo arm64 ;; esac; }
 
+# The dashboard first: the Go packages embed its build output, so a fresh checkout cannot even compile without it.
+echo "== dashboard"; (cd web && npm ci --no-audit --no-fund --loglevel=error && npm run check && npm run build >/dev/null)
 go test ./...
 node --test npm/ai-garcon/test/*.test.js
-echo "== dashboard"; (cd web && npm ci --no-audit --no-fund --loglevel=error && npm run check && npm run build >/dev/null)
 for t in $TARGETS; do
 	os=${t%-*}; cpu=${t#*-}
 	echo "== garcon $V for $t"
