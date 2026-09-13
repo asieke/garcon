@@ -35,6 +35,7 @@
 		<p class="lede">Point Claude Code, Codex, OpenClaw, Hermes or any compatible client at the proxy.</p>
 
 		<section id="connect">
+			<p>First complete <a href="install.html">installation and <code>garcon setup</code></a> on this machine. Setup starts the proxy; the configuration below connects your harness to it. Repeat this connection step on every machine, even when they share a Supabase project.</p>
 			<p>The Settings view of the dashboard generates every snippet below for a chosen harness, provider and account. The account is only a label the proxy records; use the login the harness actually signs in with so usage lines up with the right subscription. Replace <code>me@example.com</code>.</p>
 			<h3>Claude Code</h3>
 			<div class="block"><div class="label"><span>environment</span><button class="copy" type="button">Copy</button></div><pre><code>ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
@@ -72,7 +73,10 @@ requires_openai_auth = true</code></pre></div>
 			<p>Hermes appends <code>/chat/completions</code> or <code>/v1/messages</code> itself and asks for <code>stream_options.include_usage</code>, which is what lets the proxy see token counts.</p>
 			<h3>Anything else</h3>
 			<p>Use <code>http://127.0.0.1:4141/&lt;name&gt;/&lt;account&gt;/&lt;provider&gt;</code> plus whatever path prefix the client's SDK expects (<code>/v1</code> for OpenAI SDKs, <code>/api/v1</code> for OpenRouter). Rows are tagged with that name and the dashboard lists it alongside the known harnesses. OpenAI-compatible clients only report tokens on streamed replies when they send <code>stream_options: {"include_usage": true}</code>.</p>
+			<h3 id="verify">Verify your first request</h3>
+			<p>Keep a copy of your original configuration so you can restore it before <a href="install.html#uninstall">uninstalling Garcon</a>. Restart the harness after applying its generated configuration.</p>
 			<p>Verify any of these with one short call (<code>claude -p hi</code>, <code>codex exec hi</code>) and a new row in the Logs view or at <code>/api/usage</code>.</p>
+			<p>If no row appears, run <code>garcon doctor</code>, confirm that the harness is using the local URL, and check Logs with all filters cleared. Doctor checks the proxy and reports whether any local requests have been recorded; it does not change harness configuration. See <a href="install.html#troubleshooting">installation troubleshooting</a>.</p>
 		</section>
 
 		<nav class="pager" aria-label="Pages"><a href="install.html"><small>Previous</small>Install</a><a class="next" href="dashboard.html"><small>Next</small>Dashboard</a></nav>

@@ -102,8 +102,8 @@
 					<tr><th>Subscription logins (claude.ai, ChatGPT plans)</th><td>Work unchanged; usage is still recorded</td><td>Generally not; the gateway needs API keys</td></tr>
 					<tr><th>Routing, retries, fallbacks, budgets, virtual keys</th><td>None, by design</td><td>Yes, that is the product</td></tr>
 					<tr><th>Where the data lives</th><td>A JSONL file in your home directory; optionally a table in a Supabase project you own</td><td>The gateway's Postgres, or a hosted logging service</td></tr>
-					<tr><th>Footprint</th><td>Two Go files, no dependencies, one binary with the dashboard inside it, loopback only</td><td>A Python service plus its database, usually a container or a hosted deployment</td></tr>
-					<tr><th>Setup</th><td>One install script, then a base URL per agent</td><td>A config file of models and keys, a deployment, then a base URL per client</td></tr>
+					<tr><th>Footprint</th><td>No Go dependencies; one binary with the dashboard inside it, listening on loopback by default</td><td>A Python service plus its database, usually a container or a hosted deployment</td></tr>
+					<tr><th>Setup</th><td>Install from npm, run <code>garcon setup</code>, then connect each harness</td><td>A config file of models and keys, a deployment, then a base URL per client</td></tr>
 					<tr><th>Multiple people or teams</th><td>No; one person, any number of machines</td><td>Yes</td></tr>
 				</tbody>
 			</table></div>
@@ -125,16 +125,20 @@
 
 		<section id="records">
 			<h2>What it records, and what it never touches</h2>
-			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard binds to loopback only and stores no credentials. With sync off, which is the default, Garcon makes no network calls of its own at all.</p>
+			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. If you enable sync, the Supabase secret key is saved in an owner-only settings file; see <a href="sync.html#sync-security">sync security</a>. With sync off, which is the default, Garcon makes no network calls of its own at all.</p>
 		</section>
 
 		<section id="start">
 			<h2>Quick start</h2>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npm install -g ai-garcon@latest
+garcon setup</code></pre></div>
+			<p>macOS and Linux, x64 and arm64. Node 18+ runs the npm command. Setup starts Garcon at login, checks its version, and prints the dashboard link. No Supabase account is needed for local recording.</p>
 			<ol class="steps">
-				<li><strong><a href="install.html">Install</a></strong><code>scripts/install.sh --service</code> builds the dashboard and the binary and runs it at login.</li>
-				<li><strong><a href="connect.html">Point an agent at it</a></strong>one environment variable for Claude Code, a provider entry for Codex, a base URL for anything else. Make one short call and watch the row appear.</li>
-				<li><strong><a href="sync.html">Add your other machines</a></strong>when you want them in the same picture: one script on the first machine, a URL and a key on the rest.</li>
+				<li><strong><a href="install.html">Install and start</a></strong>run the commands above as your normal user. For a foreground trial or source build, see the install guide.</li>
+				<li><strong><a href="connect.html">Connect your first harness</a></strong>open Settings, choose your tool and account label, and copy its configuration. Restart the tool, make one short request, and check Logs for the new row.</li>
+				<li><strong><a href="sync.html#sync-others">Add your other machines</a></strong>repeat installation and harness setup there. For a combined dashboard, create or choose one Supabase project, then reuse its URL and key with a distinct device name on each machine.</li>
 			</ol>
+			<p>Later, run <code>garcon update</code> to update an npm installation and refresh its service. Run <code>garcon doctor</code> to check reachability, versions, first-request progress and sync errors. See <a href="install.html#update">updating</a> and <a href="install.html#troubleshooting">troubleshooting</a>.</p>
 		</section>
 
 		<nav class="pager" aria-label="Pages"><span></span><a class="next" href="install.html"><small>Next</small>Install</a></nav>

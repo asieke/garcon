@@ -16,7 +16,9 @@ fi
 TARGETS="linux-x64 linux-arm64 darwin-x64 darwin-arm64"
 goarch() { case "$1" in x64) echo amd64 ;; arm64) echo arm64 ;; esac; }
 
-echo "== dashboard"; (cd web && npm ci --no-audit --no-fund --loglevel=error && npm run build >/dev/null)
+go test ./...
+node --test npm/ai-garcon/test/*.test.js
+echo "== dashboard"; (cd web && npm ci --no-audit --no-fund --loglevel=error && npm run check && npm run build >/dev/null)
 for t in $TARGETS; do
 	os=${t%-*}; cpu=${t#*-}
 	echo "== garcon $V for $t"
@@ -24,8 +26,12 @@ for t in $TARGETS; do
 done
 (cd npm/ai-garcon && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
 
-echo "== publish"
-(cd npm/ai-garcon && npm publish --access public ${DRY:+--dry-run})
+echo "== package"
+if [ -n "$DRY" ]; then
+ (cd npm/ai-garcon && npm pack --dry-run)
+else
+ (cd npm/ai-garcon && npm publish --access public)
+fi
 if [ -z "$DRY" ]; then
 	git add npm/ai-garcon/package.json
 	git diff --cached --quiet || git commit -q -m "ai-garcon $V"

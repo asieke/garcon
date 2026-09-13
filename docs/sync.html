@@ -39,22 +39,27 @@
 			<div class="callout"><p>Only you can read the table. It has row level security enabled with no policies, so the project's <em>secret</em> key (which bypasses RLS) is the only key that can touch it; the publishable key sees nothing. The secret key is stored owner-only on each machine and sent only to your project URL.</p></div>
 
 			<h3 id="sync-first">First machine</h3>
-			<p>The <a href="https://supabase.com/docs/guides/cli">Supabase CLI</a> does the whole setup, and the secret key goes straight from the CLI into the proxy without being printed. Log in once with <code>supabase login</code>, then, on the machine that runs garcon:</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon connect-supabase --name "work laptop"</code></pre></div>
+			<p>Start with <code>garcon setup</code>. For a browser-only setup, create or choose a project in Supabase, run the SQL under <a href="#sync-table">The table</a>, then enter its URL and secret key in Settings → Sync. No Supabase CLI required.</p>
+<p>The <a href="https://supabase.com/docs/guides/cli">Supabase CLI</a> does the whole setup, and the secret key goes straight from the CLI into the proxy without being printed. Log in once with <code>supabase login</code>, then, on the machine that runs garcon:</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon connect-supabase --create-project --name "work laptop"</code></pre></div>
 			<ol class="steps">
-				<li><strong>Checks</strong> that garcon answers and the CLI is logged in (<code>supabase orgs list</code>).</li>
-				<li><strong>Creates a project</strong> named <code>garcon</code> on the free tier in <code>us-east-1</code>, or the <code>--region</code> you pass. If you belong to several organisations, pass <code>--org-id</code> (the command lists them). The generated database password is printed once; Garcon never needs it, so keep it in your password manager. To reuse a project you already have, pass <code>--project-ref &lt;ref&gt;</code> and this step is skipped.</li>
+				<li><strong>Checks</strong> that Garcon answers, the CLI supports <code>db query --project-ref</code>, and the CLI is logged in (<code>supabase orgs list</code>). Capability checks happen before creating a project. If the CLI is too old, update it or use the browser setup above.</li>
+				<li><strong>Creates a project</strong> named <code>garcon</code> (check your organization’s plan and project limits) in <code>us-east-1</code>, or the <code>--region</code> you pass. If you belong to several organisations, pass <code>--org-id</code> (the command lists them). The generated database password is printed once; Garcon never needs it, so keep it in your password manager. To reuse a project you already have, pass <code>--project-ref &lt;ref&gt;</code> and this step is skipped.</li>
 				<li><strong>Applies the table</strong> from the schema embedded in the binary (<code>garcon connect-supabase --print-sql</code> prints it) through the Management API (<code>supabase db query --linked --project-ref …</code>): no link step, no database password.</li>
 				<li><strong>Fetches the secret key</strong> with <code>supabase projects api-keys --reveal</code> and pipes it, with the device name and the switch turned on, into <code>PUT /api/settings</code>. The proxy probes the table with those credentials before storing anything.</li>
 			</ol>
-			<p>The <code>--name</code> is this machine's label in the Device filter and the devices table. It is a label only: a hidden device id identifies the machine, so you can rename it any time in Settings, and every machine needs a distinct name.</p>
+			<p>Creating a project requires <code>--create-project</code>. To use an existing project and apply its schema, run <code>garcon connect-supabase --project-ref YOUR_PROJECT_REF --name "work laptop"</code>. If creation succeeds but a later step fails, reuse the printed project ref when retrying so you do not create another project.</p>
+			<p>The <code>--name</code> defaults to the hostname and is this machine's label in the Device filter and the devices table. It is a label only: a hidden device id identifies the machine, so you can rename it any time in Settings, and every machine needs a distinct name.</p>
 
 			<h3 id="sync-table">The table</h3>
 			<p>If you would rather not use the CLI, run this in the project's SQL editor (SQL Editor → New query → Run); <code>garcon connect-supabase --print-sql</code> prints the same text. It is idempotent: run it again after upgrading Garcon if Settings reports a missing column.</p>
-			<div class="block"><div class="label"><span>garcon connect-supabase --print-sql</span><button class="copy" type="button">Copy</button></div><pre><code>create table if not exists public.garcon_usage (
-  id            text primary key,           -- sha256 of device id + the row's fields
+			<div class="block"><div class="label"><span>garcon connect-supabase --print-sql</span><button class="copy" type="button">Copy</button></div><pre><code>-- Garcon cross-device sync: one row per completion call, upserted by every device.
+-- Idempotent: safe to run again after upgrading Garcon. Run it in the project&#x27;s
+-- SQL editor, or let `garcon connect-supabase` apply it (`--print-sql` prints it).
+create table if not exists public.garcon_usage (
+  id            text primary key,           -- sha256 of device id + the row&#x27;s fields
   device_id     text not null,              -- random id generated once per machine
-  device        text not null,              -- the machine's display name
+  device        text not null,              -- the machine&#x27;s display name
   time          bigint not null,            -- unix milliseconds
   harness       text not null,
   account       text not null,
@@ -75,26 +80,38 @@
   output        bigint not null,
   synced_at     timestamptz not null default now()
 );
+-- Add optional latency fields when upgrading an older Garcon table.
+alter table public.garcon_usage add column if not exists queue_us bigint;
+alter table public.garcon_usage add column if not exists reused boolean;
+alter table public.garcon_usage add column if not exists connect_ms bigint;
+alter table public.garcon_usage add column if not exists dns_ms bigint;
+alter table public.garcon_usage add column if not exists tcp_ms bigint;
+alter table public.garcon_usage add column if not exists tls_ms bigint;
+alter table public.garcon_usage add column if not exists first_byte_ms bigint;
 create index if not exists garcon_usage_synced_at on public.garcon_usage (synced_at, id);
 create index if not exists garcon_usage_device_time on public.garcon_usage (device_id, time);
--- No policies on purpose: only the project's secret key (which bypasses row level
+-- No policies on purpose: only the project&#x27;s secret key (which bypasses row level
 -- security) can read or write this table. The publishable key sees nothing.
-alter table public.garcon_usage enable row level security;</code></pre></div>
+alter table public.garcon_usage enable row level security;
+</code></pre></div>
 			<p>Then in Settings → Sync: device name, project URL (<code>https://&lt;ref&gt;.supabase.co</code>, the ref is the 20-letter id in the project's dashboard URL), the secret key (Project Settings → API Keys → <code>sb_secret_…</code>), switch on, Save.</p>
 
 			<h3 id="sync-others">Other machines</h3>
-			<p>The project and table already exist, so a second machine only needs the URL and the key. Either rerun the command there with the CLI logged in:</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon connect-supabase --name "home desktop" --project-ref &lt;ref&gt;</code></pre></div>
-			<p>or open Settings → Sync in that machine's dashboard, give it a different device name, paste the project URL and the secret key, switch sync on and Save. Without a browser, the same thing over HTTP (omit <code>key</code> on later saves to keep the stored one):</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>curl -s -X PUT -H 'Content-Type: application/json' http://127.0.0.1:4141/api/settings \
-  -d '{"sync_enabled":true,"device_name":"home desktop","url":"https://&lt;ref&gt;.supabase.co","key":"&lt;sb_secret_…&gt;"}'</code></pre></div>
-			<p>Save probes the table with the exact credentials first and refuses to store a configuration that does not work. Within a minute of both machines being on, each one's dashboard lists the other under Settings → Sync and the Device filter appears in the filter bar.</p>
+			<p>Replace <code>YOUR_PROJECT_REF</code> in the commands below with your existing Supabase project ref, and replace the key-file path with a protected file containing its secret key.</p>
+			<p>Run <code>garcon setup</code> and configure this machine’s harness first. The project and table already exist, so joining only needs the URL and key. Choose a distinct device name. Do not copy another machine’s <code>sync.json</code> or data directory. The <code>--skip-schema</code> flag avoids database changes. Either rerun the command there with the CLI logged in:</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon connect-supabase --name "home desktop" --project-ref YOUR_PROJECT_REF --skip-schema</code></pre></div>
+			<p>or open Settings → Sync in that machine's dashboard, give it a different device name, paste the project URL and the secret key, switch sync on and Save. Without a browser, supply the key from a protected file or password manager through stdin. This needs no Supabase CLI and keeps the key out of command arguments and shell history:</p>
+<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon connect-supabase --name &quot;home desktop&quot; \
+  --project-url https://YOUR_PROJECT_REF.supabase.co --key-stdin &lt; /path/to/protected-key-file
+garcon doctor</code></pre></div>
+<p>Save probes the table with the exact credentials first and refuses to store a configuration that does not work. After both machines have recorded usage and synced successfully, each one's dashboard lists the other, usually within about a minute under Settings → Sync and the Device filter appears in the filter bar.</p>
 
 			<h3 id="sync-security">Security and privacy</h3>
 			<ul>
 				<li><strong>What leaves a machine</strong>, per completion call: device name, time, harness, account, provider, model, HTTP status, latency figures and the four token counts. Never prompts, replies, API keys or session ids.</li>
 				<li><strong>Where the key lives</strong>: <code>~/.config/garcon/config.json</code>, mode 0600, on each machine. The dashboard API never returns it (only whether one is stored) and it is sent only to the project URL. <code>scripts/install.sh --uninstall</code> deletes the file.</li>
-				<li><strong>Which key</strong>: a new-format secret key (<code>sb_secret_…</code>) or a legacy <code>service_role</code> JWT. Publishable and anon keys are rejected on Save: they get the anon role, and with RLS on they would silently see nothing.</li>
+				<li><strong>Project access</strong>: use a dedicated project; a secret key can access other project data, not just Garcon’s table. Share it only with your own trusted machines.</li>
+<li><strong>Which key</strong>: a new-format secret key (<code>sb_secret_…</code>) or a legacy <code>service_role</code> JWT. Publishable and anon keys are rejected on Save: they get the anon role, and with RLS on they would silently see nothing.</li>
 				<li><strong>The switch is absolute</strong>: off means no push, no pull, no probe. Turning it off keeps the settings; <em>Forget key</em> also removes the key.</li>
 				<li><strong>Local only</strong>: the proxy binds to loopback and the settings endpoint additionally requires a JSON content type and a loopback <code>Host</code> header, so a web page cannot change them.</li>
 			</ul>
@@ -107,10 +124,10 @@ alter table public.garcon_usage enable row level security;</code></pre></div>
 			</ul>
 
 			<h3 id="sync-troubleshooting">Troubleshooting</h3>
-			<p>Settings → Sync shows the last push and pull error. <code>curl -s http://127.0.0.1:4141/api/settings</code> shows the same as JSON.</p>
+			<p><code>garcon doctor</code> and Settings → Sync show the latest push and pull errors. <code>curl -s http://127.0.0.1:4141/api/settings</code> shows the same as JSON.</p>
 			<dl>
 				<dt>Invalid JWT</dt><dd>The key is publishable, or a legacy key was pasted with a typo. Use the <code>sb_secret_</code> key.</dd>
-				<dt>PGRST204 / could not find column</dt><dd>The table is older than Garcon. Rerun the SQL above, then <code>alter table public.garcon_usage add column …</code> for anything still missing.</dd>
+				<dt>PGRST204 / could not find column</dt><dd>The table is older than Garcon. Rerun <code>garcon connect-supabase --print-sql</code> in the SQL editor. It adds the optional latency columns used by this version. If an error remains, compare the named column with the schema before changing the table.</dd>
 				<dt>relation "garcon_usage" does not exist</dt><dd>The SQL was not run, or ran in another project.</dd>
 				<dt>pending never drains</dt><dd>Read the push error; pushes retry with backoff up to five minutes and resume as soon as the cause is fixed. Flipping the switch off and on wakes the loop immediately.</dd>
 				<dt>A machine appears twice</dt><dd><code>sync.json</code> was deleted, so it got a new device id and re-pushed its history under it. <code>delete from public.garcon_usage where device_id = '&lt;old id&gt;'</code> if it matters.</dd>

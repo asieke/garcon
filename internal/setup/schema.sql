@@ -25,6 +25,14 @@ create table if not exists public.garcon_usage (
   output        bigint not null,
   synced_at     timestamptz not null default now()
 );
+-- Add optional latency fields when upgrading an older Garcon table.
+alter table public.garcon_usage add column if not exists queue_us bigint;
+alter table public.garcon_usage add column if not exists reused boolean;
+alter table public.garcon_usage add column if not exists connect_ms bigint;
+alter table public.garcon_usage add column if not exists dns_ms bigint;
+alter table public.garcon_usage add column if not exists tcp_ms bigint;
+alter table public.garcon_usage add column if not exists tls_ms bigint;
+alter table public.garcon_usage add column if not exists first_byte_ms bigint;
 create index if not exists garcon_usage_synced_at on public.garcon_usage (synced_at, id);
 create index if not exists garcon_usage_device_time on public.garcon_usage (device_id, time);
 -- No policies on purpose: only the project's secret key (which bypasses row level

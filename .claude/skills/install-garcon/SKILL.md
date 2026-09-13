@@ -7,10 +7,10 @@ description: Install, upgrade, or remove Garcon, the local Claude Code and Codex
 
 Read `README.md` first for what the proxy does and how harnesses are pointed at it.
 
-The normal path is npm: `npm i -g ai-garcon && garcon service install` (Node 18+; macOS
+The normal path is npm: `npm i -g ai-garcon@latest && garcon setup` (Node 18+; macOS
 and Linux on x64 or arm64). That installs a prebuilt binary and runs it now and at every
 login: a systemd user unit named `garcon` on Linux, a LaunchAgent `dev.garcon` on macOS.
-`npm i -g ai-garcon@latest && garcon service restart` upgrades it (the `update-garcon` skill).
+`garcon update` upgrades it (the `update-garcon` skill).
 
 Building from source instead, with `scripts/install.sh`:
 

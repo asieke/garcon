@@ -35,6 +35,7 @@
 		<p class="lede">What each view shows and how the shared filters scope them.</p>
 
 		<section id="dashboard">
+			<p>After <code>garcon setup</code>, the empty dashboard guides you to Settings → Connect a harness. Choose your tool and account label, copy its configuration, restart the tool and send one short request. The dashboard refreshes automatically when usage arrives. <a href="connect.html#verify">Verify the first request</a>.</p>
 			<p><a href="http://127.0.0.1:4141">http://127.0.0.1:4141</a>. Usage views share time-range, harness, account and (once sync has pulled in a second machine) device filters; Settings always describes the whole instance.</p>
 			<dl>
 				<dt>Overview, Usage, Models, Accounts</dt><dd>Request and token volume, composition, rankings.</dd>
@@ -43,8 +44,9 @@
 				<dt>Activity</dt><dd>Hour-of-day and calendar heatmaps, streaks, peak concurrency.</dd>
 				<dt>Performance, Latency</dt><dd>Generation speed and time-to-first-byte by model; the proxy's own connection overhead versus upstream time.</dd>
 				<dt>Logs</dt><dd>Sortable, filterable request table with CSV export.</dd>
-				<dt>Settings</dt><dd>How the instance is wired, a snippet builder for connecting harnesses, the sync switch and its status, browser-side state.</dd>
+				<dt>Settings</dt><dd>How the instance is wired, a snippet builder for connecting harnesses, the sync switch and its status, browser-side state. For another machine, reuse the project URL and secret key with a distinct device name; see the <a href="sync.html#sync-others">join instructions</a>.</dd>
 			</dl>
+			<p>If the dashboard becomes unreachable, run <code>garcon doctor</code>. After an update, <code>garcon doctor --wait 10s</code> can wait for the new version to start. Sync is optional; leaving it off still lets this machine record and display usage.</p>
 		</section>
 
 		<nav class="pager" aria-label="Pages"><a href="connect.html"><small>Previous</small>Connect a harness</a><a class="next" href="sync.html"><small>Next</small>Sync across devices</a></nav>

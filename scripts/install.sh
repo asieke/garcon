@@ -5,7 +5,7 @@
 #   scripts/install.sh --update     pull the latest main, then build + install + restart
 #   scripts/install.sh --uninstall  stop and remove the service, the binary and the settings file
 #                             (which holds the Supabase key, if sync was set up)
-# Prefer `npm i -g ai-garcon && garcon service install` unless you want to build from source.
+# Prefer `npm i -g ai-garcon@latest && garcon setup` unless you want to build from source.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

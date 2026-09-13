@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"garcon/internal/dashboard"
+	"garcon/internal/onboarding"
 	"garcon/internal/proxy"
 	"garcon/internal/service"
 	"garcon/internal/setup"
@@ -44,8 +45,14 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-data FILE] [-config FILE]\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --name LABEL [--project-ref REF] | --print-sql\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-data FILE] [-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --create-project | --project-ref REF [--skip-schema]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n       garcon version")
 			return
+		case "setup", "doctor":
+			onboarding.Main(os.Args[1], os.Args[2:], version)
+			return
+		case "update":
+			fmt.Fprintln(os.Stderr, "For npm installs: npm install -g ai-garcon@latest && garcon service install && garcon doctor\nFor source installs: scripts/install.sh --update")
+			os.Exit(1)
 		case "service":
 			service.Main(os.Args[2:])
 			return
@@ -62,6 +69,10 @@ func main() {
 	data := flag.String("data", filepath.Join(home, ".local/share/garcon/usage.jsonl"), "usage log")
 	configPath := flag.String("config", filepath.Join(home, ".config/garcon/config.json"), "settings file")
 	flag.Parse()
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "unknown command %q; run garcon --help\n", flag.Arg(0))
+		os.Exit(2)
+	}
 
 	st, err := store.Open(*data)
 	if err != nil {

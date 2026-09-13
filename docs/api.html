@@ -37,10 +37,11 @@
 		<section id="api">
 			<dl>
 				<dt>GET /api/usage</dt><dd>Every recorded row as a JSON array: this machine's, then any pulled in by sync. Each row carries <code>device</code>; remote rows also <code>id</code> and <code>device_id</code>.</dd>
-				<dt>GET /api/config</dt><dd>How the instance is wired: listen address, log path and size, providers and their upstreams, implicit harnesses.</dd>
+				<dt>GET /api/config</dt><dd>How the instance is wired: <code>listen</code>, <code>data</code>, local <code>rows</code>, log <code>bytes</code>, <code>started</code> (Unix milliseconds), <code>version</code>, providers and their upstreams, and implicit harnesses. Setup and doctor use this endpoint to identify Garcon and compare installed and running versions.</dd>
 				<dt>GET /api/settings</dt><dd><code>settings</code> (switch, device name, URL, <code>key_set</code>) and <code>status</code> (device id, pushed and pending counts, last push and pull, errors, rows from other devices, the devices table).</dd>
-				<dt>PUT /api/settings</dt><dd>The four settings as JSON. <code>key</code> absent keeps the stored key, <code>""</code> clears it. Probes the table when the switch is on and answers 400 with the reason instead of saving. Requires <code>Content-Type: application/json</code> and a loopback Host.</dd>
+				<dt>PUT /api/settings</dt><dd>Send <code>sync_enabled</code>, <code>device_name</code> and <code>url</code>, with optional <code>key</code>, as JSON. <code>key</code> absent keeps the stored key, <code>""</code> clears it. Probes the table when the switch is on and answers 400 with the reason instead of saving. Requires <code>Content-Type: application/json</code> and a loopback Host.</dd>
 			</dl>
+			<p>For setup from a terminal, prefer <code>garcon doctor</code> for diagnostics and <code>garcon connect-supabase --project-url URL --key-stdin</code> for joining a project. Pass the key through stdin from a password manager or protected file. These commands use the local API; see <a href="sync.html#sync-others">the join example</a>.</p>
 			<h3>Row fields</h3>
 			<p><code>time</code> (unix ms), <code>harness</code>, <code>account</code>, <code>provider</code>, <code>model</code>, <code>status</code>, <code>ms</code>, <code>input</code>, <code>cache_read</code>, <code>cache_write</code>, <code>output</code>, plus optional connection timings the proxy measures for itself: <code>queue_us</code>, <code>reused</code>, <code>connect_ms</code>, <code>dns_ms</code>, <code>tcp_ms</code>, <code>tls_ms</code>, <code>first_byte_ms</code>. Absent means not measured, never zero.</p>
 		</section>
