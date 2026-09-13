@@ -4,29 +4,29 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Garcon documentation</title>
-	<meta name="description" content="Garcon: a local pass-through proxy that records coding-agent usage per account, with an embedded dashboard and optional cross-device sync through your own Supabase project.">
+	<meta name="description" content="A local pass-through proxy for coding agents that records usage per account. Two Go files with no dependencies, a dashboard embedded in the binary, and optional sync across your machines through a Supabase project you own.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="shell">
-	<nav class="side" aria-label="Contents">
-		<a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">g.</span><span><strong>Garcon</strong><small>Documentation</small></span></a>
+	<nav class="side" aria-label="Documentation">
+		<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">g.</span><span><strong>Garcon</strong><small>Documentation</small></span></a>
 		<h2>Start</h2>
-		<a class="nav" href="#overview">Overview</a>
-		<a class="nav" href="#install">Install</a>
-		<a class="nav" href="#connect">Connect a harness</a>
-		<a class="nav" href="#dashboard">Dashboard</a>
+		<a class="nav" href="index.html" aria-current="page">Overview</a>
+		<a class="nav" href="install.html">Install</a>
+		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="dashboard.html">Dashboard</a>
 		<h2>Sync</h2>
-		<a class="nav" href="#sync">Sync across devices</a>
-		<a class="nav sub" href="#sync-first">First machine</a>
-		<a class="nav sub" href="#sync-table">The table</a>
-		<a class="nav sub" href="#sync-others">Other machines</a>
-		<a class="nav sub" href="#sync-security">Security and privacy</a>
-		<a class="nav sub" href="#sync-troubleshooting">Troubleshooting</a>
+		<a class="nav" href="sync.html">Sync across devices</a>
+		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
+		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
+		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
+		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
+		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
+		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
 		<h2>Reference</h2>
-		<a class="nav" href="#api">HTTP API</a>
-		<a class="nav" href="#files">Files</a>
-		<a class="nav" href="#skills">Agent skills</a>
+		<a class="nav" href="api.html">HTTP API</a>
+		<a class="nav" href="files.html">Files and skills</a>
 		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
 	</nav>
 
@@ -35,7 +35,6 @@
 		<p class="lede">A local pass-through proxy for coding agents that records usage per account. Two Go files with no dependencies, a dashboard embedded in the binary, and optional sync across your machines through a Supabase project you own.</p>
 
 		<section id="overview">
-			<h2>Overview</h2>
 			<p>Each agent is pointed at <code>http://127.0.0.1:4141/&lt;harness&gt;/&lt;account&gt;/&lt;provider&gt;/</code>, where <code>harness</code> names the tool, <code>account</code> is the login it uses (an email), and <code>provider</code> is the upstream. The proxy forwards every request unchanged and streams the reply back. Completion calls are appended to a local log with the model and the token counts the provider reported: uncached input, cache read, cache write and output. No limits, no retries, nothing rewritten, no credentials stored.</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Segment</th><th>Upstream</th><th>Recorded calls</th></tr></thead>
@@ -49,189 +48,10 @@
 			<p>Claude Code and Codex talk to one provider each, so their URLs omit the segment: <code>/claude/&lt;account&gt;/</code> implies <code>anthropic</code> and <code>/codex/&lt;account&gt;/</code> implies <code>chatgpt</code>. Any other harness name works and needs the provider segment.</p>
 		</section>
 
-		<section id="install">
-			<h2>Install</h2>
-			<p>Needs Go 1.27+ and Node 22+ (<code>mise install</code> in the repository provides both). Works on macOS and Linux.</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/asieke/garcon &amp;&amp; cd garcon
-./install.sh            # build dashboard + binary, install ~/.local/bin/garcon
-./install.sh --service  # also run it now and at every login</code></pre></div>
-			<p><code>--service</code> creates a systemd user unit <code>garcon</code> on Linux (<code>systemctl --user status garcon</code>, <code>journalctl --user -u garcon</code>) or a LaunchAgent <code>dev.garcon</code> on macOS (log in <code>~/Library/Logs/garcon.log</code>). Rerun <code>./install.sh</code> after pulling changes; it restarts a running service. <code>./install.sh --uninstall</code> removes the service, the binary and the settings file but keeps the usage log.</p>
-			<p>By hand: <code>garcon [-listen 127.0.0.1:4141] [-data ~/.local/share/garcon/usage.jsonl] [-config ~/.config/garcon/config.json]</code>.</p>
-		</section>
-
-		<section id="connect">
-			<h2>Connect a harness</h2>
-			<p>The Settings view of the dashboard generates every snippet below for a chosen harness, provider and account. The account is only a label the proxy records; use the login the harness actually signs in with so usage lines up with the right subscription. Replace <code>me@example.com</code>.</p>
-			<h3>Claude Code</h3>
-			<div class="block"><div class="label"><span>environment</span><button class="copy" type="button">Copy</button></div><pre><code>ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
-_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude</code></pre></div>
-			<p>Claude Code appends <code>/v1/messages</code> itself. The second variable keeps subscription (claude.ai) login working through a non-Anthropic host.</p>
-			<h3>Codex</h3>
-			<div class="block"><div class="label"><span>~/.codex/config.toml</span><button class="copy" type="button">Copy</button></div><pre><code>model_provider = "garcon"
-
-[model_providers.garcon]
-name = "OpenAI"
-base_url = "http://127.0.0.1:4141/codex/me@example.com/backend-api/codex"
-wire_api = "responses"
-requires_openai_auth = true</code></pre></div>
-			<p>Codex needs its own provider entry because the built-in one ignores base URL overrides under a ChatGPT login; a custom provider also uses plain HTTP instead of websockets, which is what lets the proxy read usage. Only model calls are routed; plugin, app and usage-limit traffic goes to chatgpt.com directly.</p>
-			<h3>OpenClaw</h3>
-			<div class="block"><div class="label"><span>~/.openclaw/openclaw.json</span><button class="copy" type="button">Copy</button></div><pre><code>{
-  models: {
-    mode: "merge",
-    providers: {
-      anthropic:  { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/anthropic" },
-      openai:     { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/openai/v1" },
-      openrouter: { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/openrouter/api/v1" },
-    },
-  },
-}</code></pre></div>
-			<p>Each adapter appends its own endpoint path. The <code>openai-codex</code> (ChatGPT OAuth) provider uses <code>…/openclaw/me@example.com/chatgpt/backend-api</code>. Keys stay in OpenClaw; the proxy forwards <code>Authorization</code> and <code>x-api-key</code> untouched.</p>
-			<h3>Hermes</h3>
-			<div class="block"><div class="label"><span>~/.hermes/config.yaml</span><button class="copy" type="button">Copy</button></div><pre><code>providers:
-  openrouter:
-    base_url: http://127.0.0.1:4141/hermes/me@example.com/openrouter/api/v1
-  anthropic:
-    base_url: http://127.0.0.1:4141/hermes/me@example.com/anthropic
-  openai:
-    base_url: http://127.0.0.1:4141/hermes/me@example.com/openai/v1</code></pre></div>
-			<p>Hermes appends <code>/chat/completions</code> or <code>/v1/messages</code> itself and asks for <code>stream_options.include_usage</code>, which is what lets the proxy see token counts.</p>
-			<h3>Anything else</h3>
-			<p>Use <code>http://127.0.0.1:4141/&lt;name&gt;/&lt;account&gt;/&lt;provider&gt;</code> plus whatever path prefix the client's SDK expects (<code>/v1</code> for OpenAI SDKs, <code>/api/v1</code> for OpenRouter). Rows are tagged with that name and the dashboard lists it alongside the known harnesses. OpenAI-compatible clients only report tokens on streamed replies when they send <code>stream_options: {"include_usage": true}</code>.</p>
-			<p>Verify any of these with one short call (<code>claude -p hi</code>, <code>codex exec hi</code>) and a new row in the Logs view or at <code>/api/usage</code>.</p>
-		</section>
-
-		<section id="dashboard">
-			<h2>Dashboard</h2>
-			<p><a href="http://127.0.0.1:4141">http://127.0.0.1:4141</a>. Usage views share time-range, harness, account and (once sync has pulled in a second machine) device filters; Settings always describes the whole instance.</p>
-			<dl>
-				<dt>Overview, Usage, Models, Accounts</dt><dd>Request and token volume, composition, rankings.</dd>
-				<dt>Cost</dt><dd>Estimated spend at published pay-as-you-go list prices (never a bill), cache savings, blended $/1M tokens, run rate, an editable pricing table whose edits stay in the browser.</dd>
-				<dt>Sessions</dt><dd>Requests grouped into coding sessions per account, harness and device, with a timeline and per-session tokens, peak context and cost.</dd>
-				<dt>Activity</dt><dd>Hour-of-day and calendar heatmaps, streaks, peak concurrency.</dd>
-				<dt>Performance, Latency</dt><dd>Generation speed and time-to-first-byte by model; the proxy's own connection overhead versus upstream time.</dd>
-				<dt>Logs</dt><dd>Sortable, filterable request table with CSV export.</dd>
-				<dt>Settings</dt><dd>How the instance is wired, a snippet builder for connecting harnesses, the sync switch and its status, browser-side state.</dd>
-			</dl>
-		</section>
-
-		<section id="sync">
-			<h2>Sync across devices</h2>
-			<p>Off by default. Garcon makes no network calls of its own until <strong>Enable Supabase sync</strong> is switched on in Settings; recording never depends on it and the local log stays each machine's source of truth. When it is on, every completion call is upserted into one table in a Supabase project you own, and the other machines' rows are pulled into a local cache, so each dashboard shows the union with a Device filter and sessions kept apart per machine.</p>
-			<div class="callout"><p>Only you can read the table. It has row level security enabled with no policies, so the project's <em>secret</em> key (which bypasses RLS) is the only key that can touch it; the publishable key sees nothing. The secret key is stored owner-only on each machine and sent only to your project URL.</p></div>
-
-			<h3 id="sync-first">First machine</h3>
-			<p>The <a href="https://supabase.com/docs/guides/cli">Supabase CLI</a> does the whole setup, and the secret key goes straight from the CLI into the proxy without being printed. Log in once with <code>supabase login</code>, then from the repository:</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>./connect-supabase.sh --name "work laptop"</code></pre></div>
-			<ol class="steps">
-				<li><strong>Checks</strong> that garcon answers and the CLI is logged in (<code>supabase orgs list</code>).</li>
-				<li><strong>Creates a project</strong> named <code>garcon</code> on the free tier in <code>us-east-1</code>, or the <code>--region</code> you pass. If you belong to several organisations, pass <code>--org-id</code> (the script lists them). The generated database password is printed once; Garcon never needs it, so keep it in your password manager. To reuse a project you already have, pass <code>--project-ref &lt;ref&gt;</code> and this step is skipped.</li>
-				<li><strong>Applies the table</strong> from <code>supabase/garcon_usage.sql</code> through the Management API (<code>supabase db query --linked --project-ref …</code>): no link step, no database password.</li>
-				<li><strong>Fetches the secret key</strong> with <code>supabase projects api-keys --reveal</code> and pipes it, with the device name and the switch turned on, into <code>PUT /api/settings</code>. The proxy probes the table with those credentials before storing anything.</li>
-			</ol>
-			<p>The <code>--name</code> is this machine's label in the Device filter and the devices table. It is a label only: a hidden device id identifies the machine, so you can rename it any time in Settings, and every machine needs a distinct name.</p>
-
-			<h3 id="sync-table">The table</h3>
-			<p>If you would rather not use the CLI, run this in the project's SQL editor (SQL Editor → New query → Run). It is idempotent: run it again after upgrading Garcon if Settings reports a missing column.</p>
-			<div class="block"><div class="label"><span>supabase/garcon_usage.sql</span><button class="copy" type="button">Copy</button></div><pre><code>create table if not exists public.garcon_usage (
-  id            text primary key,           -- sha256 of device id + the row's fields
-  device_id     text not null,              -- random id generated once per machine
-  device        text not null,              -- the machine's display name
-  time          bigint not null,            -- unix milliseconds
-  harness       text not null,
-  account       text not null,
-  provider      text not null,
-  model         text not null,
-  status        integer not null,
-  ms            bigint not null,
-  queue_us      bigint,
-  reused        boolean,
-  connect_ms    bigint,
-  dns_ms        bigint,
-  tcp_ms        bigint,
-  tls_ms        bigint,
-  first_byte_ms bigint,
-  input         bigint not null,            -- uncached input tokens
-  cache_read    bigint not null,
-  cache_write   bigint not null,
-  output        bigint not null,
-  synced_at     timestamptz not null default now()
-);
-create index if not exists garcon_usage_synced_at on public.garcon_usage (synced_at, id);
-create index if not exists garcon_usage_device_time on public.garcon_usage (device_id, time);
--- No policies on purpose: only the project's secret key (which bypasses row level
--- security) can read or write this table. The publishable key sees nothing.
-alter table public.garcon_usage enable row level security;</code></pre></div>
-			<p>Then in Settings → Sync: device name, project URL (<code>https://&lt;ref&gt;.supabase.co</code>, the ref is the 20-letter id in the project's dashboard URL), the secret key (Project Settings → API Keys → <code>sb_secret_…</code>), switch on, Save.</p>
-
-			<h3 id="sync-others">Other machines</h3>
-			<p>The project and table already exist, so a second machine only needs the URL and the key. Either rerun the script there with the CLI logged in:</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>./connect-supabase.sh --name "home desktop" --project-ref &lt;ref&gt;</code></pre></div>
-			<p>or open Settings → Sync in that machine's dashboard, give it a different device name, paste the project URL and the secret key, switch sync on and Save. Without a browser, the same thing over HTTP (omit <code>key</code> on later saves to keep the stored one):</p>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>curl -s -X PUT -H 'Content-Type: application/json' http://127.0.0.1:4141/api/settings \
-  -d '{"sync_enabled":true,"device_name":"home desktop","url":"https://&lt;ref&gt;.supabase.co","key":"&lt;sb_secret_…&gt;"}'</code></pre></div>
-			<p>Save probes the table with the exact credentials first and refuses to store a configuration that does not work. Within a minute of both machines being on, each one's dashboard lists the other under Settings → Sync and the Device filter appears in the filter bar.</p>
-
-			<h3 id="sync-security">Security and privacy</h3>
-			<ul>
-				<li><strong>What leaves a machine</strong>, per completion call: device name, time, harness, account, provider, model, HTTP status, latency figures and the four token counts. Never prompts, replies, API keys or session ids.</li>
-				<li><strong>Where the key lives</strong>: <code>~/.config/garcon/config.json</code>, mode 0600, on each machine. The dashboard API never returns it (only whether one is stored) and it is sent only to the project URL. <code>./install.sh --uninstall</code> deletes the file.</li>
-				<li><strong>Which key</strong>: a new-format secret key (<code>sb_secret_…</code>) or a legacy <code>service_role</code> JWT. Publishable and anon keys are rejected on Save: they get the anon role, and with RLS on they would silently see nothing.</li>
-				<li><strong>The switch is absolute</strong>: off means no push, no pull, no probe. Turning it off keeps the settings; <em>Forget key</em> also removes the key.</li>
-				<li><strong>Local only</strong>: the proxy binds to loopback and the settings endpoint additionally requires a JSON content type and a loopback <code>Host</code> header, so a web page cannot change them.</li>
-			</ul>
-			<h3>How it works</h3>
-			<ul>
-				<li>Each row's <code>id</code> is a hash of the machine's device id and the row's fields, so history backfills with stable ids and re-sending is a harmless upsert (<code>Prefer: resolution=merge-duplicates</code>).</li>
-				<li>Pushes go in batches of 500 with exponential backoff; a first enable backfills the whole local log. The push cursor is persisted so a restart never re-uploads.</li>
-				<li>Pulls run every minute, ordered by the server-side <code>synced_at</code>, with a five-minute overlap deduplicated by id so a slow commit is never missed. Other machines' rows are cached in <code>~/.local/share/garcon/remote.jsonl</code> and shown even while offline.</li>
-				<li>Renaming a device is free: the id in <code>sync.json</code> is what identifies the machine, and recreating the config never turns a machine into a "new" device.</li>
-			</ul>
-
-			<h3 id="sync-troubleshooting">Troubleshooting</h3>
-			<p>Settings → Sync shows the last push and pull error. <code>curl -s http://127.0.0.1:4141/api/settings</code> shows the same as JSON.</p>
-			<dl>
-				<dt>Invalid JWT</dt><dd>The key is publishable, or a legacy key was pasted with a typo. Use the <code>sb_secret_</code> key.</dd>
-				<dt>PGRST204 / could not find column</dt><dd>The table is older than Garcon. Rerun the SQL above, then <code>alter table public.garcon_usage add column …</code> for anything still missing.</dd>
-				<dt>relation "garcon_usage" does not exist</dt><dd>The SQL was not run, or ran in another project.</dd>
-				<dt>pending never drains</dt><dd>Read the push error; pushes retry with backoff up to five minutes and resume as soon as the cause is fixed. Flipping the switch off and on wakes the loop immediately.</dd>
-				<dt>A machine appears twice</dt><dd><code>sync.json</code> was deleted, so it got a new device id and re-pushed its history under it. <code>delete from public.garcon_usage where device_id = '&lt;old id&gt;'</code> if it matters.</dd>
-				<dt>Rotate the key</dt><dd>Create a new secret key in Supabase, paste it in Settings, Save, then revoke the old one.</dd>
-				<dt>Start over</dt><dd>Switch sync off, delete <code>remote.jsonl</code> (the next pull rebuilds it), and drop the table if you no longer want the data in the cloud.</dd>
-			</dl>
-		</section>
-
-		<section id="api">
-			<h2>HTTP API</h2>
-			<dl>
-				<dt>GET /api/usage</dt><dd>Every recorded row as a JSON array: this machine's, then any pulled in by sync. Each row carries <code>device</code>; remote rows also <code>id</code> and <code>device_id</code>.</dd>
-				<dt>GET /api/config</dt><dd>How the instance is wired: listen address, log path and size, providers and their upstreams, implicit harnesses.</dd>
-				<dt>GET /api/settings</dt><dd><code>settings</code> (switch, device name, URL, <code>key_set</code>) and <code>status</code> (device id, pushed and pending counts, last push and pull, errors, rows from other devices, the devices table).</dd>
-				<dt>PUT /api/settings</dt><dd>The four settings as JSON. <code>key</code> absent keeps the stored key, <code>""</code> clears it. Probes the table when the switch is on and answers 400 with the reason instead of saving. Requires <code>Content-Type: application/json</code> and a loopback Host.</dd>
-			</dl>
-			<h3>Row fields</h3>
-			<p><code>time</code> (unix ms), <code>harness</code>, <code>account</code>, <code>provider</code>, <code>model</code>, <code>status</code>, <code>ms</code>, <code>input</code>, <code>cache_read</code>, <code>cache_write</code>, <code>output</code>, plus optional connection timings the proxy measures for itself: <code>queue_us</code>, <code>reused</code>, <code>connect_ms</code>, <code>dns_ms</code>, <code>tcp_ms</code>, <code>tls_ms</code>, <code>first_byte_ms</code>. Absent means not measured, never zero.</p>
-		</section>
-
-		<section id="files">
-			<h2>Files</h2>
-			<dl>
-				<dt>~/.local/share/garcon/usage.jsonl</dt><dd>This machine's log, one JSON object per completion call. Append-only; the format never changes with sync.</dd>
-				<dt>~/.local/share/garcon/remote.jsonl</dt><dd>Cache of other machines' rows pulled by sync. Safe to delete.</dd>
-				<dt>~/.local/share/garcon/sync.json</dt><dd>This machine's device id and the push and pull cursors.</dd>
-				<dt>~/.config/garcon/config.json</dt><dd>The sync switch, device name, project URL and secret key. Owner-only.</dd>
-			</dl>
-		</section>
-
-		<section id="skills">
-			<h2>Agent skills</h2>
-			<p>The repository ships skills in <code>.claude/skills/</code> so a coding agent can do all of the above: <code>install-garcon</code> (install, upgrade, remove), <code>add-provider</code> (point any harness at any provider), and <code>connect-supabase</code> (a guided walkthrough of the sync setup on the first and every further machine, including naming the machine and creating the project and table).</p>
-			<p class="muted">Design notes for the dashboard navigation are in <a href="ui-navigation.md">ui-navigation.md</a>.</p>
-		</section>
+		<nav class="pager" aria-label="Pages"><span></span><a class="next" href="install.html"><small>Next</small>Install</a></nav>
 	</main>
 </div>
 <script>
-	// Copy buttons: progressive, the page works without them.
 	for (const b of document.querySelectorAll('.copy')) {
 		b.addEventListener('click', async () => {
 			const code = b.closest('.block').querySelector('pre').innerText;

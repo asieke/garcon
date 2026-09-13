@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Install · Garcon</title>
+	<meta name="description" content="Build, install and run Garcon as a background service on macOS or Linux.">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+	<nav class="side" aria-label="Documentation">
+		<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">g.</span><span><strong>Garcon</strong><small>Documentation</small></span></a>
+		<h2>Start</h2>
+		<a class="nav" href="index.html">Overview</a>
+		<a class="nav" href="install.html" aria-current="page">Install</a>
+		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="dashboard.html">Dashboard</a>
+		<h2>Sync</h2>
+		<a class="nav" href="sync.html">Sync across devices</a>
+		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
+		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
+		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
+		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
+		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
+		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
+		<h2>Reference</h2>
+		<a class="nav" href="api.html">HTTP API</a>
+		<a class="nav" href="files.html">Files and skills</a>
+		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
+	</nav>
+
+	<main id="top">
+		<h1>Install</h1>
+		<p class="lede">Build, install and run Garcon as a background service on macOS or Linux.</p>
+
+		<section id="install">
+			<p>Needs Go 1.27+ and Node 22+ (<code>mise install</code> in the repository provides both). Works on macOS and Linux.</p>
+			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/asieke/garcon &amp;&amp; cd garcon
+./install.sh            # build dashboard + binary, install ~/.local/bin/garcon
+./install.sh --service  # also run it now and at every login</code></pre></div>
+			<p><code>--service</code> creates a systemd user unit <code>garcon</code> on Linux (<code>systemctl --user status garcon</code>, <code>journalctl --user -u garcon</code>) or a LaunchAgent <code>dev.garcon</code> on macOS (log in <code>~/Library/Logs/garcon.log</code>). Rerun <code>./install.sh</code> after pulling changes; it restarts a running service. <code>./install.sh --uninstall</code> removes the service, the binary and the settings file but keeps the usage log.</p>
+			<p>By hand: <code>garcon [-listen 127.0.0.1:4141] [-data ~/.local/share/garcon/usage.jsonl] [-config ~/.config/garcon/config.json]</code>.</p>
+		</section>
+
+		<nav class="pager" aria-label="Pages"><a href="index.html"><small>Previous</small>Overview</a><a class="next" href="connect.html"><small>Next</small>Connect a harness</a></nav>
+	</main>
+</div>
+<script>
+	for (const b of document.querySelectorAll('.copy')) {
+		b.addEventListener('click', async () => {
+			const code = b.closest('.block').querySelector('pre').innerText;
+			try { await navigator.clipboard.writeText(code); b.textContent = 'Copied'; }
+			catch { b.textContent = 'Select and copy'; }
+			setTimeout(() => (b.textContent = 'Copy'), 1500);
+		});
+	}
+</script>
+</body>
+</html>

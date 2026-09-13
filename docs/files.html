@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Files and skills · Garcon</title>
+	<meta name="description" content="Where Garcon keeps its data and settings, and the agent skills the repository ships.">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+	<nav class="side" aria-label="Documentation">
+		<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">g.</span><span><strong>Garcon</strong><small>Documentation</small></span></a>
+		<h2>Start</h2>
+		<a class="nav" href="index.html">Overview</a>
+		<a class="nav" href="install.html">Install</a>
+		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="dashboard.html">Dashboard</a>
+		<h2>Sync</h2>
+		<a class="nav" href="sync.html">Sync across devices</a>
+		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
+		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
+		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
+		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
+		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
+		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
+		<h2>Reference</h2>
+		<a class="nav" href="api.html">HTTP API</a>
+		<a class="nav" href="files.html" aria-current="page">Files and skills</a>
+		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
+	</nav>
+
+	<main id="top">
+		<h1>Files and skills</h1>
+		<p class="lede">Where Garcon keeps its data and settings, and the agent skills the repository ships.</p>
+
+		<section id="files">
+			<dl>
+				<dt>~/.local/share/garcon/usage.jsonl</dt><dd>This machine's log, one JSON object per completion call. Append-only; the format never changes with sync.</dd>
+				<dt>~/.local/share/garcon/remote.jsonl</dt><dd>Cache of other machines' rows pulled by sync. Safe to delete.</dd>
+				<dt>~/.local/share/garcon/sync.json</dt><dd>This machine's device id and the push and pull cursors.</dd>
+				<dt>~/.config/garcon/config.json</dt><dd>The sync switch, device name, project URL and secret key. Owner-only.</dd>
+			</dl>
+		</section>
+		<section id="skills">
+			<h2>Agent skills</h2>
+			<p>The repository ships skills in <code>.claude/skills/</code> so a coding agent can do all of the above: <code>install-garcon</code> (install, upgrade, remove), <code>add-provider</code> (point any harness at any provider), and <code>connect-supabase</code> (a guided walkthrough of the sync setup on the first and every further machine, including naming the machine and creating the project and table).</p>
+			<p class="muted">Design notes for the dashboard navigation are in <a href="ui-navigation.md">ui-navigation.md</a>.</p>
+		</section>
+
+		<nav class="pager" aria-label="Pages"><a href="api.html"><small>Previous</small>HTTP API</a><span></span></nav>
+	</main>
+</div>
+<script>
+	for (const b of document.querySelectorAll('.copy')) {
+		b.addEventListener('click', async () => {
+			const code = b.closest('.block').querySelector('pre').innerText;
+			try { await navigator.clipboard.writeText(code); b.textContent = 'Copied'; }
+			catch { b.textContent = 'Select and copy'; }
+			setTimeout(() => (b.textContent = 'Copy'), 1500);
+		});
+	}
+</script>
+</body>
+</html>

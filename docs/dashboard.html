@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Dashboard · Garcon</title>
+	<meta name="description" content="What each view shows and how the shared filters scope them.">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+	<nav class="side" aria-label="Documentation">
+		<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">g.</span><span><strong>Garcon</strong><small>Documentation</small></span></a>
+		<h2>Start</h2>
+		<a class="nav" href="index.html">Overview</a>
+		<a class="nav" href="install.html">Install</a>
+		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="dashboard.html" aria-current="page">Dashboard</a>
+		<h2>Sync</h2>
+		<a class="nav" href="sync.html">Sync across devices</a>
+		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
+		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
+		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
+		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
+		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
+		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
+		<h2>Reference</h2>
+		<a class="nav" href="api.html">HTTP API</a>
+		<a class="nav" href="files.html">Files and skills</a>
+		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
+	</nav>
+
+	<main id="top">
+		<h1>Dashboard</h1>
+		<p class="lede">What each view shows and how the shared filters scope them.</p>
+
+		<section id="dashboard">
+			<p><a href="http://127.0.0.1:4141">http://127.0.0.1:4141</a>. Usage views share time-range, harness, account and (once sync has pulled in a second machine) device filters; Settings always describes the whole instance.</p>
+			<dl>
+				<dt>Overview, Usage, Models, Accounts</dt><dd>Request and token volume, composition, rankings.</dd>
+				<dt>Cost</dt><dd>Estimated spend at published pay-as-you-go list prices (never a bill), cache savings, blended $/1M tokens, run rate, an editable pricing table whose edits stay in the browser.</dd>
+				<dt>Sessions</dt><dd>Requests grouped into coding sessions per account, harness and device, with a timeline and per-session tokens, peak context and cost.</dd>
+				<dt>Activity</dt><dd>Hour-of-day and calendar heatmaps, streaks, peak concurrency.</dd>
+				<dt>Performance, Latency</dt><dd>Generation speed and time-to-first-byte by model; the proxy's own connection overhead versus upstream time.</dd>
+				<dt>Logs</dt><dd>Sortable, filterable request table with CSV export.</dd>
+				<dt>Settings</dt><dd>How the instance is wired, a snippet builder for connecting harnesses, the sync switch and its status, browser-side state.</dd>
+			</dl>
+		</section>
+
+		<nav class="pager" aria-label="Pages"><a href="connect.html"><small>Previous</small>Connect a harness</a><a class="next" href="sync.html"><small>Next</small>Sync across devices</a></nav>
+	</main>
+</div>
+<script>
+	for (const b of document.querySelectorAll('.copy')) {
+		b.addEventListener('click', async () => {
+			const code = b.closest('.block').querySelector('pre').innerText;
+			try { await navigator.clipboard.writeText(code); b.textContent = 'Copied'; }
+			catch { b.textContent = 'Select and copy'; }
+			setTimeout(() => (b.textContent = 'Copy'), 1500);
+		});
+	}
+</script>
+</body>
+</html>

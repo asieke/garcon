@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Connect a harness · Garcon</title>
+	<meta name="description" content="Point Claude Code, Codex, OpenClaw, Hermes or any compatible client at the proxy.">
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+	<nav class="side" aria-label="Documentation">
+		<a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">g.</span><span><strong>Garcon</strong><small>Documentation</small></span></a>
+		<h2>Start</h2>
+		<a class="nav" href="index.html">Overview</a>
+		<a class="nav" href="install.html">Install</a>
+		<a class="nav" href="connect.html" aria-current="page">Connect a harness</a>
+		<a class="nav" href="dashboard.html">Dashboard</a>
+		<h2>Sync</h2>
+		<a class="nav" href="sync.html">Sync across devices</a>
+		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
+		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
+		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
+		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
+		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
+		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
+		<h2>Reference</h2>
+		<a class="nav" href="api.html">HTTP API</a>
+		<a class="nav" href="files.html">Files and skills</a>
+		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
+	</nav>
+
+	<main id="top">
+		<h1>Connect a harness</h1>
+		<p class="lede">Point Claude Code, Codex, OpenClaw, Hermes or any compatible client at the proxy.</p>
+
+		<section id="connect">
+			<p>The Settings view of the dashboard generates every snippet below for a chosen harness, provider and account. The account is only a label the proxy records; use the login the harness actually signs in with so usage lines up with the right subscription. Replace <code>me@example.com</code>.</p>
+			<h3>Claude Code</h3>
+			<div class="block"><div class="label"><span>environment</span><button class="copy" type="button">Copy</button></div><pre><code>ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
+_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude</code></pre></div>
+			<p>Claude Code appends <code>/v1/messages</code> itself. The second variable keeps subscription (claude.ai) login working through a non-Anthropic host.</p>
+			<h3>Codex</h3>
+			<div class="block"><div class="label"><span>~/.codex/config.toml</span><button class="copy" type="button">Copy</button></div><pre><code>model_provider = "garcon"
+
+[model_providers.garcon]
+name = "OpenAI"
+base_url = "http://127.0.0.1:4141/codex/me@example.com/backend-api/codex"
+wire_api = "responses"
+requires_openai_auth = true</code></pre></div>
+			<p>Codex needs its own provider entry because the built-in one ignores base URL overrides under a ChatGPT login; a custom provider also uses plain HTTP instead of websockets, which is what lets the proxy read usage. Only model calls are routed; plugin, app and usage-limit traffic goes to chatgpt.com directly.</p>
+			<h3>OpenClaw</h3>
+			<div class="block"><div class="label"><span>~/.openclaw/openclaw.json</span><button class="copy" type="button">Copy</button></div><pre><code>{
+  models: {
+    mode: "merge",
+    providers: {
+      anthropic:  { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/anthropic" },
+      openai:     { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/openai/v1" },
+      openrouter: { baseUrl: "http://127.0.0.1:4141/openclaw/me@example.com/openrouter/api/v1" },
+    },
+  },
+}</code></pre></div>
+			<p>Each adapter appends its own endpoint path. The <code>openai-codex</code> (ChatGPT OAuth) provider uses <code>…/openclaw/me@example.com/chatgpt/backend-api</code>. Keys stay in OpenClaw; the proxy forwards <code>Authorization</code> and <code>x-api-key</code> untouched.</p>
+			<h3>Hermes</h3>
+			<div class="block"><div class="label"><span>~/.hermes/config.yaml</span><button class="copy" type="button">Copy</button></div><pre><code>providers:
+  openrouter:
+    base_url: http://127.0.0.1:4141/hermes/me@example.com/openrouter/api/v1
+  anthropic:
+    base_url: http://127.0.0.1:4141/hermes/me@example.com/anthropic
+  openai:
+    base_url: http://127.0.0.1:4141/hermes/me@example.com/openai/v1</code></pre></div>
+			<p>Hermes appends <code>/chat/completions</code> or <code>/v1/messages</code> itself and asks for <code>stream_options.include_usage</code>, which is what lets the proxy see token counts.</p>
+			<h3>Anything else</h3>
+			<p>Use <code>http://127.0.0.1:4141/&lt;name&gt;/&lt;account&gt;/&lt;provider&gt;</code> plus whatever path prefix the client's SDK expects (<code>/v1</code> for OpenAI SDKs, <code>/api/v1</code> for OpenRouter). Rows are tagged with that name and the dashboard lists it alongside the known harnesses. OpenAI-compatible clients only report tokens on streamed replies when they send <code>stream_options: {"include_usage": true}</code>.</p>
+			<p>Verify any of these with one short call (<code>claude -p hi</code>, <code>codex exec hi</code>) and a new row in the Logs view or at <code>/api/usage</code>.</p>
+		</section>
+
+		<nav class="pager" aria-label="Pages"><a href="install.html"><small>Previous</small>Install</a><a class="next" href="dashboard.html"><small>Next</small>Dashboard</a></nav>
+	</main>
+</div>
+<script>
+	for (const b of document.querySelectorAll('.copy')) {
+		b.addEventListener('click', async () => {
+			const code = b.closest('.block').querySelector('pre').innerText;
+			try { await navigator.clipboard.writeText(code); b.textContent = 'Copied'; }
+			catch { b.textContent = 'Select and copy'; }
+			setTimeout(() => (b.textContent = 'Copy'), 1500);
+		});
+	}
+</script>
+</body>
+</html>

@@ -70,7 +70,7 @@ RLS, may touch the table, and the publishable key then sees nothing. Never add p
 ## 5. Schema without the CLI
 
 If the user prefers the dashboard: Supabase → SQL Editor → New query → paste
-`supabase/garcon_usage.sql` (also shown with a Copy button in the documentation site, https://asieke.github.io/garcon/#sync-table) → Run →
+`supabase/garcon_usage.sql` (also shown with a Copy button in the documentation site, https://asieke.github.io/garcon/sync.html#sync-table) → Run →
 "Success. No rows returned". Check Table Editor shows `garcon_usage` with RLS enabled. The
 file is idempotent; rerun it after upgrading Garcon if Save reports a missing column.
 
