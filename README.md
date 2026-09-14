@@ -40,6 +40,9 @@ To try it without a global install: `npx ai-garcon@latest` runs in the foregroun
 For containers or Linux without a systemd user session, run `garcon` in one terminal
 and `garcon setup --no-service` in another. A custom foreground address works with
 `garcon -listen 127.0.0.1:4242` and `garcon setup --no-service --url http://127.0.0.1:4242`.
+Garcon has no authentication, so it listens on loopback addresses only and answers only
+requests addressed to `127.0.0.1`, `localhost` or `[::1]`; `-allow-remote` lifts both, and
+opens the dashboard, the settings and the relay to that network.
 
 If installation fails with EACCES, use a Node version manager or a user-owned npm
 prefix ([npm's instructions](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/)).
@@ -162,7 +165,9 @@ and the latest sync errors. First enable uploads existing local history.
 Only device, time, harness, account, provider, model, status, latency and token counts
 are synced. Prompts and replies are not recorded. The project secret key can access other
 project data too: use a dedicated project and share the key only with your own trusted
-machines. It is stored in `~/.config/garcon/config.json` with mode 0600. Turning sync off
+machines. It is stored in `~/.config/garcon/config.json` with mode 0600 and is only ever sent
+to the project URL it was saved with: changing the URL asks for the key again, and redirects
+are never followed. Turning sync off
 stops push/pull while retaining local usage. See the [sync guide](https://asieke.github.io/garcon/sync.html).
 
 ## Development
@@ -184,6 +189,9 @@ supabase/            sync table schema            .claude/    agent skills
 `go test ./...`; `cd web && npm run check && npm run dev` (proxies `/api` to a running garcon).
 Release: every merge into `main` publishes a new patch version of `ai-garcon` to npm
 (`.github/workflows/release.yml`; `[minor]` or `[major]` in the PR title bumps that part).
+Pull requests run the same build without publishing (`.github/workflows/ci.yml`). The release
+builds and packs in a job with a read-only token, and a separate job publishes that tarball
+with provenance.
 The version lives in the git tag and on npm, not in the repository; `scripts/release.sh
 X.Y.Z --dry-run` runs the same build locally.
 Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `connect-supabase`, `commit-garcon`.

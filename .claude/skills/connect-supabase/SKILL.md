@@ -82,15 +82,20 @@ a `sb_publishable_…` key is rejected because it gets the anon role and RLS wou
 row; a legacy `service_role` JWT also works), switch **Enable Supabase sync** on, Save. Or,
 with the CLI logged in there: `garcon connect-supabase --name "<label>" --project-ref <ref> --skip-schema`.
 
-Headless, without a browser:
+Headless, without a browser, read the key from a protected file so it never lands in shell
+history, `ps` output or this chat:
 
 ```sh
-curl -s -X PUT -H 'Content-Type: application/json' http://127.0.0.1:4141/api/settings \
-  -d '{"sync_enabled":true,"device_name":"<label>","url":"https://<ref>.supabase.co","key":"<sb_secret_…>"}'
+garcon connect-supabase --name "<label>" --project-url https://<ref>.supabase.co \
+  --key-stdin < /path/to/protected-key-file
 ```
 
-Omit `key` to keep the stored one. Save probes the table with the given credentials and
-answers 400 with the reason instead of storing a configuration that does not work.
+The other fields can be changed with `curl -s -X PUT -H 'Content-Type: application/json'
+http://127.0.0.1:4141/api/settings -d '{"sync_enabled":true,"device_name":"<label>","url":"https://<ref>.supabase.co"}'`.
+Omit `key` to keep the stored one, except when `url` changes: a different project needs its
+own key, and Garcon only ever sends the stored key to the URL it was saved with. Save probes
+the table with the given credentials and answers 400 with the reason instead of storing a
+configuration that does not work.
 
 ## 7. Verify
 

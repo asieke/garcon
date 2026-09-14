@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"garcon/internal/local"
 	"garcon/internal/proxy"
 	"garcon/internal/store"
 	"garcon/internal/usage"
@@ -99,7 +99,6 @@ type Syncer struct {
 	store      *store.Store
 	configPath string
 	statePath  string
-	listenAddr string
 	client     *http.Client
 	poke       chan struct{}
 
@@ -113,9 +112,12 @@ type Syncer struct {
 
 // New loads the settings and state, labels the store's rows with the device
 // name, and arranges to be woken on every Save. Run must be called to sync.
-func New(st *store.Store, configPath, listenAddr string) *Syncer {
-	s := &Syncer{store: st, configPath: configPath, statePath: filepath.Join(st.Dir(), "sync.json"), listenAddr: listenAddr,
-		client: &http.Client{Timeout: 30 * time.Second}, poke: make(chan struct{}, 1)}
+func New(st *store.Store, configPath string) *Syncer {
+	s := &Syncer{store: st, configPath: configPath, statePath: filepath.Join(st.Dir(), "sync.json"),
+		// Never follow a redirect: Go keeps the apikey header across hosts, so a
+		// redirecting project URL would hand the key to whatever it points at.
+		client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		poke:   make(chan struct{}, 1)}
 	s.loadSettings()
 	s.loadState()
 	st.SetDevice(s.cfg.DeviceName)
@@ -340,6 +342,7 @@ func (s *Syncer) pull(c settings) error {
 		since = t.Add(-overlap).UTC().Format(time.RFC3339Nano)
 	}
 	last := cursor
+	skipped := 0
 	for offset := 0; ; offset += pageSize {
 		q := url.Values{}
 		q.Set("select", "*")
@@ -365,6 +368,10 @@ func (s *Syncer) pull(c settings) error {
 			return fmt.Errorf("pull: %w", err)
 		}
 		for _, p := range page {
+			if !acceptable(p) {
+				skipped++
+				continue
+			}
 			last = p.SyncedAt
 			if p.DeviceID != me {
 				s.store.AddRemote(p.Record)
@@ -374,12 +381,39 @@ func (s *Syncer) pull(c settings) error {
 			break
 		}
 	}
+	if skipped > 0 {
+		log.Printf("sync: pull skipped %d malformed rows", skipped)
+	}
 	s.mu.Lock()
 	s.st.PullCursor = last
 	writeJSON(s.statePath, s.st)
 	s.lastPullOK, s.lastPullErr = time.Now().UnixMilli(), ""
 	s.mu.Unlock()
 	return nil
+}
+
+// maxField bounds every string in a pulled row. Whoever holds the project key
+// can write anything into the table; this keeps a hostile or broken writer from
+// bloating the cache or, through synced_at, moving the cursor past real rows.
+const maxField = 512
+
+func acceptable(p pulled) bool {
+	for _, s := range []string{p.ID, p.DeviceID, p.Device, p.Harness, p.Account, p.Provider, p.Model, p.SyncedAt} {
+		if len(s) > maxField {
+			return false
+		}
+	}
+	if p.ID == "" || p.DeviceID == "" {
+		return false
+	}
+	horizon := time.Now().Add(24 * time.Hour)
+	if p.Time < 0 || p.Time > horizon.UnixMilli() {
+		return false
+	}
+	if t, err := time.Parse(time.RFC3339Nano, p.SyncedAt); err == nil && t.After(horizon) {
+		return false
+	}
+	return true
 }
 
 // once is one turn of the loop: nothing at all happens while the switch is off.
@@ -434,22 +468,6 @@ func (s *Syncer) Wake() {
 	}
 }
 
-// loopback reports whether a Host header names this machine: the only defence
-// the settings endpoint has against DNS rebinding, since the server has no auth.
-func (s *Syncer) loopback(host string) bool {
-	if host == s.listenAddr {
-		return true
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
-}
-
 type deviceStat struct {
 	DeviceID string `json:"device_id"`
 	Device   string `json:"device"`
@@ -493,7 +511,9 @@ func (s *Syncer) view() map[string]any {
 
 // ServeHTTP is GET/PUT /api/settings.
 func (s *Syncer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !s.loopback(r.Host) {
+	// The server-wide gate (internal/local) already rejects DNS-rebound names;
+	// the endpoint that stores the key stays safe on its own too.
+	if !local.Host(r.Host) {
 		http.Error(w, "settings can only be changed from this machine", http.StatusForbidden)
 		return
 	}
@@ -515,11 +535,19 @@ func (s *Syncer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
-		next := s.cfg
+		prev := s.cfg
 		s.mu.Unlock()
+		next := prev
 		next.SyncEnabled, next.DeviceName, next.URL = in.SyncEnabled, strings.TrimSpace(in.DeviceName), strings.TrimRight(strings.TrimSpace(in.URL), "/")
 		if in.Key != nil {
 			next.Key = strings.TrimSpace(*in.Key)
+		}
+		// The stored key is only ever sent to the URL it was saved with. A different
+		// project has a different key, so a URL change must bring one; otherwise
+		// anyone who can reach this port could point the probe at a host they own.
+		if next.URL != prev.URL && next.URL != "" && in.Key == nil && prev.Key != "" {
+			http.Error(w, "the project URL changed: enter the secret key again (each project has its own key, and the stored one is only sent to the URL it was saved with)", http.StatusBadRequest)
+			return
 		}
 		if err := s.validate(next); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -566,8 +594,8 @@ func (s *Syncer) validate(c settings) error {
 	}
 	if c.URL != "" {
 		u, err := url.Parse(c.URL)
-		if err != nil || u.Host == "" || u.Path != "" || (u.Scheme != "https" && !(u.Scheme == "http" && s.loopback(u.Host))) {
-			return errors.New("project URL must look like https://<ref>.supabase.co")
+		if err != nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && local.Host(u.Host))) {
+			return errors.New("project URL must be https://<host> with nothing after the host, like https://<ref>.supabase.co")
 		}
 	}
 	if c.Key != "" {

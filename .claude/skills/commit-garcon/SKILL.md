@@ -6,9 +6,12 @@ description: Commit, push, open and merge pull requests in the Garcon repository
 # Committing and releasing Garcon
 
 `main` is PR-only (a repository ruleset), and **every merge into `main` is a release**:
-`.github/workflows/release.yml` tests, builds the dashboard and four platform binaries,
-publishes `ai-garcon` to npm, tags the merge commit `vX.Y.Z` and creates a GitHub
-release. There is nothing to bump by hand.
+`.github/workflows/release.yml` runs two jobs. `build` tests, builds the dashboard and four
+platform binaries and packs the npm tarball with a read-only token and no publishing
+identity; `publish` installs nothing, publishes that tarball to npm with provenance, tags the
+merge commit `vX.Y.Z` and creates a GitHub release with the tarball attached. Pull requests
+run the same build without publishing (`.github/workflows/ci.yml`). Actions are pinned to
+commits: bump the SHA and its version comment together. There is nothing to bump by hand.
 
 ## How the version is chosen
 
@@ -46,6 +49,7 @@ will run, when a change touches the build, the npm package or the workflow itsel
 ```sh
 git push -u origin <topic>
 gh pr create --fill              # or --title/--body; add [minor] or [major] to the title if the bump should not be a patch
+gh pr checks --watch             # the CI build; merge only when it is green
 gh pr merge --merge --delete-branch <pr>   # merge commit, like the rest of the history
 git checkout main && git pull --ff-only
 ```
@@ -70,8 +74,8 @@ Read the failed step in `gh run view --log-failed`.
   points at the wrong workflow. On npmjs.com, package `ai-garcon` > Settings > Trusted
   Publisher must list repository `asieke/garcon` and workflow file `release.yml`. Only
   the npm account owner can fix that; then re-run the workflow (`gh run rerun <id>`).
-- **Tests or build failed**: nothing was published or tagged. Fix on a branch and merge
-  again; the next run picks the same next version.
+- **Tests or build failed**: nothing was published or tagged (the `publish` job never ran).
+  Fix on a branch and merge again; the next run picks the same next version.
 - **Published but tag missing** (the run failed after `npm publish`): tag the merge commit
   by hand so the next run does not reuse the number: `git tag vX.Y.Z <sha> && git push
   origin vX.Y.Z`. The version step also reads npm, so a missing tag cannot cause a

@@ -109,11 +109,11 @@ garcon doctor</code></pre></div>
 			<h3 id="sync-security">Security and privacy</h3>
 			<ul>
 				<li><strong>What leaves a machine</strong>, per completion call: device name, time, harness, account, provider, model, HTTP status, latency figures and the four token counts. Never prompts, replies, API keys or session ids.</li>
-				<li><strong>Where the key lives</strong>: <code>~/.config/garcon/config.json</code>, mode 0600, on each machine. The dashboard API never returns it (only whether one is stored) and it is sent only to the project URL. <code>scripts/install.sh --uninstall</code> deletes the file.</li>
+				<li><strong>Where the key lives</strong>: <code>~/.config/garcon/config.json</code>, mode 0600, on each machine. The dashboard API never returns it (only whether one is stored) and it is sent only to the project URL it was saved with: changing the URL asks for the key again, and redirects are never followed. <code>scripts/install.sh --uninstall</code> deletes the file.</li>
 				<li><strong>Project access</strong>: use a dedicated project; a secret key can access other project data, not just Garcon’s table. Share it only with your own trusted machines.</li>
 <li><strong>Which key</strong>: a new-format secret key (<code>sb_secret_…</code>) or a legacy <code>service_role</code> JWT. Publishable and anon keys are rejected on Save: they get the anon role, and with RLS on they would silently see nothing.</li>
 				<li><strong>The switch is absolute</strong>: off means no push, no pull, no probe. Turning it off keeps the settings; <em>Forget key</em> also removes the key.</li>
-				<li><strong>Local only</strong>: the proxy binds to loopback and the settings endpoint additionally requires a JSON content type and a loopback <code>Host</code> header, so a web page cannot change them.</li>
+				<li><strong>Local only</strong>: the proxy listens on loopback only (<code>-allow-remote</code> overrides that) and every request, not just to the settings endpoint, must be addressed to <code>127.0.0.1</code>, <code>localhost</code> or <code>[::1]</code>, so a web page cannot reach it through a rebound name. The settings endpoint additionally requires a JSON content type, and a changed project URL must come with its key.</li>
 			</ul>
 			<h3 id="sync-how">How it works</h3>
 			<ul>

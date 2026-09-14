@@ -24,6 +24,15 @@ const COLUMNS = [
 	'gen_tok_per_s'
 ] as const;
 
+/**
+ * Spreadsheets evaluate a cell that starts with = + - @ or a tab or carriage return as a formula, and
+ * harness, account, device and model names arrive from the network. A leading apostrophe keeps them text.
+ */
+function safeText(v: unknown): string {
+	const s = v === undefined || v === null ? '' : String(v);
+	return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+}
+
 /** RFC 4180: quote a field when it contains a comma, quote or line break; double embedded quotes. */
 function field(v: unknown): string {
 	if (v === undefined || v === null) return '';
@@ -38,11 +47,11 @@ export function toCsv(rows: Row[]): string {
 		lines.push(
 			[
 				new Date(r.time).toISOString(),
-				r.harness,
-				r.account,
-				r.device,
-				providerOf(r),
-				r.model,
+				safeText(r.harness),
+				safeText(r.account),
+				safeText(r.device),
+				safeText(providerOf(r)),
+				safeText(r.model),
 				r.status,
 				r.ms,
 				r.first_byte_ms,

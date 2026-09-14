@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +46,22 @@ func TestServiceEscaping(t *testing.T) {
 	}
 	if got := xmlText("/a&b/<garcon>"); got != "/a&amp;b/&lt;garcon&gt;" {
 		t.Fatal(got)
+	}
+}
+
+func TestSystemdUnit(t *testing.T) {
+	unit := systemdUnit("/a b/100%/garcon")
+	for _, want := range []string{`ExecStart="/a b/100%%/garcon"`, "Restart=on-failure", "NoNewPrivileges=yes", "UMask=0077",
+		"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6", "MemoryDenyWriteExecute=yes", "SystemCallArchitectures=native",
+		"SystemCallFilter=@system-service", "SystemCallErrorNumber=EPERM", "WantedBy=default.target"} {
+		if !strings.Contains(unit, want) {
+			t.Errorf("unit lacks %s", want)
+		}
+	}
+	// These need unprivileged user namespaces, or CAP_SETPCAP, and stop a user unit from starting where they are denied.
+	for _, never := range []string{"ProtectSystem", "ProtectHome", "PrivateTmp", "ProtectKernel", "ProtectClock", "CapabilityBoundingSet"} {
+		if strings.Contains(unit, never) {
+			t.Errorf("unit must not use %s", never)
+		}
 	}
 }

@@ -42,7 +42,7 @@ garcon setup</code></pre></div>
 <p>Setup is safe to rerun and preserves usage and sync settings. Run it as your normal user, without sudo.</p>
 <h3 id="foreground">Try it first or run without a service</h3>
 <div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npx ai-garcon@latest   # foreground; Ctrl-C to stop</code></pre></div>
-<p>For an installed command, run <code>garcon</code> in one terminal and <code>garcon setup --no-service</code> in another. This also works in containers or Linux sessions without systemd. For a custom port, start <code>garcon -listen 127.0.0.1:4242</code>, then use <code>garcon setup --no-service --url http://127.0.0.1:4242</code>.</p>
+<p>For an installed command, run <code>garcon</code> in one terminal and <code>garcon setup --no-service</code> in another. This also works in containers or Linux sessions without systemd. For a custom port, start <code>garcon -listen 127.0.0.1:4242</code>, then use <code>garcon setup --no-service --url http://127.0.0.1:4242</code>. Garcon has no authentication, so it listens on loopback addresses only and answers only requests addressed to <code>127.0.0.1</code>, <code>localhost</code> or <code>[::1]</code>; <code>-allow-remote</code> lifts both and opens the dashboard, the settings and the relay to that network.</p>
 <h3 id="update">Update</h3>
 <div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>garcon update</code></pre></div>
 <p>Updates the owning global npm installation, refreshes an installed service and waits for the new version. If no service is installed, the command explains how to start one or restart your foreground process. Usage, settings and device identity stay in place. Finish active agent requests first: restarting briefly interrupts the proxy.</p>
@@ -69,7 +69,7 @@ npm uninstall -g ai-garcon</code></pre></div>
 <div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>git clone https://github.com/asieke/garcon &amp;&amp; cd garcon
 scripts/install.sh --service
 scripts/install.sh --update   # later: pull and rebuild</code></pre></div>
-<p><code>scripts/install.sh --uninstall</code> removes the service, source-installed binary and settings file, keeping usage history. Foreground flags: <code>garcon [-listen ADDR] [-data FILE] [-config FILE]</code>.</p>
+<p><code>scripts/install.sh --uninstall</code> removes the service, source-installed binary and settings file, keeping usage history. Foreground flags: <code>garcon [-listen ADDR] [-allow-remote] [-data FILE] [-config FILE]</code>.</p>
 </section>
 
 		<nav class="pager" aria-label="Pages"><a href="index.html"><small>Previous</small>Overview</a><a class="next" href="connect.html"><small>Next</small>Connect a harness</a></nav>

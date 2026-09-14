@@ -95,8 +95,7 @@ func Install() error {
 	}
 	switch runtime.GOOS {
 	case "linux":
-		unit := "[Unit]\nDescription=Garcon local LLM usage proxy\n\n[Service]\nExecStart=" + systemdQuote(exe) + "\nRestart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n"
-		if err := os.WriteFile(path, []byte(unit), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(systemdUnit(exe)), 0o644); err != nil {
 			return err
 		}
 		for _, a := range [][]string{{"daemon-reload"}, {"enable", "--now", unitName}, {"restart", unitName}} {
@@ -215,4 +214,32 @@ func copyExecutable(src, dst string) error {
 func systemdQuote(s string) string { return strconv.Quote(strings.ReplaceAll(s, "%", "%%")) }
 func xmlText(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&apos;").Replace(s)
+}
+
+// systemdUnit is the user unit. Its hardening block is all seccomp and rlimit
+// based, so it never needs unprivileged user namespaces, which hardened kernels
+// and Ubuntu's AppArmor restriction can deny: the unit cannot fail to start for
+// it. ProtectSystem, ProtectHome, PrivateTmp and ProtectKernel* are left out for
+// exactly that reason, and CapabilityBoundingSet= because dropping capabilities
+// needs CAP_SETPCAP, which a user manager lacks (status 218/CAPABILITIES). A
+// syscall outside @system-service fails with EPERM instead of killing the process.
+func systemdUnit(exe string) string {
+	return "[Unit]\nDescription=Garcon local LLM usage proxy\n\n[Service]\nExecStart=" + systemdQuote(exe) + `
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=default.target
+`
 }
