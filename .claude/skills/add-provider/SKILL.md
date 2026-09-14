@@ -29,9 +29,10 @@ signs in with so usage lands on the right subscription.
 1. **Check the proxy is up**: `curl -s http://127.0.0.1:4141/api/config` (install with the
    `install-garcon` skill if not).
 2. **Configure the harness** (replace `me@example.com`):
-   - **Claude Code → anthropic**: run with
-     `ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1`.
-     Claude Code appends `/v1/messages`; the second variable keeps claude.ai login working.
+   - **Claude Code → anthropic**: run `garcon claude --account me@example.com` (arguments for
+     claude go after `--`). This keeps Remote Control working. The environment-only form,
+     `ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude`,
+     records usage the same way but Remote Control refuses to start under it.
    - **Codex → chatgpt**: needs a custom provider, because the built-in one ignores base URL
      overrides under a ChatGPT login (and a custom provider uses plain HTTP, not websockets,
      which is what lets the proxy see usage). In `~/.codex/config.toml`:

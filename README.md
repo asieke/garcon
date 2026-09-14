@@ -92,7 +92,10 @@ From source (Go 1.27+, Node 22+; `mise install` provides both):
 Settings → Connect a harness generates these for any harness, provider and account.
 
 ```sh
-# Claude Code
+# Claude Code, with Remote Control (the session shows in the claude.ai app)
+garcon claude --account me@example.com            # arguments after -- go to claude
+
+# Claude Code, environment only (no Remote Control)
 ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
 _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude
 

@@ -38,9 +38,11 @@
 			<p>First complete <a href="install.html">installation and <code>garcon setup</code></a> on this machine. Setup starts the proxy; the configuration below connects your harness to it. Repeat this connection step on every machine, even when they share a Supabase project.</p>
 			<p>The Settings view of the dashboard generates every snippet below for a chosen harness, provider and account. The account is only a label the proxy records; use the login the harness actually signs in with so usage lines up with the right subscription. Replace <code>me@example.com</code>.</p>
 			<h3>Claude Code</h3>
-			<div class="block"><div class="label"><span>environment</span><button class="copy" type="button">Copy</button></div><pre><code>ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
+			<div class="block"><div class="label"><span>with Remote Control</span><button class="copy" type="button">Copy</button></div><pre><code>garcon claude --account me@example.com</code></pre></div>
+			<p>Runs <code>claude</code> through a private socket, so the session can still be picked up from the claude.ai app (Remote Control). Put <code>--</code> before any arguments meant for <code>claude</code>. The login stays in Claude Code's own credentials file; Garcon reads it only to keep it fresh while the session runs.</p>
+			<div class="block"><div class="label"><span>environment only</span><button class="copy" type="button">Copy</button></div><pre><code>ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
 _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude</code></pre></div>
-			<p>Claude Code appends <code>/v1/messages</code> itself. The second variable keeps subscription (claude.ai) login working through a non-Anthropic host.</p>
+			<p>Claude Code appends <code>/v1/messages</code> itself. The second variable keeps subscription (claude.ai) login working through a non-Anthropic host, but Remote Control refuses to start with a base URL set.</p>
 			<h3>Codex</h3>
 			<div class="block"><div class="label"><span>~/.codex/config.toml</span><button class="copy" type="button">Copy</button></div><pre><code>model_provider = "garcon"
 
