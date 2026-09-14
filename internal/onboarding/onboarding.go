@@ -137,7 +137,7 @@ func Main(command string, args []string, version string) {
 		err = Doctor(base, version, os.Stdout)
 	}
 	if err == nil && command == "setup" {
-		fmt.Printf("\nNext: open %s/?view=settings\n1. In Connect a harness, choose your tool and account label, then copy its configuration.\n2. Restart that tool and make one short request. Check Logs for the new row.\n3. Optional: Settings > Sync connects your Supabase project. On another machine, reuse that project and choose a different device name.\n\nRun garcon doctor whenever you need to check this installation.\n", base)
+		fmt.Printf("\nNext: open %s/?view=settings\n1. In Connect a harness, choose your tool and account label, then copy its configuration. For Claude Code with Remote Control: garcon claude --account EMAIL.\n2. Restart that tool and make one short request. Check Logs for the new row.\n3. Optional: Settings > Sync connects your Supabase project. On another machine, reuse that project and choose a different device name.\n\nRun garcon doctor whenever you need to check this installation.\n", base)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

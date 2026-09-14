@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"garcon/internal/claude"
 	"garcon/internal/dashboard"
 	"garcon/internal/local"
 	"garcon/internal/onboarding"
@@ -50,7 +51,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --create-project | --project-ref REF [--skip-schema]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude --account EMAIL [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --create-project | --project-ref REF [--skip-schema]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)
@@ -63,6 +64,9 @@ func main() {
 			return
 		case "connect-supabase":
 			setup.Main(os.Args[2:])
+			return
+		case "claude":
+			claude.Main(os.Args[2:])
 			return
 		case "version", "-version", "--version":
 			fmt.Println("garcon", version)

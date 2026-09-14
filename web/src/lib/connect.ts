@@ -33,7 +33,12 @@ export function snippetsFor(base: string, harness: string, provider: string, acc
 		case 'claude':
 			return [
 				{
-					title: 'Environment for claude',
+					title: 'garcon claude (keeps Remote Control)',
+					text: `garcon claude --account ${account || 'me@example.com'}`,
+					note: 'Runs claude through a private socket so the claude.ai app can attach to the session. Put -- before any claude arguments.'
+				},
+				{
+					title: 'Environment only (no Remote Control)',
 					text: `ANTHROPIC_BASE_URL=${url} \\\n_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude`,
 					note: 'The second variable keeps claude.ai login working.'
 				}
