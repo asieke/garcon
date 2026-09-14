@@ -29,7 +29,7 @@ func fresh(t *testing.T, rows ...usage.Record) (*Syncer, *store.Store, string) {
 		st.Save(r)
 	}
 	os.WriteFile(filepath.Join(dir, "sync.json"), []byte(`{"device_id":"dev1"}`), 0o600)
-	s := New(st, filepath.Join(dir, "config.json"), "127.0.0.1:4141")
+	s := New(st, filepath.Join(dir, "config.json"))
 	s.mu.Lock()
 	s.cfg.DeviceName = "laptop"
 	s.mu.Unlock()
@@ -317,7 +317,7 @@ func TestSettings(t *testing.T) {
 		fmt.Fprint(w, `{"code":"PGRST204","message":"Could not find the 'tls_ms' column"}`)
 	}))
 	defer dead.Close()
-	if w := put(s, `{"device_name":"desk","url":"`+dead.URL+`","sync_enabled":true}`, "127.0.0.1:4141", "application/json"); w.Code != 400 || !strings.Contains(w.Body.String(), "tls_ms") || s.cfg.URL != srv.URL {
+	if w := put(s, `{"device_name":"desk","url":"`+dead.URL+`","key":"sb_secret_k","sync_enabled":true}`, "127.0.0.1:4141", "application/json"); w.Code != 400 || !strings.Contains(w.Body.String(), "tls_ms") || s.cfg.URL != srv.URL {
 		t.Errorf("failed probe: %d %s %s", w.Code, w.Body, s.cfg.URL)
 	}
 	// Changing the project resets the cursors and the remote cache.
@@ -325,13 +325,13 @@ func TestSettings(t *testing.T) {
 	r := row(9)
 	r.ID, r.DeviceID = "remote-1", "dev9"
 	st.AddRemote(r)
-	if w := put(s, `{"device_name":"desk","url":"`+dead.URL+`","sync_enabled":false}`, "127.0.0.1:4141", "application/json"); w.Code != 200 || s.st.Pushed != 0 || s.st.PullCursor != "" || len(st.Remote()) != 0 {
+	if w := put(s, `{"device_name":"desk","url":"`+dead.URL+`","key":"sb_secret_k","sync_enabled":false}`, "127.0.0.1:4141", "application/json"); w.Code != 200 || s.st.Pushed != 0 || s.st.PullCursor != "" || len(st.Remote()) != 0 {
 		t.Errorf("url change: %d %+v %d", w.Code, s.st, len(st.Remote()))
 	}
 
 	// The master switch: off means no requests at all, across a save, a new row and a due pull.
 	before := f.handled.Load()
-	if w := put(s, `{"device_name":"desk","url":"`+srv.URL+`","sync_enabled":false}`, "127.0.0.1:4141", "application/json"); w.Code != 200 {
+	if w := put(s, `{"device_name":"desk","url":"`+srv.URL+`","key":"sb_secret_k","sync_enabled":false}`, "127.0.0.1:4141", "application/json"); w.Code != 200 {
 		t.Fatalf("save off: %d %s", w.Code, w.Body)
 	}
 	st.Save(row(2))
@@ -344,5 +344,102 @@ func TestSettings(t *testing.T) {
 	}
 	if err := s.once(&lastPull); err != nil || s.st.Pushed != 2 || len(f.bodies) != 1 || lastPull.IsZero() {
 		t.Errorf("switch on: err %v pushed %d posts %d pulled %v", err, s.st.Pushed, len(f.bodies), !lastPull.IsZero())
+	}
+}
+
+func TestSettingsURLChangeNeedsKey(t *testing.T) {
+	s, _, _ := fresh(t, row(1))
+	first, other := &fakeREST{}, &fakeREST{}
+	srvA, srvB := httptest.NewServer(first), httptest.NewServer(other)
+	defer srvA.Close()
+	defer srvB.Close()
+	if w := put(s, `{"device_name":"laptop","url":"`+srvA.URL+`","key":"sb_secret_a","sync_enabled":true}`, "127.0.0.1:4141", "application/json"); w.Code != 200 {
+		t.Fatalf("save: %d %s", w.Code, w.Body)
+	}
+	// A new URL without a key must not probe the new host with the stored key.
+	if w := put(s, `{"device_name":"laptop","url":"`+srvB.URL+`","sync_enabled":true}`, "127.0.0.1:4141", "application/json"); w.Code != 400 || !strings.Contains(w.Body.String(), "secret key again") {
+		t.Fatalf("url change without key: %d %s", w.Code, w.Body)
+	}
+	if other.handled.Load() != 0 || s.cfg.URL != srvA.URL || s.cfg.Key != "sb_secret_a" {
+		t.Fatalf("the stored key reached the new host (%d requests), cfg %+v", other.handled.Load(), s.cfg)
+	}
+	// Same with the switch off: the new URL would be paired with the old key later.
+	if w := put(s, `{"device_name":"laptop","url":"`+srvB.URL+`","sync_enabled":false}`, "127.0.0.1:4141", "application/json"); w.Code != 400 || s.cfg.URL != srvA.URL {
+		t.Fatalf("url change without key, switch off: %d %s", w.Code, w.Body)
+	}
+	// With a key, the new host is probed with that key only.
+	if w := put(s, `{"device_name":"laptop","url":"`+srvB.URL+`","key":"sb_secret_b","sync_enabled":true}`, "127.0.0.1:4141", "application/json"); w.Code != 200 {
+		t.Fatalf("url change with key: %d %s", w.Code, w.Body)
+	}
+	if other.handled.Load() != 1 || other.posts != nil || s.cfg.Key != "sb_secret_b" {
+		t.Fatalf("probe %d, cfg %+v", other.handled.Load(), s.cfg)
+	}
+	// Clearing the URL needs no key; setting one again does.
+	if w := put(s, `{"device_name":"laptop","url":"","sync_enabled":false}`, "127.0.0.1:4141", "application/json"); w.Code != 200 || s.cfg.Key != "sb_secret_b" {
+		t.Fatalf("clear url: %d %s %+v", w.Code, w.Body, s.cfg)
+	}
+	if w := put(s, `{"device_name":"laptop","url":"`+srvA.URL+`","sync_enabled":false}`, "127.0.0.1:4141", "application/json"); w.Code != 400 {
+		t.Fatalf("url set without key: %d %s", w.Code, w.Body)
+	}
+	// URLs with credentials, a path, a query, a fragment or plain http off loopback are refused before any request.
+	before := first.handled.Load() + other.handled.Load()
+	for _, bad := range []string{"https://u:p@x.supabase.co", "https://x.supabase.co/rest", "https://x.supabase.co?x=1", "https://x.supabase.co#f", "http://x.supabase.co"} {
+		if w := put(s, `{"device_name":"laptop","url":"`+bad+`","key":"sb_secret_c","sync_enabled":true}`, "127.0.0.1:4141", "application/json"); w.Code != 400 || !strings.Contains(w.Body.String(), "project URL") {
+			t.Errorf("%s: %d %s", bad, w.Code, w.Body)
+		}
+	}
+	if first.handled.Load()+other.handled.Load() != before {
+		t.Error("a rejected URL was still contacted")
+	}
+}
+
+func TestNoRedirects(t *testing.T) {
+	s, _, _ := fresh(t, row(1))
+	target := &fakeREST{}
+	hidden := httptest.NewServer(target)
+	defer hidden.Close()
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, hidden.URL+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+	}))
+	defer redirecting.Close()
+	c := settings{SyncEnabled: true, DeviceName: "laptop", URL: redirecting.URL, Key: "sb_secret_k"}
+	if err := s.push(c); err == nil || !strings.Contains(err.Error(), "307") {
+		t.Fatalf("push through a redirect: %v", err)
+	}
+	if err := s.probe(c.URL, c.Key); err == nil {
+		t.Fatal("probe followed a redirect")
+	}
+	if target.handled.Load() != 0 {
+		t.Fatalf("the redirect target saw %d requests carrying the key", target.handled.Load())
+	}
+}
+
+func TestPullRejectsMalformed(t *testing.T) {
+	s, st, _ := fresh(t)
+	mk := func(id, at string, extra map[string]any) map[string]any {
+		m := map[string]any{"id": id, "device_id": "dev2", "device": "desk", "time": 1_700_000_000_000, "harness": "codex", "account": "me@x.com",
+			"provider": "chatgpt", "model": "gpt-6-astra", "status": 200, "ms": 5, "input": 1, "cache_read": 0, "cache_write": 0, "output": 2, "synced_at": at}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	f := &fakeREST{pages: [][]map[string]any{{
+		mk("good", "2026-09-13T10:00:00+00:00", nil),
+		mk("", "2026-09-13T10:00:01+00:00", nil),                                                   // no id
+		mk("huge", "2026-09-13T10:00:02+00:00", map[string]any{"model": strings.Repeat("m", 600)}), // oversized field
+		mk("tomorrow", "2026-09-13T10:00:03+00:00", map[string]any{"time": time.Now().Add(48 * time.Hour).UnixMilli()}),
+		mk("future", "2999-01-01T00:00:00+00:00", nil), // would move the cursor past every real row
+	}}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	if err := s.pull(settings{SyncEnabled: true, DeviceName: "laptop", URL: srv.URL, Key: "sb_secret_k"}); err != nil {
+		t.Fatal(err)
+	}
+	if remote := st.Remote(); len(remote) != 1 || remote[0].ID != "good" {
+		t.Fatalf("remote: %+v", remote)
+	}
+	if s.st.PullCursor != "2026-09-13T10:00:00+00:00" {
+		t.Errorf("cursor %q", s.st.PullCursor)
 	}
 }

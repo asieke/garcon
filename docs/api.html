@@ -32,14 +32,14 @@
 
 	<main id="top">
 		<h1>HTTP API</h1>
-		<p class="lede">The endpoints the dashboard uses, and the fields of a recorded row.</p>
+		<p class="lede">The endpoints the dashboard uses, and the fields of a recorded row. Every endpoint answers only requests addressed to this machine (a Host of <code>127.0.0.1</code>, <code>localhost</code> or <code>[::1]</code>; 403 otherwise), and the read-only ones answer GET only.</p>
 
 		<section id="api">
 			<dl>
 				<dt>GET /api/usage</dt><dd>Every recorded row as a JSON array: this machine's, then any pulled in by sync. Each row carries <code>device</code>; remote rows also <code>id</code> and <code>device_id</code>.</dd>
 				<dt>GET /api/config</dt><dd>How the instance is wired: <code>listen</code>, <code>data</code>, local <code>rows</code>, log <code>bytes</code>, <code>started</code> (Unix milliseconds), <code>version</code>, providers and their upstreams, and implicit harnesses. Setup and doctor use this endpoint to identify Garcon and compare installed and running versions.</dd>
 				<dt>GET /api/settings</dt><dd><code>settings</code> (switch, device name, URL, <code>key_set</code>) and <code>status</code> (device id, pushed and pending counts, last push and pull, errors, rows from other devices, the devices table).</dd>
-				<dt>PUT /api/settings</dt><dd>Send <code>sync_enabled</code>, <code>device_name</code> and <code>url</code>, with optional <code>key</code>, as JSON. <code>key</code> absent keeps the stored key, <code>""</code> clears it. Probes the table when the switch is on and answers 400 with the reason instead of saving. Requires <code>Content-Type: application/json</code> and a loopback Host.</dd>
+				<dt>PUT /api/settings</dt><dd>Send <code>sync_enabled</code>, <code>device_name</code> and <code>url</code>, with optional <code>key</code>, as JSON. <code>key</code> absent keeps the stored key, except when <code>url</code> changes: a new project URL must come with its key, since the stored one is only ever sent to the URL it was saved with. <code>""</code> clears it. Probes the table when the switch is on and answers 400 with the reason instead of saving. Requires <code>Content-Type: application/json</code> and a loopback Host.</dd>
 			</dl>
 			<p>For setup from a terminal, prefer <code>garcon doctor</code> for diagnostics and <code>garcon connect-supabase --project-url URL --key-stdin</code> for joining a project. Pass the key through stdin from a password manager or protected file. These commands use the local API; see <a href="sync.html#sync-others">the join example</a>.</p>
 			<h3>Row fields</h3>

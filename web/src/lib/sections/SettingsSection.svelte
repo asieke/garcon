@@ -283,7 +283,7 @@
 	<div class="builder">
 		<label>Device name <input type="text" placeholder="work laptop" bind:value={form.device_name} oninput={touch} /></label>
 		<label>Project URL <input type="text" placeholder="https://abcdefghijklmnopqrst.supabase.co" bind:value={form.url} oninput={touch} /></label>
-		<label>Secret key <input type="password" placeholder={sync.settings.key_set ? 'stored; leave blank to keep' : 'sb_secret_…'} bind:value={form.key} oninput={touch} autocomplete="off" /></label>
+		<label>Secret key <input type="password" placeholder={sync.settings.key_set ? 'stored; leave blank to keep (needed again if the URL changes)' : 'sb_secret_…'} bind:value={form.key} oninput={touch} autocomplete="off" /></label>
 	</div>
 	{#if keyHint}<p class="caption error">{keyHint}</p>{/if}
 	<div class="actions">

@@ -1,6 +1,9 @@
 package usage
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFold(t *testing.T) {
 	cases := []struct {
@@ -23,5 +26,13 @@ func TestFold(t *testing.T) {
 		if rec != c.want {
 			t.Errorf("%s: got %+v want %+v", c.name, rec, c.want)
 		}
+	}
+}
+
+func TestFoldClipsModel(t *testing.T) {
+	var rec Record
+	Fold([]byte(`{"model":"`+strings.Repeat("x", 500)+`","usage":{"input_tokens":1}}`), &rec)
+	if len(rec.Model) != maxModel || rec.Input != 1 {
+		t.Fatalf("model length %d, input %d", len(rec.Model), rec.Input)
 	}
 }

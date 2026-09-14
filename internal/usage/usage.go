@@ -5,6 +5,7 @@ package usage
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 )
 
 // Record is one completion call, as stored one per line in usage.jsonl.
@@ -100,7 +101,7 @@ func Fold(body []byte, rec *Record) {
 				continue
 			}
 			if e.Model != "" {
-				rec.Model = e.Model
+				rec.Model = clip(e.Model, maxModel)
 			}
 			if u := e.Usage; u != nil {
 				rec.Input = max(rec.Input, u.Input-u.Details.Cached, u.PromptTokens-u.PromptDetails.Cached)
@@ -110,4 +111,15 @@ func Fold(body []byte, rec *Record) {
 			}
 		}
 	}
+}
+
+// maxModel bounds the one string a provider writes into a record; a model id is
+// a few dozen bytes.
+const maxModel = 200
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return strings.ToValidUTF8(s[:n], "")
 }

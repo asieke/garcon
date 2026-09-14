@@ -33,8 +33,11 @@ Building from source instead, with `scripts/install.sh`:
    for a source build. The usage log at
    `~/.local/share/garcon/usage.jsonl` is left in place; delete it only if asked.
 
-Notes: the proxy binds to 127.0.0.1 only and stores no credentials, so nothing needs
-securing beyond the usage log, which contains account emails and token counts. On Linux
+Notes: the proxy listens on 127.0.0.1 only (it refuses other addresses unless `-allow-remote`
+is passed, which opens it to that network) and answers only requests addressed to this
+machine. It stores no provider credentials; with sync on, the Supabase secret key lives in
+`~/.config/garcon/config.json` (mode 0600). The usage log contains account emails and
+token counts. On Linux
 the service runs in the user session; enabling `loginctl enable-linger` is only needed
 if it must run while nobody is logged in. Use the omarchy skill for any Omarchy desktop
 configuration beyond this.
