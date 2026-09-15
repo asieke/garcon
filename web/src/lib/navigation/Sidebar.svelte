@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { groups, type ViewId } from './views';
-	let { active, onnavigate }: { active: ViewId; onnavigate: () => void } = $props();
+	import { groupsFor, type ViewId } from './views';
+	let { active, syncEnabled = false, onnavigate }: { active: ViewId; syncEnabled?: boolean; onnavigate: () => void } = $props();
+	const groups = $derived(groupsFor(syncEnabled));
 </script>
 
 <nav aria-label="Main navigation">

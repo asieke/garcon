@@ -3,7 +3,7 @@
 	import TimeSeriesChart from '../charts/TimeSeriesChart.svelte';
 	import CompositionBar from '../charts/CompositionBar.svelte';
 	import RankedBarChart from '../charts/RankedBarChart.svelte';
-	import { usd, n, pct } from '../format';
+	import { usd, n, pct, when } from '../format';
 	import {
 		sum,
 		tokensOf,
@@ -17,18 +17,8 @@
 		type Row,
 		type Granularity
 	} from '../usage';
-	import {
-		priceFor,
-		costOf,
-		cacheSavingsOf,
-		addCost,
-		ZERO_COST,
-		loadOverrides,
-		saveOverrides,
-		PRICE_FIELDS,
-		type Price,
-		type Cost
-	} from '../pricing';
+	import { priceFor, costOf, cacheSavingsOf, addCost, ZERO_COST, FALLBACK_AS_OF, type Cost } from '../pricing';
+	import { prices } from '../prices.svelte';
 
 	let {
 		rows,
@@ -48,8 +38,6 @@
 		since: number;
 	} = $props();
 
-	let overrides = $state<Record<string, Price>>(loadOverrides());
-
 	function modelOf(r: Row): string {
 		return r.model || '(unknown)';
 	}
@@ -62,7 +50,8 @@
 			.map(([m]) => m)
 			.sort()
 	);
-	const resolved = $derived(new Map(models.map((m) => [m, priceFor(m, overrides)])));
+	const catalog = $derived(prices.catalog);
+	const resolved = $derived(new Map(models.map((m) => [m, priceFor(m, catalog)])));
 	const slots = $derived(modelSlots(models));
 
 	/** Cost of a set of rows: grouped by model so each group is priced at its own rate. Unpriced
@@ -70,7 +59,7 @@
 	function costRows(rs: Row[]): Cost {
 		let total = ZERO_COST;
 		for (const [model, group] of Map.groupBy(rs, modelOf)) {
-			const p = priceFor(model, overrides).price;
+			const p = priceFor(model, catalog).price;
 			if (p) total = addCost(total, costOf(sum(group), p));
 		}
 		return total;
@@ -146,26 +135,6 @@
 			.map(([account, rs]) => ({ label: account, value: costRows(rs).total, sublabel: `${n(rs.length)} req` }))
 			.sort((a, b) => b.value - a.value)
 	);
-
-	function setPrice(model: string, key: keyof Price, raw: string) {
-		const v = Number.parseFloat(raw);
-		if (!Number.isFinite(v) || v < 0) return;
-		const base = resolved.get(model)?.price ?? { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
-		overrides = { ...overrides, [model]: { ...base, [key]: v } };
-		saveOverrides(overrides);
-	}
-	function resetPrice(model: string) {
-		const next = { ...overrides };
-		delete next[model];
-		overrides = next;
-		saveOverrides(overrides);
-	}
-	function sourceLabel(model: string): string {
-		const r = resolved.get(model);
-		if (!r || r.source === 'none') return 'no price';
-		if (r.source === 'override') return 'custom';
-		return r.rule ? `list: ${r.rule.label}` : 'list';
-	}
 </script>
 
 <section class="tiles">
@@ -183,8 +152,8 @@
 {#if unpriced.length}
 	<p class="warn">
 		{pct(coverage)} of requests are priced. No price is known for
-		{unpriced.map((g) => `${g.model} (${n(g.totals.n)} req, ${n(tokensOf(g.totals))} tokens)`).join(', ')}. Set one in
-		the pricing table below.
+		{unpriced.map((g) => `${g.model} (${n(g.totals.n)} req, ${n(tokensOf(g.totals))} tokens)`).join(', ')}. Prices come from
+		OpenRouter's public catalogue; see <a href="?view=settings&section=prices">Settings → Prices</a>.
 	</p>
 {/if}
 
@@ -245,46 +214,10 @@
 	</table>
 </div>
 
-<h2 class="spaced">Pricing</h2>
-<p class="caption">USD per 1M tokens. Edits override list prices in this browser only.</p>
-<div class="scroll">
-	<table class="pricing">
-		<thead>
-			<tr>
-				<th>Model</th>
-				<th>Source</th>
-				{#each PRICE_FIELDS as f (f.key)}<th class="num">{f.label}</th>{/each}
-				<th></th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each models as model (model)}
-				{@const r = resolved.get(model)}
-				<tr>
-					<td>{model}</td>
-					<td class="muted">{sourceLabel(model)}</td>
-					{#each PRICE_FIELDS as f (f.key)}
-						<td class="num">
-							<input
-								type="number"
-								min="0"
-								step="0.01"
-								aria-label="{f.label} price for {model}"
-								value={r?.price ? r.price[f.key] : ''}
-								placeholder="—"
-								onchange={(e) => setPrice(model, f.key, e.currentTarget.value)}
-							/>
-						</td>
-					{/each}
-					<td>{#if r?.source === 'override'}<button onclick={() => resetPrice(model)}>Reset</button>{/if}</td>
-				</tr>
-			{:else}
-				<tr><td colspan="7">No models in this window.</td></tr>
-			{/each}
-		</tbody>
-	</table>
-</div>
-<p class="caption">List prices as of 2026-09-13.</p>
+<p class="caption">
+	{#if catalog?.fetched_at}Prices from OpenRouter's public model list, fetched {when(catalog.fetched_at)}.{:else}Prices from the built-in list as of {FALLBACK_AS_OF}; the live catalogue has not been fetched yet.{/if}
+	Nothing here is editable: <a href="?view=settings&section=prices">Settings → Prices</a> shows the rate behind each model.
+</p>
 
 <style>
 	.tiles {
@@ -309,6 +242,10 @@
 	.caption.lead {
 		max-width: 72ch;
 		line-height: 1.5;
+	}
+	.warn a,
+	.caption a {
+		color: var(--accent);
 	}
 	.warn {
 		font-size: 12px;
@@ -341,9 +278,6 @@
 	.num {
 		text-align: right;
 	}
-	.muted {
-		color: var(--text-muted);
-	}
 	.dot {
 		display: inline-block;
 		width: 8px;
@@ -361,27 +295,5 @@
 		border: 1px solid var(--border);
 		border-radius: 4px;
 		padding: 1px 5px;
-	}
-	.pricing input {
-		font: inherit;
-		font-size: 12px;
-		width: 84px;
-		padding: 3px 6px;
-		border-radius: 4px;
-		border: 1px solid var(--border);
-		background: var(--surface);
-		color: inherit;
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-	}
-	.pricing button {
-		font: inherit;
-		font-size: 11px;
-		padding: 2px 8px;
-		border-radius: 4px;
-		border: 1px solid var(--border);
-		background: none;
-		color: inherit;
-		cursor: pointer;
 	}
 </style>

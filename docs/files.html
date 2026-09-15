@@ -38,6 +38,7 @@
 			<dl>
 				<dt>~/.local/share/garcon/usage.jsonl</dt><dd>This machine's log, one JSON object per completion call. Append-only; the format never changes with sync.</dd>
 				<dt>~/.local/share/garcon/remote.jsonl</dt><dd>Cache of other machines' rows pulled by sync. Safe to delete.</dd>
+				<dt>~/.local/share/garcon/prices.json</dt><dd>The last model price catalogue fetched from OpenRouter for the cost estimates. Safe to delete; fetched again on the next dashboard visit.</dd>
 				<dt>~/.local/share/garcon/sync.json</dt><dd>This machine's device id and the push and pull cursors. Keep it through upgrades. Do not copy it or the data directory to another machine: each machine must have its own identity.</dd>
 				<dt>~/.config/garcon/config.json</dt><dd>The sync switch, device name, project URL and secret key. Owner-only (0600); the API does not return the key.</dd>
 				<dt>~/.local/share/garcon/bin/garcon</dt><dd>The private service executable, copied from the installed package by setup or service restart. It survives npm cache cleanup and Node version changes.</dd>

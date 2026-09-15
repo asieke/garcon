@@ -5,7 +5,8 @@
 	import { n, pct, when, duration, usd, timeLabel, ms as msFmt } from '../format';
 	import { percentile, harnessLabel, harnessVar, modelSlots, modelColor, shortModel, contextOf, minTime, maxOf, type Row, type Granularity } from '../usage';
 	import { sessionize, isLive, type Session } from '../sessions';
-	import { priceFor, costOf, loadOverrides, type Price } from '../pricing';
+	import { priceFor, costOf } from '../pricing';
+	import { prices } from '../prices.svelte';
 
 	let {
 		rows,
@@ -27,7 +28,6 @@
 
 	let gapMin = $state<(typeof GAPS)[number]>(30);
 	let expanded = $state<string | null>(null);
-	const overrides: Record<string, Price> = loadOverrides();
 
 	const gapMs = $derived(gapMin * 60_000);
 	const sessions = $derived(sessionize(rows, gapMs));
@@ -43,7 +43,7 @@
 		let total = 0;
 		let priced = false;
 		for (const [model, rs] of Map.groupBy(s.rows, (r) => r.model || '(unknown)')) {
-			const p = priceFor(model, overrides).price;
+			const p = priceFor(model, prices.catalog).price;
 			if (!p) continue;
 			priced = true;
 			for (const r of rs) total += costOf(r, p).total;

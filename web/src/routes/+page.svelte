@@ -1,14 +1,16 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import Sidebar from '$lib/navigation/Sidebar.svelte';
 	import MultiSelect from '$lib/MultiSelect.svelte';
-	import { views, viewFromParam } from '$lib/navigation/views';
+	import { views, viewFromParam, requiresSync } from '$lib/navigation/views';
 	import OverviewSection from '$lib/sections/OverviewSection.svelte';
 	import UsageSection from '$lib/sections/UsageSection.svelte';
 	import ModelsSection from '$lib/sections/ModelsSection.svelte';
 	import AccountsSection from '$lib/sections/AccountsSection.svelte';
+	import MachinesSection from '$lib/sections/MachinesSection.svelte';
 	import LatencySection from '$lib/sections/LatencySection.svelte';
 	import LogsSection from '$lib/sections/LogsSection.svelte';
 	import CostSection from '$lib/sections/CostSection.svelte';
@@ -16,6 +18,8 @@
 	import ActivitySection from '$lib/sections/ActivitySection.svelte';
 	import PerformanceSection from '$lib/sections/PerformanceSection.svelte';
 	import SettingsSection from '$lib/sections/SettingsSection.svelte';
+	import { settingsSectionFromParam } from '$lib/settings/sections';
+	import { loadPrices } from '$lib/prices.svelte';
 	import { when } from '$lib/format';
 	import {
 		type Row,
@@ -43,10 +47,14 @@
 		['All', 0]
 	] as const;
 	const POLL_MS = 10_000;
+	// Vite resolves this at compile time: true under `npm run dev`, false in `vite build`, so the
+	// embedded production dashboard never carries the red mark or this check.
+	const DEV = import.meta.env.DEV;
 
 	let rows = $state<Row[]>([]);
 	let days = $state(7);
 	const tab = $derived(viewFromParam(browser ? page.url.searchParams.get('view') : null));
+	const settingsSection = $derived(settingsSectionFromParam(browser ? page.url.searchParams.get('section') : null));
 	let menuOpen = $state(false);
 	let heading: HTMLHeadingElement;
 	const currentView = $derived(views.find(view => view.id === tab)!);
@@ -65,29 +73,38 @@
 	// The running binary's version, from /api/config: "0.1.1" for npm installs, a git describe for source builds, "dev" otherwise.
 	let version = $state('');
 	const versionLabel = $derived(/^\d/.test(version) ? `v${version}` : version);
-	// Sync on means rows can come from several machines, so the device becomes worth a column of its own.
+	// Sync on means rows can come from several machines, so the device becomes worth a column of
+	// its own and the Machines view joins the navigation. The name marks this machine among them.
 	let syncEnabled = $state(false);
+	let deviceName = $state('');
 
 	async function refresh() {
+		// Settings are only needed to gate sync-only UI; the usage poll already reports an outage.
+		// Both are awaited before lastSync flips so the first paint doesn't briefly hide the Machines view.
+		const settings = fetch('/api/settings')
+			.then((r) => (r.ok ? r.json() : null))
+			.catch(() => null);
 		try {
 			const res = await fetch('/api/usage');
 			if (!res.ok) throw new Error(String(res.status));
 			rows = await res.json();
+			const data = await settings;
+			if (data) {
+				syncEnabled = Boolean(data.settings?.sync_enabled);
+				deviceName = String(data.settings?.device_name ?? '');
+			}
 			now = Date.now();
 			lastSync = now;
 			stale = false;
 		} catch {
 			stale = true;
 		}
-		try {
-			const res = await fetch('/api/settings');
-			if (res.ok) syncEnabled = Boolean((await res.json()).settings?.sync_enabled);
-		} catch {
-			// Settings are only needed for the device column; the usage poll already reports the outage.
-		}
 	}
 	$effect(() => {
 		refresh();
+		// untrack: the loader reads its own loading flag before awaiting, which would otherwise make
+		// this effect depend on it and re-run (and re-fetch) every time it flips.
+		untrack(() => loadPrices());
 		fetch('/api/config')
 			.then((r) => (r.ok ? r.json() : null))
 			.then((c) => { if (c?.version) version = c.version; })
@@ -162,6 +179,35 @@
 		[...Map.groupBy(visible, (r) => r.model || '(unknown)')]
 			.map(([model, rs]) => ({ model, totals: sum(rs) }))
 			.sort((a, b) => tokensOf(b.totals) - tokensOf(a.totals))
+	);
+
+	// One entry per machine, this one included; rows are labelled with each machine's device name.
+	// Colours follow the sorted name list so a machine keeps its colour across the chart and cards.
+	const UNNAMED = '(unnamed)';
+	const machineOf = (r: Row) => r.device || UNNAMED;
+	const machinesVisible = $derived([...new Set(visible.map(machineOf))].sort());
+	const machineColor = $derived(new Map(machinesVisible.map((m, i) => [m, `var(--series-${(i % 8) + 1})`])));
+	const machineGroups = $derived(
+		[...Map.groupBy(visible, machineOf)]
+			.map(([machine, rs]) => ({
+				machine,
+				local: machine === (deviceName || UNNAMED),
+				harnesses: sortHarnesses(rs.map((r) => r.harness)),
+				accounts: [...new Set(rs.map((r) => r.account))].sort(),
+				totals: sum(rs),
+				trend: seriesFor(buckets, groupByBucket(rs, granularity), (b) => b.reduce((s, r) => s + tokensOf(r), 0)),
+				lastTime: Math.max(...rs.map((r) => r.time)),
+				color: machineColor.get(machine) ?? 'var(--text-muted)'
+			}))
+			.sort((a, b) => tokensOf(b.totals) - tokensOf(a.totals))
+	);
+	const machineTokenSeries = $derived(
+		machinesVisible.map((m) => ({
+			key: m,
+			label: m,
+			color: machineColor.get(m) ?? 'var(--text-muted)',
+			values: seriesFor(buckets, grouped, (rs) => rs.filter((r) => machineOf(r) === m).reduce((s, r) => s + tokensOf(r), 0))
+		}))
 	);
 
 	const accountGroups = $derived(
@@ -261,8 +307,8 @@
 <a class="skip-link" href="#main-content" onclick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
 <div class="app-shell">
 	<aside class:open={menuOpen}>
-		<a class="brand" href="?view=overview" onclick={navigate}><span class="brand-mark" aria-hidden="true">g.</span><span>Garcon<small>{versionLabel}</small></span></a>
-		<div class="navigation" id="primary-navigation"><Sidebar active={tab} onnavigate={navigate} /></div>
+		<a class="brand" href="?view=overview" onclick={navigate}><span class="brand-mark" class:dev={DEV} aria-hidden="true">g.</span><span>Garcon<small>{DEV ? 'dev server' : versionLabel}</small></span></a>
+		<div class="navigation" id="primary-navigation"><Sidebar active={tab} {syncEnabled} onnavigate={navigate} /></div>
 		<div class="sidebar-footer"><span class="status-dot" class:offline={stale || !lastSync}></span>Local instance</div>
 	</aside>
 	<div class="workspace">
@@ -290,13 +336,15 @@
 			{#if stale}<p class="notice" role="status">Proxy unreachable; retrying.</p>{/if}
 			<div class="view-content">
 {#if tab === 'settings'}
-	<SettingsSection {rows} pollMs={POLL_MS} {now} />
+	<SettingsSection {rows} pollMs={POLL_MS} {now} section={settingsSection} />
 {:else if loading}
 	<p class="loading" role="status">Loading…</p>
 {:else if !lastSync}
 	<p class="empty-state">Proxy unreachable.</p>
+{:else if requiresSync(tab) && !syncEnabled}
+	<div class="empty-state"><h2>Turn on sync to explore by machine</h2><p>This view groups usage by the machine that recorded it, which only means something once sync is pulling in rows from other devices.</p><a href="?view=settings&section=sync">Open Settings → Sync</a></div>
 {:else if !visible.length}
-	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Garcon is ready for your first request'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Open Settings, choose your harness and account label, and copy the generated configuration. Restart your tool, then make one short request; it will appear here automatically.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Show all usage</button>{:else}<a href="?view=settings">Connect your first harness</a><p>Already using Garcon on another machine? Use Settings → Sync to join the same Supabase project. Sync is optional.</p>{/if}</div>
+	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Garcon is ready for your first request'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Open Settings → Harnesses, choose your tool and account label, and copy the generated configuration. Restart your tool, then make one short request; it will appear here automatically.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Show all usage</button>{:else}<a href="?view=settings&section=harnesses">Connect your first harness</a><p>Already using Garcon on another machine? Use Settings → Sync to join the same Supabase project. Sync is optional.</p>{/if}</div>
 {:else}
 	{#if tab === 'overview'}
 		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />
@@ -306,6 +354,8 @@
 		<ModelsSection {modelGroups} />
 	{:else if tab === 'accounts'}
 		<AccountsSection {accountGroups} />
+	{:else if tab === 'machines'}
+		<MachinesSection {machineGroups} {machineTokenSeries} {buckets} {granularity} />
 	{:else if tab === 'latency'}
 		<LatencySection
 			{granularity}
@@ -351,6 +401,7 @@
 	aside { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--border); }
 	.brand { display: flex; align-items: center; gap: 11px; padding: 26px 24px; color: var(--text-primary); text-decoration: none; font-size: 20px; font-weight: 650; letter-spacing: -.5px; }
 	.brand-mark { display: grid; place-items: center; width: 34px; height: 38px; background: var(--accent); color: var(--surface); border-radius: 10px; font-size: 26px; }
+	.brand-mark.dev { background: var(--status-critical); }
 	.brand small { display: block; min-height: 10px; font-size: 8px; color: var(--text-muted); letter-spacing: .12em; margin-top: 2px; }
 	.navigation { padding: 12px; flex: 1; overflow-y: auto; }
 	.sidebar-footer { padding: 20px 26px; font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
