@@ -1,0 +1,184 @@
+/* Shared by the Settings panels. Scoped under .settings so nothing leaks into the analytics views. */
+.settings h2 {
+	font-size: 15px;
+	margin: 0 0 12px;
+	opacity: 0.85;
+}
+.settings h2.spaced {
+	margin-top: 32px;
+}
+.settings .caption {
+	color: var(--text-muted);
+	font-size: 12px;
+	margin: 8px 0 0;
+	max-width: 80ch;
+	line-height: 1.5;
+}
+.settings .caption a,
+.settings .kv a {
+	color: var(--accent);
+}
+.settings .empty {
+	color: var(--text-muted);
+	font-size: 13px;
+	border: 1px dashed var(--border);
+	border-radius: 8px;
+	padding: 16px;
+}
+.settings code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12px;
+	word-break: break-all;
+}
+.settings .tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 12px;
+	margin-bottom: 16px;
+}
+.settings .kv {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+	gap: 12px 24px;
+	font-size: 13px;
+}
+.settings .kv small {
+	display: block;
+	color: var(--text-secondary);
+	font-size: 11px;
+	margin-bottom: 2px;
+}
+.settings .card {
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--surface);
+	padding: 16px 18px;
+}
+.settings .card + .card {
+	margin-top: 12px;
+}
+.settings .scroll {
+	overflow-x: auto;
+}
+.settings table {
+	border-collapse: collapse;
+	width: 100%;
+	white-space: nowrap;
+}
+.settings th,
+.settings td {
+	text-align: left;
+	padding: 7px 10px;
+	border-bottom: 1px solid var(--border);
+	font-variant-numeric: tabular-nums;
+	vertical-align: top;
+}
+.settings th {
+	font-weight: 500;
+	color: var(--text-secondary);
+	font-variant-numeric: normal;
+}
+.settings .num {
+	text-align: right;
+}
+.settings .sub {
+	display: block;
+	color: var(--text-muted);
+	font-size: 11px;
+}
+.settings .error {
+	color: var(--status-critical);
+}
+.settings .dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 2px;
+	margin-right: 6px;
+	vertical-align: middle;
+}
+.settings .badge {
+	display: inline-block;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	color: var(--text-secondary);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 1px 6px;
+	vertical-align: middle;
+}
+.settings .badge.good {
+	color: var(--accent);
+	border-color: var(--accent-border);
+	background: var(--accent-soft);
+}
+.settings .badge.warn {
+	color: var(--status-critical);
+}
+.settings .fields {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+.settings .fields label {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+.settings select,
+.settings input[type='text'],
+.settings input[type='password'] {
+	font: inherit;
+	font-size: 13px;
+	padding: 5px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text-primary);
+	min-width: 200px;
+}
+.settings button {
+	font: inherit;
+	font-size: 12px;
+	padding: 5px 12px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: inherit;
+	cursor: pointer;
+}
+.settings button.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--surface);
+	font-weight: 600;
+}
+.settings button:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+.settings button.link {
+	border: none;
+	background: none;
+	padding: 0 4px;
+	color: var(--text-muted);
+	text-decoration: underline;
+}
+.settings .actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin: 4px 0 16px;
+}
+.settings .msg {
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+.settings .msg.error {
+	color: var(--status-critical);
+}

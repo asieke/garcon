@@ -25,6 +25,7 @@ import (
 	"garcon/internal/dashboard"
 	"garcon/internal/local"
 	"garcon/internal/onboarding"
+	"garcon/internal/prices"
 	"garcon/internal/proxy"
 	"garcon/internal/service"
 	"garcon/internal/setup"
@@ -110,6 +111,9 @@ func main() {
 		json.NewEncoder(w).Encode(st.All())
 	}))
 	mux.Handle("/api/settings", own(sy, true))
+	// Model list prices for the cost estimates, from OpenRouter's public catalogue; fetched when
+	// the dashboard first asks and at most daily after that, cached next to the usage log.
+	mux.Handle("/api/prices", own(prices.New(st.Dir()), true))
 	mux.Handle("/api/config", readOnly(func(w http.ResponseWriter, r *http.Request) {
 		hosts := map[string]string{}
 		for name, u := range proxy.Providers {

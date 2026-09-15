@@ -114,7 +114,7 @@
 			<h2>What you get</h2>
 			<ul>
 				<li><strong>One picture of everything</strong>: requests, tokens and their composition by harness, account, model and device, over any time range, with period-over-period deltas.</li>
-				<li><strong>Cost you can reason about</strong>: estimated spend at published list prices (never a bill; subscriptions bill differently), cache savings, blended price per million tokens, run rate, and an editable price table.</li>
+				<li><strong>Cost you can reason about</strong>: estimated spend at published list prices (never a bill; subscriptions bill differently), cache savings, blended price per million tokens, run rate. Prices track OpenRouter's public model catalogue, so nothing has to be typed in.</li>
 				<li><strong>Sessions</strong>: calls grouped into coding sessions per account, tool and machine, with context growth, peak context, busy time and cost per session.</li>
 				<li><strong>Performance</strong>: generation speed and time to first byte by model, latency against output size, and the proxy's own overhead measured separately so it is never confused with the model's time.</li>
 				<li><strong>Every request</strong>: a sortable, filterable log with CSV export, and a JSON endpoint for anything else.</li>
@@ -125,7 +125,7 @@
 
 		<section id="records">
 			<h2>What it records, and what it never touches</h2>
-			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. If you enable sync, the Supabase secret key is saved in an owner-only settings file; see <a href="sync.html#sync-security">sync security</a>. With sync off, which is the default, Garcon makes no network calls of its own at all.</p>
+			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. If you enable sync, the Supabase secret key is saved in an owner-only settings file; see <a href="sync.html#sync-security">sync security</a>. With sync off, which is the default, the only call Garcon makes on its own is a public, unauthenticated fetch of OpenRouter's model price list when the dashboard is opened, at most once a day; it carries nothing about you or your usage.</p>
 		</section>
 
 		<section id="start">

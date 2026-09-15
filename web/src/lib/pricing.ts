@@ -14,8 +14,9 @@ export type PriceRule = {
 	note?: string;
 };
 
-// Published pay-as-you-go list prices. Subscriptions (Claude Max, ChatGPT Pro) bill differently, so
-// the dashboard presents these as "what this usage would cost at API list price", never as a bill.
+// Built-in fallback for when the catalogue has never been fetched (first run offline). The live
+// prices come from /api/prices; see priceFor. Subscriptions (Claude Max, ChatGPT Pro) bill
+// differently, so the dashboard presents these as "what this usage would cost at API list price".
 // Anthropic cache writes: 5-minute cache is 1.25× input, 1-hour cache is 2×. Claude Code uses the
 // 5-minute cache by default, so that is the rate here. OpenAI charges nothing extra for cache writes.
 export const PRICE_RULES: PriceRule[] = [
@@ -30,12 +31,19 @@ export const PRICE_RULES: PriceRule[] = [
 	a('claude-sonnet-3', 'Claude Sonnet 3.5 / 3.7', /^claude-3-[57]-sonnet/, 3, 0.3, 15),
 	a('claude-haiku-4-5', 'Claude Haiku 4.5', /^claude-haiku-4-5/, 1, 0.1, 5),
 	a('claude-haiku-3-5', 'Claude Haiku 3.5', /^claude-3-5-haiku/, 0.8, 0.08, 4),
-	// OpenAI, https://developers.openai.com/api/docs/pricing, read 2026-09-13. Standard tier; cached input
-	// is 0.1× input and there is no separate cache-write charge.
+	// OpenAI, as listed in OpenRouter's catalogue, read 2026-09-14. Standard tier; cached input is
+	// 0.1× input. OpenAI bills no separate cache-write rate, so cache writes are priced as input,
+	// the same treatment the catalogue gets in internal/prices (OpenAI rows record none anyway).
 	o('gpt-6-astra', 'GPT-6 Astra', /^gpt-6-astra/, 10, 1, 50),
-	o('gpt-5.6-sol', 'GPT-5.6 Sol', /^gpt-5\.6-sol/, 4, 0.4, 20),
+	o('gpt-5.6-luna', 'GPT-5.6 Luna', /^gpt-5\.6-luna/, 0.2, 0.02, 1.2),
+	o('gpt-5.6-terra', 'GPT-5.6 Terra', /^gpt-5\.6-terra/, 2, 0.2, 12),
+	o('gpt-5.6-sol', 'GPT-5.6 Sol', /^gpt-5\.6-sol/, 2, 0.2, 10),
+	o('gpt-5.5', 'GPT-5.5', /^gpt-5\.5(-codex)?(-\d{4}-\d{2}-\d{2})?$/, 5, 0.5, 30),
+	o('gpt-5.4-nano', 'GPT-5.4 Nano', /^gpt-5\.4-nano/, 0.2, 0.02, 1.25),
+	o('gpt-5.4-mini', 'GPT-5.4 Mini', /^gpt-5\.4-mini/, 0.75, 0.075, 4.5),
+	o('gpt-5.4', 'GPT-5.4', /^gpt-5\.4(-codex)?(-\d{4}-\d{2}-\d{2})?$/, 2.5, 0.25, 15),
 	o('gpt-5.3-codex', 'GPT-5.3 Codex', /^gpt-5\.3-codex/, 1.75, 0.175, 14),
-	o('gpt-5.2', 'GPT-5.2', /^gpt-5\.2(-codex)?(-\d{4}-\d{2}-\d{2})?$/, 1.75, 0.175, 14),
+	o('gpt-5.2', 'GPT-5.2', /^gpt-5\.2(-codex)?(-chat)?(-\d{4}-\d{2}-\d{2})?$/, 1.75, 0.175, 14),
 	o('gpt-5.1', 'GPT-5.1', /^gpt-5\.1(-codex)?(-max)?(-\d{4}-\d{2}-\d{2})?$/, 1.25, 0.125, 10),
 	o('gpt-5', 'GPT-5', /^gpt-5(-codex)?(-\d{4}-\d{2}-\d{2})?$/, 1.25, 0.125, 10)
 ];
@@ -56,9 +64,9 @@ function o(id: string, label: string, match: RegExp, input: number, cacheRead: n
 		id,
 		label,
 		match,
-		price: { input, cacheRead, cacheWrite: 0, output },
-		source: 'https://developers.openai.com/api/docs/pricing',
-		asOf: '2026-09-13'
+		price: { input, cacheRead, cacheWrite: input, output },
+		source: 'https://openrouter.ai/api/v1/models',
+		asOf: '2026-09-14'
 	};
 }
 
@@ -68,10 +76,50 @@ export const PRICE_FIELDS: { key: keyof Price; label: string }[] = [
 	{ key: 'cacheWrite', label: 'Cache write' },
 	{ key: 'output', label: 'Output' }
 ];
+export const FALLBACK_AS_OF = '2026-09-14';
+
+/** GET /api/prices: OpenRouter's public model catalogue as USD per 1M tokens, keyed by
+ * OpenRouter id ("anthropic/claude-sonnet-5"). The proxy fetches it on demand and caches it. */
+export type Catalog = { source: string; fetched_at: number; error?: string; error_at?: number; models: Record<string, Price> };
+
+export function parseCatalog(raw: unknown): Catalog {
+	const c = (raw ?? {}) as Record<string, unknown>;
+	const models: Record<string, Price> = {};
+	for (const [id, v] of Object.entries((c.models as Record<string, Record<string, unknown>>) ?? {})) {
+		const num = (k: string) => (typeof v[k] === 'number' && isFinite(v[k] as number) ? (v[k] as number) : 0);
+		models[id] = { input: num('input'), cacheRead: num('cache_read'), cacheWrite: num('cache_write'), output: num('output') };
+	}
+	return {
+		source: String(c.source ?? ''),
+		fetched_at: Number(c.fetched_at ?? 0),
+		error: c.error ? String(c.error) : undefined,
+		error_at: c.error_at ? Number(c.error_at) : undefined,
+		models
+	};
+}
 
 /** OpenRouter reports ids as "anthropic/claude-sonnet-5"; the rules match the bare id. */
 function bareModel(model: string): string {
 	return model.replace(/^[a-z0-9_.-]+\//i, '');
+}
+
+/** Which vendor prefix a bare model id belongs to in the catalogue. */
+function vendorOf(model: string): string | null {
+	if (/^claude-/.test(model)) return 'anthropic';
+	if (/^(gpt-|o\d|chatgpt-|codex-)/.test(model)) return 'openai';
+	return null;
+}
+
+/** The catalogue ids a provider-reported model id may be listed under, most specific first.
+ * "claude-haiku-4-5-20251001" → anthropic/claude-haiku-4.5; "gpt-5.1-codex" is already the id. */
+export function catalogIds(model: string): string[] {
+	if (model.includes('/')) return [model];
+	const vendor = vendorOf(model);
+	if (!vendor) return [];
+	const undated = model.replace(/-\d{4}-\d{2}-\d{2}$/, '').replace(/-\d{8}$/, '').replace(/-latest$/, '');
+	// Anthropic writes versions with a dash ("claude-sonnet-4-5", "claude-3-5-haiku"); OpenRouter with a dot.
+	const dotted = vendor === 'anthropic' ? undated.replace(/(\d)-(\d)/g, '$1.$2') : undated;
+	return [...new Set([dotted, undated, model])].map((id) => `${vendor}/${id}`);
 }
 
 export function listRuleFor(model: string): PriceRule | null {
@@ -79,15 +127,22 @@ export function listRuleFor(model: string): PriceRule | null {
 	return PRICE_RULES.find((r) => r.match.test(model) || r.match.test(bare)) ?? null;
 }
 
-export type Resolved = { price: Price; source: 'override' | 'list'; rule: PriceRule | null } | { price: null; source: 'none'; rule: null };
+export type Resolved =
+	| { price: Price; source: 'catalog'; id: string; rule: PriceRule | null }
+	| { price: Price; source: 'list'; id: null; rule: PriceRule }
+	| { price: null; source: 'none'; id: null; rule: null };
 
-/** The price to use for a model: an explicit override first, then the list rule, else nothing. */
-export function priceFor(model: string, overrides: Readonly<Record<string, Price>>): Resolved {
-	const o = overrides[model];
-	if (o) return { price: o, source: 'override', rule: listRuleFor(model) };
+/** The price to use for a model: the catalogue entry it maps to, else the built-in list, else nothing. */
+export function priceFor(model: string, catalog: Catalog | null): Resolved {
 	const rule = listRuleFor(model);
-	if (rule) return { price: rule.price, source: 'list', rule };
-	return { price: null, source: 'none', rule: null };
+	if (catalog) {
+		for (const id of catalogIds(model)) {
+			const price = catalog.models[id];
+			if (price) return { price, source: 'catalog', id, rule };
+		}
+	}
+	if (rule) return { price: rule.price, source: 'list', id: null, rule };
+	return { price: null, source: 'none', id: null, rule: null };
 }
 
 export type Cost = { input: number; cacheRead: number; cacheWrite: number; output: number; total: number };
@@ -118,38 +173,3 @@ export function addCost(a: Cost, b: Cost): Cost {
 }
 
 export const ZERO_COST: Cost = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, total: 0 };
-
-const STORAGE_KEY = 'garcon.pricing.v1';
-
-/** Price overrides live in the browser only; the proxy never stores prices. Wrapped in try/catch
- * because storage can be unavailable (private window, blocked site data). */
-export function loadOverrides(): Record<string, Price> {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (!raw) return {};
-		const parsed: unknown = JSON.parse(raw);
-		if (!parsed || typeof parsed !== 'object') return {};
-		const out: Record<string, Price> = {};
-		for (const [model, v] of Object.entries(parsed as Record<string, unknown>)) {
-			if (isPrice(v)) out[model] = v;
-		}
-		return out;
-	} catch {
-		return {};
-	}
-}
-
-export function saveOverrides(overrides: Record<string, Price>): void {
-	try {
-		if (Object.keys(overrides).length) localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-		else localStorage.removeItem(STORAGE_KEY);
-	} catch {
-		// Storage unavailable: the override still applies for this page view.
-	}
-}
-
-function isPrice(v: unknown): v is Price {
-	if (!v || typeof v !== 'object') return false;
-	const p = v as Record<string, unknown>;
-	return PRICE_FIELDS.every(({ key }) => typeof p[key] === 'number' && isFinite(p[key] as number) && (p[key] as number) >= 0);
-}

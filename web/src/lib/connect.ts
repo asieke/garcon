@@ -1,11 +1,14 @@
 /** Configuration recipes for pointing a harness at the proxy. The Settings tab renders these and
  * the add-provider skill mirrors them, so keep the two in step. */
 
-export const PROVIDERS: { key: string; label: string; host: string; api: string; usage: string; path: string }[] = [
-	{ key: 'anthropic', label: 'Anthropic', host: 'api.anthropic.com', api: 'Messages', usage: 'input / cache read / cache write / output', path: '/v1/messages' },
-	{ key: 'openai', label: 'OpenAI', host: 'api.openai.com', api: 'Responses, chat completions', usage: 'input (cached share) / output', path: '/v1/responses, /v1/chat/completions' },
-	{ key: 'openrouter', label: 'OpenRouter', host: 'openrouter.ai', api: 'Chat completions', usage: 'prompt (cached share) / completion', path: '/api/v1/chat/completions' },
-	{ key: 'chatgpt', label: 'ChatGPT (Codex backend)', host: 'chatgpt.com', api: 'Responses', usage: 'input (cached share) / output', path: '/backend-api/codex/responses' }
+export const PROVIDERS: { key: string; label: string; login: string; host: string; api: string; usage: string; path: string }[] = [
+	// Labelled by what reaches them. Claude Code and Codex sign in with OAuth rather than an API key,
+	// so plain "Anthropic" and "ChatGPT" would suggest a developer account that is not involved; the
+	// Anthropic upstream keeps both names because API-key clients (Hermes, OpenClaw) share it.
+	{ key: 'anthropic', label: 'Claude Code / Anthropic API', login: 'Your Claude login, through the Anthropic API; API-key clients work too', host: 'api.anthropic.com', api: 'Messages', usage: 'input / cache read / cache write / output', path: '/v1/messages' },
+	{ key: 'openai', label: 'OpenAI', login: 'An OpenAI API key', host: 'api.openai.com', api: 'Responses, chat completions', usage: 'input (cached share) / output', path: '/v1/responses, /v1/chat/completions' },
+	{ key: 'openrouter', label: 'OpenRouter', login: 'An OpenRouter API key; one key for many vendors', host: 'openrouter.ai', api: 'Chat completions', usage: 'prompt (cached share) / completion', path: '/api/v1/chat/completions' },
+	{ key: 'chatgpt', label: 'Codex', login: 'Your ChatGPT login, through the Codex backend', host: 'chatgpt.com', api: 'Responses', usage: 'input (cached share) / output', path: '/backend-api/codex/responses' }
 ];
 
 /** Which providers each harness can be pointed at. Claude Code and Codex are single-provider by

@@ -8,6 +8,8 @@ export const groups = [
 	{ label: 'Explore', items: [
 		{ id: 'models', label: 'Models', description: 'Usage by model.' },
 		{ id: 'accounts', label: 'Accounts', description: 'Usage by account.' },
+		// Only meaningful once rows can come from several machines, so it stays out of the nav until sync is on.
+		{ id: 'machines', label: 'Machines', description: 'Usage by machine.', syncOnly: true },
 		{ id: 'sessions', label: 'Sessions', description: 'Requests grouped into coding sessions.' },
 		{ id: 'activity', label: 'Activity', description: 'When the work happens.' }
 	] },
@@ -17,11 +19,18 @@ export const groups = [
 		{ id: 'logs', label: 'Logs', description: 'Every request, with CSV export.' }
 	] },
 	{ label: 'Administration', items: [
-		{ id: 'settings', label: 'Settings', description: 'Connections, sync and instance details.' }
+		{ id: 'settings', label: 'Settings', description: 'Instance, providers, models, harnesses, sync and prices.' }
 	] }
 ] as const;
 export const views = groups.flatMap(group => group.items.map(item => ({ ...item, group: group.label })));
 export type ViewId = (typeof views)[number]['id'];
+export function requiresSync(id: ViewId): boolean {
+	return views.some(view => view.id === id && 'syncOnly' in view && view.syncOnly);
+}
+/** The navigation groups with sync-only views removed while sync is off. */
+export function groupsFor(syncEnabled: boolean) {
+	return groups.map(group => ({ ...group, items: group.items.filter(item => syncEnabled || !('syncOnly' in item && item.syncOnly)) }));
+}
 export function viewFromParam(value: string | null): ViewId {
 	return views.find(view => view.id === value)?.id ?? 'overview';
 }

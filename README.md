@@ -117,9 +117,11 @@ call and a new row in Logs.
 
 ## Dashboard
 
-http://127.0.0.1:4141. Overview, Usage, Cost (estimated at list prices, editable), Models,
-Accounts, Sessions (per account, harness and device), Activity, Performance, Latency (proxy
-overhead vs upstream), Logs (CSV export), Settings. Raw rows: `/api/usage`.
+http://127.0.0.1:4141. Overview, Usage, Cost (estimated at list prices fetched from OpenRouter's
+public model catalogue), Models, Accounts, Machines (per device, shown while sync is on),
+Sessions (per account, harness and device), Activity, Performance, Latency (proxy overhead vs
+upstream), Logs (CSV export), Settings (instance, providers, models, harnesses, sync, prices).
+Raw rows: `/api/usage`.
 
 ## Sync across devices
 
@@ -189,7 +191,8 @@ npm/ai-garcon/       the npm package (shim, README, built binaries)
 supabase/            sync table schema            .claude/    agent skills
 ```
 
-`go test ./...`; `cd web && npm run check && npm run dev` (proxies `/api` to a running garcon).
+`go test ./...`; `cd web && npm run check && npm run dev` serves the dashboard at
+http://127.0.0.1:4242 and proxies `/api` to the garcon already running on 4141.
 Release: every merge into `main` publishes a new patch version of `ai-garcon` to npm
 (`.github/workflows/release.yml`; `[minor]` or `[major]` in the PR title bumps that part).
 Pull requests run the same build without publishing (`.github/workflows/ci.yml`). The release

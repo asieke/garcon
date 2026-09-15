@@ -39,12 +39,13 @@
 			<p><a href="http://127.0.0.1:4141">http://127.0.0.1:4141</a>. Usage views share time-range, harness, account and (once sync has pulled in a second machine) device filters; Settings always describes the whole instance.</p>
 			<dl>
 				<dt>Overview, Usage, Models, Accounts</dt><dd>Request and token volume, composition, rankings.</dd>
-				<dt>Cost</dt><dd>Estimated spend at published pay-as-you-go list prices (never a bill), cache savings, blended $/1M tokens, run rate, an editable pricing table whose edits stay in the browser.</dd>
+				<dt>Machines</dt><dd>Usage by the machine that recorded it: token throughput stacked per machine, a ranking, and a card per device. Listed under Explore only while sync is on.</dd>
+				<dt>Cost</dt><dd>Estimated spend at published pay-as-you-go list prices (never a bill), cache savings, blended $/1M tokens, run rate. Prices come from OpenRouter's public model list through the proxy; see Settings → Prices.</dd>
 				<dt>Sessions</dt><dd>Requests grouped into coding sessions per account, harness and device, with a timeline and per-session tokens, peak context and cost.</dd>
 				<dt>Activity</dt><dd>Hour-of-day and calendar heatmaps, streaks, peak concurrency.</dd>
 				<dt>Performance, Latency</dt><dd>Generation speed and time-to-first-byte by model; the proxy's own connection overhead versus upstream time.</dd>
 				<dt>Logs</dt><dd>Sortable, filterable request table with CSV export; a Device column appears while sync is on.</dd>
-				<dt>Settings</dt><dd>How the instance is wired, a snippet builder for connecting harnesses, the sync switch and its status, browser-side state. For another machine, reuse the project URL and secret key with a distinct device name; see the <a href="sync.html#sync-others">join instructions</a>.</dd>
+				<dt>Settings</dt><dd>Six pages behind one entry: Instance (address, log, uptime), Providers (upstreams and traffic per provider), Models (every model seen and where its price comes from), Harnesses (connections seen and a snippet builder for adding one), Sync (the switch, project and status), Prices (the list prices behind the cost estimates, fetched from OpenRouter's public catalogue, with a refresh button). For another machine, reuse the project URL and secret key with a distinct device name; see the <a href="sync.html#sync-others">join instructions</a>.</dd>
 			</dl>
 			<p>If the dashboard becomes unreachable, run <code>garcon doctor</code>. After an update, <code>garcon doctor --wait 10s</code> can wait for the new version to start. Sync is optional; leaving it off still lets this machine record and display usage.</p>
 		</section>
