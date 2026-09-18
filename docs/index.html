@@ -76,9 +76,9 @@
 					<text x="470" y="251" text-anchor="middle" fill="var(--text)">your Supabase</text>
 					<text x="470" y="268" text-anchor="middle" fill="var(--text-secondary)" font-size="11">optional: other machines</text>
 				</svg>
-				<figcaption>Every agent points at a local URL that names the tool, the account and the provider. Nothing about the request or the reply is changed; Garcon only reads the usage block the provider already sends back.</figcaption>
+				<figcaption>Every agent points at a local URL that names the tool and provider. Accounts are detected automatically. Nothing about the request or the reply is changed; Garcon only reads the usage block the provider already sends back.</figcaption>
 			</figure>
-			<p>Each agent is pointed at <code>http://127.0.0.1:4141/&lt;harness&gt;/&lt;account&gt;/&lt;provider&gt;/</code>, where <code>harness</code> names the tool, <code>account</code> is the login it uses (an email), and <code>provider</code> is the upstream. Completion calls are appended to a local log with the model and the token counts the provider reported: uncached input, cache read, cache write and output. Claude Code and Codex talk to one provider each, so their URLs omit the segment: <code>/claude/&lt;account&gt;/</code> implies <code>anthropic</code> and <code>/codex/&lt;account&gt;/</code> implies <code>chatgpt</code>.</p>
+			<p>Point Claude at <code>http://127.0.0.1:4141/claude</code>, Codex at <code>http://127.0.0.1:4141/codex/backend-api/codex</code>, and Hermes at <code>http://127.0.0.1:4141/hermes/&lt;provider&gt;</code> plus its API prefix. Accounts are detected from each request's credentials; API keys without identity information receive anonymous key labels. Account labels are not accepted in URLs or flags. Remove old labels from client configuration before connecting. Other harnesses use <code>/&lt;harness&gt;/&lt;provider&gt;</code>. Completion calls are appended to a local log with the model and token counts reported by the provider.</p>
 			<div class="scroll"><table>
 				<thead><tr><th>Segment</th><th>Upstream</th><th>Recorded calls</th></tr></thead>
 				<tbody>
@@ -125,7 +125,7 @@
 
 		<section id="records">
 			<h2>What it records, and what it never touches</h2>
-			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. If you enable sync, the Supabase secret key is saved in an owner-only settings file; see <a href="sync.html#sync-security">sync security</a>. With sync off, which is the default, the only call Garcon makes on its own is a public, unauthenticated fetch of OpenRouter's model price list when the dashboard is opened, at most once a day; it carries nothing about you or your usage.</p>
+			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. If you enable sync, the Supabase secret key is saved in an owner-only settings file; see <a href="sync.html#sync-security">sync security</a>. Automatic Claude OAuth attribution looks up the requesting token's profile directly with Anthropic, caching only a token digest and account label in memory for up to an hour. Failed lookups retry after a minute and use an anonymous credential label meanwhile. Garcon also fetches OpenRouter's public model price list when the dashboard is opened, at most once a day; that call carries nothing about you or your usage.</p>
 		</section>
 
 		<section id="start">
@@ -135,7 +135,7 @@ garcon setup</code></pre></div>
 			<p>macOS and Linux, x64 and arm64. Node 18+ runs the npm command. Setup starts Garcon at login, checks its version, and prints the dashboard link. No Supabase account is needed for local recording.</p>
 			<ol class="steps">
 				<li><strong><a href="install.html">Install and start</a></strong>run the commands above as your normal user. For a foreground trial or source build, see the install guide.</li>
-				<li><strong><a href="connect.html">Connect your first harness</a></strong>open Settings, choose your tool and account label, and copy its configuration. Restart the tool, make one short request, and check Logs for the new row.</li>
+				<li><strong><a href="connect.html">Connect your first harness</a></strong>open Settings, choose your tool, and copy its configuration. Restart the tool, make one short request, and check Logs for the new row.</li>
 				<li><strong><a href="sync.html#sync-others">Add your other machines</a></strong>repeat installation and harness setup there. For a combined dashboard, create or choose one Supabase project, then reuse its URL and key with a distinct device name on each machine.</li>
 			</ol>
 			<p>Later, run <code>garcon update</code> to update an npm installation and refresh its service. Run <code>garcon doctor</code> to check reachability, versions, first-request progress and sync errors. See <a href="install.html#update">updating</a> and <a href="install.html#troubleshooting">troubleshooting</a>.</p>

@@ -8,7 +8,9 @@ in one dashboard, across accounts, tools and, with sync on, machines. No Go depe
 
 ## How it works
 
-Point each agent at `http://127.0.0.1:4141/<harness>/<account>/<provider>/`. Requests are
+Point Claude at `http://127.0.0.1:4141/claude`, Codex at
+`http://127.0.0.1:4141/codex/backend-api/codex`, and Hermes at
+`http://127.0.0.1:4141/hermes/<provider>` plus its API prefix. Requests are
 forwarded unchanged and replies streamed back; completion calls are appended to
 `~/.local/share/garcon/usage.jsonl` with model, status, latency and the provider's token
 counts (uncached input, cache read, cache write, output). Subscription logins keep working.
@@ -20,8 +22,17 @@ counts (uncached input, cache read, cache write, output). Subscription logins ke
 | `openrouter` | openrouter.ai | `/api/v1/chat/completions` |
 | `chatgpt` | chatgpt.com | `/backend-api/codex/responses` |
 
-`/claude/<account>/` implies `anthropic`; `/codex/<account>/` implies `chatgpt`. Any other
-harness name is accepted. `<account>` is a label: use the login the tool signs in with.
+Accounts for Claude, Codex and Hermes are detected from each request's credentials.
+Codex uses the selected ChatGPT account and token claims. Claude OAuth uses a cached
+Anthropic profile lookup. API keys without identity information get an anonymous,
+provider-specific key fingerprint; separate keys remain separate, and rotating a key
+creates a new label. Missing credentials show as `<provider>:unknown`.
+
+All harnesses use account-free URLs and automatic detection. Account flags and URL
+labels are not supported. When upgrading, remove the account segment from existing
+harness configuration and restart existing sessions. Other harnesses use
+`/<harness>/<provider>/` plus the SDK's API prefix.
+See [account detection](docs/account-detection.md) for details and failure behavior.
 
 ## Install and set up this machine
 
@@ -32,7 +43,7 @@ garcon setup
 
 macOS and Linux, x64 and arm64; Node 18+ is needed to run the npm command.
 `setup` starts Garcon at login and verifies http://127.0.0.1:4141. Open the printed
-Settings link, choose your harness and account label, and copy its configuration.
+Settings link, choose your harness, and copy its configuration.
 Restart the harness, send one short request, and check Logs. Existing usage and sync
 settings are preserved when setup is rerun. Sync is optional.
 
@@ -89,31 +100,32 @@ From source (Go 1.27+, Node 22+; `mise install` provides both):
 
 ## Connect a harness
 
-Settings → Connect a harness generates these for any harness, provider and account.
+Settings → Connect a harness generates these for any harness and provider, with automatic account detection for every tool.
 
 ```sh
 # Claude Code, with Remote Control (the session shows in the claude.ai app)
-garcon claude --account me@example.com            # arguments after -- go to claude
+garcon claude            # arguments after -- go to claude
 
 # Claude Code, environment only (no Remote Control)
-ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
+ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude \
 _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude
 
 # Codex: ~/.codex/config.toml (a custom provider is required under a ChatGPT login)
 model_provider = "garcon"
 [model_providers.garcon]
 name = "OpenAI"
-base_url = "http://127.0.0.1:4141/codex/me@example.com/backend-api/codex"
+base_url = "http://127.0.0.1:4141/codex/backend-api/codex"
 wire_api = "responses"
 requires_openai_auth = true
 ```
 
-OpenClaw: set `baseUrl` per provider in `~/.openclaw/openclaw.json` (`…/openclaw/<account>/anthropic`,
+OpenClaw: set `baseUrl` per provider in `~/.openclaw/openclaw.json` (`…/openclaw/anthropic`,
 `…/openai/v1`, `…/openrouter/api/v1`, `…/chatgpt/backend-api` for `openai-codex`). Hermes: set
-`base_url` per provider in `~/.hermes/config.yaml` (`…/hermes/<account>/anthropic`, `…/openai/v1`,
+`base_url` per provider in `~/.hermes/config.yaml` (`…/hermes/anthropic`, `…/openai/v1`,
 `…/openrouter/api/v1`). Anything else: the base URL plus the SDK's prefix; OpenAI-compatible
 clients need `stream_options: {"include_usage": true}` for token counts. Verify with one short
-call and a new row in Logs.
+call and a new row in Logs. For Hermes with ChatGPT, use
+`HERMES_CODEX_BASE_URL=http://127.0.0.1:4141/hermes/chatgpt/backend-api/codex hermes chat --provider openai-codex`.
 
 ## Dashboard
 
@@ -191,7 +203,7 @@ npm/ai-garcon/       the npm package (shim, README, built binaries)
 supabase/            sync table schema            .claude/    agent skills
 ```
 
-`go test ./...`; `cd web && npm run check && npm run dev` serves the dashboard at
+`go test ./...`; `cd web && npm run check && npm test && npm run dev` serves the dashboard at
 http://127.0.0.1:4242 and proxies `/api` to the garcon already running on 4141.
 Release: every merge into `main` publishes a new patch version of `ai-garcon` to npm
 (`.github/workflows/release.yml`; `[minor]` or `[major]` in the PR title bumps that part).

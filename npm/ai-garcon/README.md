@@ -16,7 +16,7 @@ garcon setup
 
 macOS and Linux, x64 and arm64; Node 18+ is needed to run the npm command.
 `setup` starts Garcon at login and verifies http://127.0.0.1:4141. Open the printed
-Settings link, choose your harness and account label, and copy its configuration.
+Settings link, choose your harness, and copy its configuration.
 Restart the harness, send one short request, and check Logs. Existing usage and sync
 settings are preserved when setup is rerun. Sync is optional.
 
@@ -69,10 +69,10 @@ macOS logs: `~/Library/Logs/garcon.log`.
 
 ```sh
 # Claude Code, with Remote Control (the session shows in the claude.ai app)
-garcon claude --account me@example.com            # arguments after -- go to claude
+garcon claude            # arguments after -- go to claude
 
 # Claude Code, environment only (no Remote Control)
-ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/me@example.com \
+ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude \
 _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude
 ```
 

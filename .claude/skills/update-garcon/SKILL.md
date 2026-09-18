@@ -23,8 +23,14 @@ scripts/install.sh --update
 It refuses to run with uncommitted changes, switches to `main` if needed, fast-forwards
 from `origin/main`, prints the commits that came in, rebuilds the dashboard and the
 binary, installs `~/.local/bin/garcon`, and restarts the service if one is running.
-Agents keep their configuration; the usage log, the sync settings and the sync state are
-untouched.
+Preserve usage logs, sync settings, sync state, credentials, and unrelated client settings.
+When upgrading from account-labeled routes, migrate configured Garcon URLs before restarting
+the proxy: Claude uses `http://127.0.0.1:4141/claude`, Codex uses
+`http://127.0.0.1:4141/codex/backend-api/codex`, and other harnesses use
+`/<harness>/<provider>` plus their API suffix. Remove account flags from launch commands.
+Accounts are always detected; old labeled routes and the account flag are rejected.
+Existing agent sessions must restart to load changed URLs. Inspect only the relevant
+configuration fields, and do not print credentials while verifying the migration.
 
 ## Verify
 

@@ -1,4 +1,4 @@
-// Package proxy routes /<harness>/<account>/<provider>/… to the provider,
+// Package proxy routes harness URLs to their provider, with automatic account attribution,
 // forwarding every request unchanged and recording completion calls.
 package proxy
 
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"garcon/internal/accounts"
 	"garcon/internal/usage"
 )
 
@@ -39,27 +40,34 @@ func ProviderOf(r usage.Record) string {
 
 // Route is a parsed proxy path.
 type Route struct {
-	Harness, Account, Provider, Rest string
-	Target                           *url.URL
+	Harness, Provider, Rest string
+	Target                  *url.URL
 }
 
-// ParseRoute splits /<harness>/<account>/[<provider>/]<rest>. Anything that does not
-// resolve to a known provider is not a proxy request (it is a dashboard asset).
+// ParseRoute splits /<harness>/[<provider>/]<rest>. Claude and Codex
+// imply their provider. Account labels are not accepted in routing paths.
 func ParseRoute(path string) (Route, bool) {
 	harness, rest, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
-	account, rest, _ := strings.Cut(rest, "/")
-	if harness == "" || account == "" {
+	if harness == "" {
 		return Route{}, false
 	}
-	provider, ok := ImplicitProvider[harness]
-	if !ok {
+	provider, implicit := ImplicitProvider[harness]
+	if implicit {
+		first, _, _ := strings.Cut(rest, "/")
+		if harness == "claude" && first != "" && first != "v1" && first != "api" {
+			return Route{}, false
+		}
+		if harness == "codex" && first != "" && first != "backend-api" && first != "v1" {
+			return Route{}, false
+		}
+	} else {
 		provider, rest, _ = strings.Cut(rest, "/")
 	}
 	target := Providers[provider]
 	if target == nil {
 		return Route{}, false
 	}
-	return Route{Harness: harness, Account: account, Provider: provider, Rest: rest, Target: target}, true
+	return Route{Harness: harness, Provider: provider, Rest: rest, Target: target}, true
 }
 
 // IsCompletion reports whether an upstream path is a model call worth recording:
@@ -71,7 +79,8 @@ func IsCompletion(rest string) bool {
 
 // Proxy forwards routed requests and hands each completion's Record to Save.
 type Proxy struct {
-	Save func(usage.Record)
+	Save     func(usage.Record)
+	Accounts accounts.Resolver
 }
 
 // Serve proxies one routed request.
@@ -112,7 +121,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 				return nil
 			}
 			res.Body = &tap{ReadCloser: res.Body, done: func(b []byte) {
-				rec := usage.Record{Time: start.UnixMilli(), Harness: rt.Harness, Account: rt.Account, Provider: rt.Provider,
+				rec := usage.Record{Time: start.UnixMilli(), Harness: rt.Harness, Provider: rt.Provider,
 					Status: res.StatusCode, Ms: time.Since(start).Milliseconds()}
 				if !tGetConn.IsZero() {
 					us := tGetConn.Sub(start).Microseconds()
@@ -124,6 +133,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 				rec.DnsMs, rec.TcpMs, rec.TlsMs = span(tDNSStart, tDNSDone), span(tTCPStart, tTCPDone), span(tTLSStart, tTLSDone)
 				rec.FirstByteMs = span(start, tFirstByte)
 				usage.Fold(b, &rec)
+				rec.Account = p.Accounts.Resolve(rt.Provider, r.Header)
 				p.Save(rec)
 			}}
 			return nil

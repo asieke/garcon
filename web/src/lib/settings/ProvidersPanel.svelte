@@ -72,8 +72,8 @@
 {/if}
 
 <p class="caption">
-	Requests are forwarded verbatim; only the model and token counts in the reply are recorded. Paths are
-	<code>/&lt;harness&gt;/&lt;account&gt;/&lt;provider&gt;/…</code>{#if config}; {#each Object.entries(config.implicit_harnesses) as [h, p], i}{i ? ', ' : ''}<code>/{h}/</code> implies {p}{/each}{/if}.
+	Requests are forwarded verbatim; only the model and token counts in the reply are recorded. Accounts are always detected automatically. Paths are
+	<code>/&lt;harness&gt;/&lt;provider&gt;/…</code>{#if config}; {#each Object.entries(config.implicit_harnesses) as [h, p], i}{i ? ', ' : ''}<code>/{h}/</code> implies {p}{/each}{/if}.
 	Point a tool at one from the <a href="?view=settings&section=harnesses">Harnesses</a> tab. Adding a provider is a code change; see the add-provider skill in the repository.
 </p>
 

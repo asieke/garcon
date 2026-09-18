@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"garcon/internal/accounts"
 	"garcon/internal/usage"
 )
 
@@ -118,7 +119,11 @@ func (s *Store) All() []usage.Record {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	all := make([]usage.Record, 0, len(s.records)+len(s.remote))
-	return append(append(all, s.records...), s.remote...)
+	all = append(append(all, s.records...), s.remote...)
+	for i := range all {
+		all[i].Account = accounts.DisplayLabel(all[i].Account)
+	}
+	return all
 }
 
 // Remote returns a copy of the rows pulled from other machines.

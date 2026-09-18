@@ -15,17 +15,32 @@ func TestRouted(t *testing.T) {
 		path, want string
 		added      bool
 	}{
-		{"/api/claude_code/policy_limits", "/claude/me@x/api/claude_code/policy_limits", true},
-		{"/claude/me@x/v1/messages", "/claude/me@x/v1/messages", false},
-		{"/claude/me@x", "/claude/me@x", false},
-		{"/claude/me@x-evil/v1/messages", "/claude/me@x/claude/me@x-evil/v1/messages", true},
-		{"/", "/claude/me@x/", true},
+		{"/api/claude_code/policy_limits", "/claude/api/claude_code/policy_limits", true},
+		{"/claude/v1/messages", "/claude/v1/messages", false},
+		{"/claude", "/claude", false},
+		{"/claude-evil/v1/messages", "/claude/claude-evil/v1/messages", true},
+		{"/", "/claude/", true},
 	}
 	for _, c := range cases {
-		got, added := routed(c.path, "me@x")
+		got, added := routed(c.path)
 		if got != c.want || added != c.added {
 			t.Errorf("routed(%q) = %q, %v; want %q, %v", c.path, got, added, c.want, c.added)
 		}
+	}
+}
+
+func TestAutomaticRoute(t *testing.T) {
+	for path, want := range map[string]string{
+		"/api/claude_code/policy_limits": "/claude/api/claude_code/policy_limits",
+		"/claude/v1/messages":            "/claude/v1/messages",
+		"/v1/messages":                   "/claude/v1/messages",
+	} {
+		if got, _ := routed(path); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+	if got := (session{base: "http://localhost:4141"}).route(); got != "http://localhost:4141/claude" {
+		t.Fatal(got)
 	}
 }
 
@@ -39,7 +54,7 @@ func TestRelay(t *testing.T) {
 	}), true))
 	defer upstream.Close()
 	target, _ := url.Parse(upstream.URL)
-	h := handler("me@x", target, func() string { return "tok" })
+	h := handler(target, func() string { return "tok" })
 
 	req := httptest.NewRequest("GET", "http://localhost/api/claude_code/policy_limits?x=1", nil)
 	req.Host = "api.anthropic.com"
@@ -48,11 +63,11 @@ func TestRelay(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("bare policy poll: status %d, body %s", rec.Code, rec.Body)
 	}
-	if got.path != "/claude/me@x/api/claude_code/policy_limits" || got.query != "x=1" || got.auth != "Bearer tok" || !strings.HasPrefix(got.host, "127.0.0.1:") {
+	if got.path != "/claude/api/claude_code/policy_limits" || got.query != "x=1" || got.auth != "Bearer tok" || !strings.HasPrefix(got.host, "127.0.0.1:") {
 		t.Errorf("bare policy poll reached upstream as %+v", got)
 	}
 
-	req = httptest.NewRequest("POST", "http://localhost/claude/me@x/v1/messages", strings.NewReader("{}"))
+	req = httptest.NewRequest("POST", "http://localhost/claude/v1/messages", strings.NewReader("{}"))
 	req.Host = "api.anthropic.com"
 	req.Header.Set("Authorization", "Bearer own")
 	rec = httptest.NewRecorder()
@@ -60,7 +75,7 @@ func TestRelay(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("routed call: status %d, body %s", rec.Code, rec.Body)
 	}
-	if got.path != "/claude/me@x/v1/messages" || got.auth != "Bearer own" {
+	if got.path != "/claude/v1/messages" || got.auth != "Bearer own" {
 		t.Errorf("routed call reached upstream as %+v", got)
 	}
 }

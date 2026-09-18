@@ -1,5 +1,8 @@
 # Plan: keep Claude Code Remote Control working alongside Garcon
 
+> Historical design record. Account routing and flags below are superseded by
+> [automatic account detection](../docs/account-detection.md); use account-free URLs.
+
 Status: superseded 2026-09-13 (same day, Claude Code 2.1.269). The unix socket row below was
 wrong: `ANTHROPIC_UNIX_SOCKET` works with no Garcon change once the launcher (1) keeps
 `ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude/<account>` so the SDK still sends the canonical

@@ -15,10 +15,10 @@ import (
 )
 
 // routed returns the path Garcon expects and whether the route had to be added. Claude Code addresses
-// its API calls with ANTHROPIC_BASE_URL, so they already carry /claude/<account>; only its org policy
+// its API calls with ANTHROPIC_BASE_URL, so they already carry /claude; only its org policy
 // poll (GET /api/claude_code/policy_limits) arrives bare and expects the socket's owner to route it.
-func routed(path, account string) (string, bool) {
-	prefix := "/claude/" + account
+func routed(path string) (string, bool) {
+	const prefix = "/claude"
 	if path == prefix || strings.HasPrefix(path, prefix+"/") {
 		return path, false
 	}
@@ -27,7 +27,7 @@ func routed(path, account string) (string, bool) {
 
 // handler relays one Claude Code session's socket to Garcon. Requests pass through unchanged except
 // that the route is added when missing and the account's login when no Authorization is present.
-func handler(account string, garcon *url.URL, token func() string) http.Handler {
+func handler(garcon *url.URL, token func() string) http.Handler {
 	return &httputil.ReverseProxy{
 		FlushInterval: -1, // completions stream
 		Transport: &http.Transport{
@@ -36,7 +36,7 @@ func handler(account string, garcon *url.URL, token func() string) http.Handler 
 		},
 		ErrorLog: log.New(io.Discard, "", 0), // the terminal belongs to Claude Code
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.Out.URL.Path, _ = routed(pr.In.URL.Path, account)
+			pr.Out.URL.Path, _ = routed(pr.In.URL.Path)
 			pr.Out.URL.RawPath = ""
 			// SetURL clears Out.Host, so the request reaches Garcon addressed to 127.0.0.1 and passes
 			// its loopback guard. A Director-style proxy would keep the inbound Host and be refused.
