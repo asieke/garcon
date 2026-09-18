@@ -129,11 +129,35 @@ call and a new row in Logs. For Hermes with ChatGPT, use
 
 ## Dashboard
 
-http://127.0.0.1:4141. Overview, Usage, Cost (estimated at list prices fetched from OpenRouter's
+http://127.0.0.1:4141. Overview, Limits, Usage, Cost (estimated at list prices fetched from OpenRouter's
 public model catalogue), Models, Accounts, Machines (per device, shown while sync is on),
 Sessions (per account, harness and device), Activity, Performance, Latency (proxy overhead vs
 upstream), Logs (CSV export), Settings (instance, providers, models, harnesses, sync, prices).
 Raw rows: `/api/usage`.
+
+**Limits** shows current Codex and Claude subscription allowances for locally signed-in
+accounts, including named profiles and Hermes Codex logins. Each meter compares the
+provider's percentage used with elapsed time in its reset period. Accounts are grouped
+by provider, person, and workspace, so multiple harnesses or profiles using the same
+subscription share one card. Claude's five-hour, weekly, and named limits (including
+Fable) appear when the provider reports them. Overview includes a weekly summary.
+Codex accounts also show remaining reset credits and each credit's expiration date;
+this is read-only and never redeems credits. Reset credits are a Codex-only feature.
+
+Garcon checks limits at startup and every five minutes, reading existing login files
+and Claude's profile-specific macOS Keychain entries without modifying them. Only the
+latest snapshot is cached locally; no credentials or quota history are stored or synced.
+Expired logins show **Login needs refresh** until the CLI refreshes them. See
+[subscription limits](docs/subscription-limits.md) for discovery, endpoint, and failure details.
+Sidebar group headings collapse independently and remember your choice in this browser.
+
+Open `/usage-widget` for a standalone, responsive view of the same account limits.
+It groups rows by email, follows the system light/dark theme, and supports **R** to
+refresh. The elapsed-period line is an even-use reference, not a usage forecast.
+A fixed footer scrolls only newly recorded or synced requests as account, provider,
+token-count, and machine chips, checking every two seconds. Existing history is skipped
+and the scrolling lane stays empty when its queue drains. A fixed chip on the right
+shows the total recorded requests across local and synced machines.
 
 ## Sync across devices
 
