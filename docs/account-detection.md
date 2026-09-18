@@ -22,6 +22,10 @@ of the tool that sent it. Switching logins or running multiple sessions does not
 require changing the base URL. Garcon never consults a shared “current account”
 file or reads a prompt to determine identity.
 
+This describes completion attribution. The separate [Limits collector](subscription-limits.md)
+reads local login profiles to fetch account-wide subscription snapshots even while those
+accounts are idle. Those reads never select or override a completion request's account.
+
 - **ChatGPT:** use `ChatGPT-Account-Id` and the access token's account/profile claims.
   Display an available email as the account name without a workspace suffix.
   Usage with the same email is grouped into one account. A selected account that differs from the token's default wins and is

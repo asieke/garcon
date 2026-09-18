@@ -7,6 +7,8 @@
 	import MultiSelect from '$lib/MultiSelect.svelte';
 	import { views, viewFromParam, requiresSync } from '$lib/navigation/views';
 	import OverviewSection from '$lib/sections/OverviewSection.svelte';
+	import LimitsSection from '$lib/sections/LimitsSection.svelte';
+	import type { LimitsSnapshot } from '$lib/limits';
 	import UsageSection from '$lib/sections/UsageSection.svelte';
 	import ModelsSection from '$lib/sections/ModelsSection.svelte';
 	import AccountsSection from '$lib/sections/AccountsSection.svelte';
@@ -52,6 +54,26 @@
 	const DEV = import.meta.env.DEV;
 
 	let rows = $state<Row[]>([]);
+	let limits = $state<LimitsSnapshot | null>(null);
+	let limitsError = $state('');
+	let limitsRefreshing = $state(false);
+	let limitsNow = $state(Date.now());
+	async function refreshLimits() {
+		try {
+			const res = await fetch('/api/limits');
+			if (!res.ok) throw new Error();
+			limits = await res.json(); limitsError = '';
+		} catch { limitsError = 'Account limits unavailable; retrying automatically.'; }
+	}
+	async function requestLimitsRefresh() {
+		limitsRefreshing = true;
+		try {
+			const res = await fetch('/api/limits/refresh', { method: 'POST' });
+			if (!res.ok) throw new Error();
+			limits = await res.json(); limitsError = '';
+		} catch { limitsError = 'Could not refresh account limits.'; }
+		finally { limitsRefreshing = false; }
+	}
 	let days = $state(7);
 	const tab = $derived(viewFromParam(browser ? page.url.searchParams.get('view') : null));
 	const settingsSection = $derived(settingsSectionFromParam(browser ? page.url.searchParams.get('section') : null));
@@ -102,6 +124,7 @@
 	}
 	$effect(() => {
 		refresh();
+		refreshLimits();
 		// untrack: the loader reads its own loading flag before awaiting, which would otherwise make
 		// this effect depend on it and re-run (and re-fetch) every time it flips.
 		untrack(() => loadPrices());
@@ -109,8 +132,9 @@
 			.then((r) => (r.ok ? r.json() : null))
 			.then((c) => { if (c?.version) version = c.version; })
 			.catch(() => {});
-		const timer = setInterval(refresh, POLL_MS);
-		return () => clearInterval(timer);
+		const timer = setInterval(() => { refresh(); refreshLimits(); }, POLL_MS);
+		const clock = setInterval(() => { limitsNow = Date.now(); }, 1000);
+		return () => { clearInterval(timer); clearInterval(clock); };
 	});
 
 	const accountsAll = $derived([...new Set(rows.map((r) => r.account))].sort());
@@ -322,7 +346,7 @@
 		</header>
 		<main id="main-content" tabindex="-1">
 			<div class="page-heading"><div><h1 bind:this={heading} tabindex="-1">{currentView.label}</h1><p class="description">{currentView.description}</p></div></div>
-			{#if tab !== 'settings'}
+			{#if tab !== 'settings' && tab !== 'limits'}
 				<div class="filters" aria-label="Usage filters">
 					<div class="period"><span class="filter-label" id="period-label">Time range</span><div class="seg" role="group" aria-labelledby="period-label">
 						{#each WINDOWS as [label, d]}<button class:active={days === d} aria-pressed={days === d} onclick={() => days = d}>{label}</button>{/each}
@@ -335,8 +359,13 @@
 			{/if}
 			{#if stale}<p class="notice" role="status">Proxy unreachable; retrying.</p>{/if}
 			<div class="view-content">
+{#if tab === 'overview'}
+	<LimitsSection snapshot={limits} now={limitsNow} error={limitsError} refreshing={limitsRefreshing} onrefresh={requestLimitsRefresh} compact />
+{/if}
 {#if tab === 'settings'}
 	<SettingsSection {rows} pollMs={POLL_MS} {now} section={settingsSection} />
+{:else if tab === 'limits'}
+	<LimitsSection snapshot={limits} now={limitsNow} error={limitsError} refreshing={limitsRefreshing} onrefresh={requestLimitsRefresh} />
 {:else if loading}
 	<p class="loading" role="status">Loading…</p>
 {:else if !lastSync}

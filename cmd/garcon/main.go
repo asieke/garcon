@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 
 	"garcon/internal/claude"
 	"garcon/internal/dashboard"
+	"garcon/internal/limits"
 	"garcon/internal/local"
 	"garcon/internal/onboarding"
 	"garcon/internal/prices"
@@ -95,6 +97,8 @@ func main() {
 	}
 	sy := syncer.New(st, *configPath)
 	go sy.Run()
+	li := limits.New(st.Dir())
+	go li.Run(context.Background())
 	started := time.Now()
 	px := &proxy.Proxy{Save: st.Save}
 	static := own(dashboard.Handler(), false)
@@ -110,7 +114,12 @@ func main() {
 	mux.Handle("/api/usage", readOnly(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(st.All())
 	}))
+	mux.Handle("/api/usage/recent", readOnly(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(st.RequestFeed())
+	}))
 	mux.Handle("/api/settings", own(sy, true))
+	mux.Handle("/api/limits", own(li, true))
+	mux.Handle("/api/limits/refresh", own(li, true))
 	// Model list prices for the cost estimates, from OpenRouter's public catalogue; fetched when
 	// the dashboard first asks and at most daily after that, cached next to the usage log.
 	mux.Handle("/api/prices", own(prices.New(st.Dir()), true))
