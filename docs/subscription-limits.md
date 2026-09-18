@@ -74,6 +74,20 @@ visible to an already running service. Discovery does not recursively search the
 filesystem. Codex logins stored only in its OS keyring are not read in this version;
 the file-backed profiles configured on this machine are supported.
 
+For persistent access to multiple Codex accounts, keep independent CLI logins in
+`~/.codex-personal`, `~/.codex-dev`, and `~/.codex-work`, using `CODEX_HOME` and
+`cli_auth_credentials_store = "file"` for each. Leave `~/.codex` for the desktop
+app's current login and shared desktop projects. A command named `codex-personal`
+that uses `~/.codex` follows the desktop login; it does not pin a personal account.
+Configuration, skills, and instructions may be shared separately from credentials.
+Authenticate each profile independently; do not copy or share `auth.json` files.
+
+When the desktop signs out of the only login for an account, that account's cached
+limits and reset credits become stale. Sign into its independent CLI profile and
+refresh Limits (or wait for the next poll) to recover. Desktop and CLI logins for
+the same account still produce one quota card and one poll. Provider sessions can
+expire or be revoked; independent directories prevent overwrites, not expiration.
+
 The quota key combines provider, person, and workspace/organization identifiers;
 email is the display label. Duplicate profiles and harnesses are deduplicated before
 usage polling. Distinct subscriptions under the same email remain separate and show

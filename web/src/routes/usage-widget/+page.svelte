@@ -3,7 +3,7 @@
 	import RequestTicker from '$lib/RequestTicker.svelte';
 	import ResetCredits from '$lib/charts/ResetCredits.svelte';
 	import AccountNickname from '$lib/charts/AccountNickname.svelte';
-	import { accountStatus, barPercent, countdown, elapsedPercent, expired, widgetGroups, widgetWindows, widgetWindowLabel, type LimitsSnapshot } from '$lib/limits';
+	import { accountStatus, barPercent, elapsedPercent, expired, widgetGroups, widgetWindows, widgetWindowLabel, widgetReset, type LimitsSnapshot } from '$lib/limits';
 
 	let snapshot = $state<LimitsSnapshot | null>(null);
 	let error = $state('');
@@ -68,11 +68,12 @@
 						{@const elapsed = window ? elapsedPercent(window, now) : null}
 						{@const used = window?.used_percent ?? null}
 						{@const label = widgetWindowLabel(window, account.provider)}
+						{@const reset = widgetReset(window, now)}
 						<div class="usage-row" class:claude={account.provider === 'claude'} class:expired={isExpired}>
 							<div class="provider"><span class="provider-label"><i aria-hidden="true"></i>{account.provider === 'codex' ? 'Codex' : 'Claude'}</span>{#if duplicates && account.workspace}<small>{account.workspace}</small>{/if}</div>
-							<span class="window">{label}</span>
+							<span class="window" title={label}>{label}</span>
 							<div class="usage"><strong>{used == null ? '—' : `${Number(used.toFixed(1))}%`}</strong><div class="track" role="img" aria-label="{account.email}, {account.provider}, {label}: {used == null ? 'usage unavailable' : `${used}% used`}{elapsed == null ? '' : `; ${Math.round(elapsed)}% of period elapsed`}{isExpired ? '; expired snapshot' : ''}"><span class="fill" style:width={`${barPercent(used)}%`}></span>{#if elapsed != null}<span class="pace" style:left={`${elapsed}%`} title="{Math.round(elapsed)}% of period elapsed"></span>{/if}</div></div>
-							<span class="reset" title={window?.resets_at ? new Date(window.resets_at).toLocaleString() : undefined}>{window ? countdown(window.resets_at, now).replace('Resets in ', '') : '—'}</span>
+							<span class="reset" title={reset.title} aria-label={reset.text === '—' || reset.text === 'Pending' ? reset.title : `Resets in ${reset.text}`}>{reset.text}</span>
 						</div>
 					{/each}
 					{#if status !== 'Up to date'}<p class="account-status" role="status">{account.provider === 'codex' ? 'Codex' : 'Claude'}: {status}{account.error && account.error !== status ? ` · ${account.error}` : ''}</p>{/if}
@@ -113,13 +114,13 @@
 	.provider-label { color: var(--fill); display: inline-flex; align-items: center; gap: 8px; }
 	.provider i { display: block; width: 7px; height: 7px; background: var(--fill); border-radius: 2px; flex-shrink: 0; }
 	.provider small { display: block; color: var(--widget-muted); overflow-wrap: anywhere; font-size: 10px; margin-top: 3px; }
-	.window { color: var(--widget-text); }
+	.window { color: var(--widget-text); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.usage { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 16px; }
 	.usage strong { text-align: right; font-size: clamp(11px, 1.7svh, 15px); }
 	.track { height: clamp(8px, calc(2.5svh - 2px), 23px); border-radius: 5px; background: var(--widget-track); position: relative; }
 	.fill { display: block; height: 100%; border-radius: 5px; background: var(--fill); }
 	.pace { position: absolute; top: -3px; bottom: -3px; width: 2px; transform: translateX(-1px); background: var(--widget-text); box-shadow: 0 0 0 1px var(--widget-bg); }
-	.reset { text-align: right; color: var(--widget-muted); font-size: 12px; }
+	.reset { text-align: right; color: var(--widget-muted); font-size: 12px; white-space: nowrap; }
 	.expired .track { opacity: .4; }
 	.expired .reset { color: var(--claude-color); }
 	.account-status, .notice { color: var(--claude-color); font-size: 11px; padding: 0 23px 8px; margin: 0; }
@@ -142,10 +143,14 @@
 		.summary { font-size: 10px; gap: 6px 8px; }
 		.summary > :not(:first-child)::before { margin-right: 8px; }
 		h1 { font-size: 14px; }
-		.columns { display: none; }
-		.usage-row { flex-basis: 40px; min-height: 40px; grid-template-columns: 72px minmax(0,1fr) 88px; padding: 3px 14px 5px 12px; gap: 4px 8px; }
-		.usage { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 34px minmax(0,1fr); gap: 10px; }
-		.reset { grid-column: 3; grid-row: 1; font-size: 10px; }
+		.columns, .usage-row { grid-template-columns: 48px 78px minmax(44px,1fr) 56px; gap: 6px; padding-right: 8px; padding-left: 13px; }
+		.columns { font-size: 8px; letter-spacing: .04em; }
+		.usage-row { flex-basis: 24px; min-height: 24px; padding-left: 8px; font-size: 10px; }
+		.provider-label { gap: 5px; }
+		.provider i { width: 5px; height: 5px; }
+		.usage { grid-template-columns: 30px minmax(0,1fr); gap: 5px; }
+		.usage strong { font-size: 10px; }
+		.reset { font-size: 9px; }
 		.track { height: clamp(8px, 1.8svh, 14px); }
 		.pace { top: -3px; bottom: -3px; }
 		footer { padding-left: 12px; padding-right: 12px; gap: 3px 12px; }

@@ -91,3 +91,10 @@ export function widgetWindowLabel(window: LimitWindow | null, provider: string):
 	if (window.label.endsWith(' · Weekly')) return `Week · ${window.label.slice(0, -9)}`;
 	return window.label;
 }
+
+export function widgetReset(window: LimitWindow | null, now: number): { text: string; title: string } {
+	if (!window) return { text: '—', title: 'Usage window unavailable' };
+	if (!window.resets_at) return { text: '—', title: 'The provider has not reported a reset time for this window.' };
+	if (expired(window, now)) return { text: 'Pending', title: 'The previous window ended; waiting for updated provider usage.' };
+	return { text: countdown(window.resets_at, now).replace('Resets in ', ''), title: new Date(window.resets_at).toLocaleString() };
+}

@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetWindows, widgetWindowLabel, resetCreditInfo } from '../src/lib/limits.ts';
+import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo } from '../src/lib/limits.ts';
 
 const reset = Date.UTC(2030, 0, 8);
 const week = { id: 'week', label: 'Weekly', used_percent: 32, window_seconds: 604800, resets_at: reset, expired: false };
+test('widget reset labels distinguish absent dates, expired snapshots and active countdowns', () => {
+	assert.equal(widgetReset({ ...week, used_percent: 0, resets_at: 0 }, reset).text, '—');
+	assert.equal(widgetReset({ ...week, used_percent: 25, resets_at: 0 }, reset).text, '—');
+	assert.match(widgetReset({ ...week, resets_at: 0 }, reset).title, /provider has not reported/);
+	assert.equal(widgetReset(null, reset).title, 'Usage window unavailable');
+	assert.equal(widgetReset(week, reset).text, 'Pending');
+	assert.equal(widgetReset({ ...week, expired: true }, reset - 1000).text, 'Pending');
+	assert.equal(widgetReset(week, reset - 90000000).text, '1d 1h');
+	assert.equal(widgetReset(week, reset - 1).title, new Date(reset).toLocaleString());
+});
 test('elapsed marker follows provider week and handles reset boundaries', () => {
 	assert.equal(elapsedPercent(week, reset - 604800000), 0);
 	assert.equal(elapsedPercent(week, reset - 302400000), 50);

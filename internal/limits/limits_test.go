@@ -214,6 +214,65 @@ func TestDuplicateValidLoginSurvivesRevokedLogin(t *testing.T) {
 	}
 }
 
+func TestIndependentProfilesSurviveDesktopAccountSwitch(t *testing.T) {
+	home := t.TempDir()
+	for _, key := range []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR", "HERMES_HOME"} {
+		t.Setenv(key, "")
+	}
+	personal := codexSource(jwt("personal", "personal-space", "personal@example.com"), "")
+	work := codexSource(jwt("work", "work-space", "work@example.com"), "")
+	dev := codexSource(jwt("dev", "dev-space", "dev@example.com"), "")
+	writeLogin := func(dir string, src source) {
+		t.Helper()
+		path := filepath.Join(home, dir)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(map[string]any{"tokens": map[string]string{"access_token": src.token, "account_id": src.selected}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "auth.json"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeLogin(".codex", personal)
+	writeLogin(".codex-dev", dev)
+	writeLogin(".codex-work", work)
+	polls := map[string]int{}
+	s := testService(t, nil, transport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() == creditsURL {
+			return reply(200, `{"available_count":1,"credits":[{"status":"available","expires_at":"2035-01-01T00:00:00Z"}]}`), nil
+		}
+		polls[r.Header.Get("ChatGPT-Account-Id")]++
+		return reply(200, codexFixture), nil
+	}))
+	s.discover = func(ctx context.Context) []source { return discover(ctx, home) }
+	next(s)
+	writeLogin(".codex", work)
+	next(s)
+	for _, a := range s.Snapshot().Accounts {
+		if a.ID == personal.account.ID && (a.Status != "needs_login" || len(a.Windows) != 1) {
+			t.Fatalf("missing desktop login must retain its stale snapshot: %+v", a)
+		}
+	}
+	writeLogin(".codex-personal", personal)
+	for _, desktop := range []source{work, dev, personal} {
+		writeLogin(".codex", desktop)
+		clear(polls)
+		next(s)
+		accounts := s.Snapshot().Accounts
+		if len(accounts) != 3 {
+			t.Fatalf("expected three accounts, got %d", len(accounts))
+		}
+		for _, a := range accounts {
+			if a.Status != "fresh" || a.Error != "" || a.ResetCredits == nil || a.ResetCredits.Status != "fresh" || polls[a.Workspace] != 1 {
+				t.Fatalf("independent login did not recover or duplicate was polled: %+v polls=%v", a, polls)
+			}
+		}
+	}
+}
+
 func TestExpiredWindowAndAPIProtection(t *testing.T) {
 	s := testService(t, nil, transport(func(*http.Request) (*http.Response, error) { t.Fatal("unexpected network request"); return nil, nil }))
 	s.cache.Accounts = []Account{{ID: "a", Status: "fresh", FetchedAt: s.now().Add(-11 * time.Minute).UnixMilli(), Windows: []Window{{ID: "week", ResetsAt: s.now().Add(-time.Second).UnixMilli()}}}}

@@ -426,14 +426,14 @@
 </div>
 
 <style>
-	.app-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100dvh; }
+	.app-shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100dvh; }
 	aside { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--border); }
-	.brand { display: flex; align-items: center; gap: 11px; padding: 26px 24px; color: var(--text-primary); text-decoration: none; font-size: 20px; font-weight: 650; letter-spacing: -.5px; }
-	.brand-mark { display: grid; place-items: center; width: 34px; height: 38px; background: var(--accent); color: var(--surface); border-radius: 10px; font-size: 26px; }
+	.brand { display: flex; align-items: center; gap: 10px; padding: 20px; color: var(--text-primary); text-decoration: none; font-size: 18px; font-weight: 650; letter-spacing: -.4px; }
+	.brand-mark { display: grid; place-items: center; width: 30px; height: 34px; background: var(--accent); color: var(--surface); border-radius: 8px; font-size: 23px; }
 	.brand-mark.dev { background: var(--status-critical); }
 	.brand small { display: block; min-height: 10px; font-size: 8px; color: var(--text-muted); letter-spacing: .12em; margin-top: 2px; }
-	.navigation { padding: 12px; flex: 1; overflow-y: auto; }
-	.sidebar-footer { padding: 20px 26px; font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
+	.navigation { padding: 8px 10px; flex: 1; overflow-y: auto; }
+	.sidebar-footer { padding: 14px 21px; font-size: 10px; color: var(--text-muted); display: flex; gap: 7px; align-items: center; }
 	.workspace { min-width: 0; }
 	.topbar { position: sticky; top: 0; z-index: 10; height: 65px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 36px; background: var(--surface); }
 	.breadcrumb { display: flex; align-items: center; gap: 14px; color: var(--text-muted); font-size: 12px; }
