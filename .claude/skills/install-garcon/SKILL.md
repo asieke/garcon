@@ -26,7 +26,11 @@ Building from source instead, with `scripts/install.sh`:
    http://127.0.0.1:4141 shows the dashboard. Linux: `systemctl --user status garcon`.
    macOS: `launchctl print gui/$(id -u)/dev.garcon`; log in `~/Library/Logs/garcon.log`.
 4. **Point harnesses at it** using the environment variables and Codex provider settings
-   in the README's "Pointing a harness at it" section, one base URL per account. Then
+   in the README's "Connect a harness" section. Use `/claude` for Claude Code,
+   `/codex/backend-api/codex` for Codex, and `/<harness>/<provider>` plus the API prefix
+   for other harnesses. Accounts are always detected; never supply an account flag or
+   URL label. Remove old account segments from existing configuration and restart
+   sessions so they reload the URLs. Then
    run one short `claude -p` or `codex exec` call and confirm a new row appears at
    `/api/usage`.
 5. **Remove**: `garcon service uninstall && npm rm -g ai-garcon`, or `scripts/install.sh --uninstall`

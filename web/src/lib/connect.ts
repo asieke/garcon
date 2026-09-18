@@ -17,27 +17,26 @@ export const HARNESS_PROVIDERS: Record<string, string[]> = {
 	claude: ['anthropic'],
 	codex: ['chatgpt'],
 	openclaw: ['anthropic', 'openai', 'openrouter', 'chatgpt'],
-	hermes: ['anthropic', 'openai', 'openrouter']
+	hermes: ['anthropic', 'openai', 'openrouter', 'chatgpt']
 };
 
 export type Snippet = { title: string; text: string; note?: string };
 
 /** The URL a harness must use as its base for this provider. Claude and Codex imply their provider. */
-export function baseUrl(base: string, harness: string, account: string, provider: string): string {
-	const acct = account || 'me@example.com';
-	if (harness === 'claude') return `${base}/claude/${acct}`;
-	if (harness === 'codex') return `${base}/codex/${acct}/backend-api/codex`;
-	return `${base}/${harness}/${acct}/${provider}`;
+export function baseUrl(base: string, harness: string, provider: string): string {
+	if (harness === 'claude') return `${base}/claude`;
+	if (harness === 'codex') return `${base}/codex/backend-api/codex`;
+	return `${base}/${harness}/${provider}`;
 }
 
-export function snippetsFor(base: string, harness: string, provider: string, account: string): Snippet[] {
-	const url = baseUrl(base, harness, account, provider);
+export function snippetsFor(base: string, harness: string, provider: string): Snippet[] {
+	const url = baseUrl(base, harness, provider);
 	switch (harness) {
 		case 'claude':
 			return [
 				{
 					title: 'garcon claude (keeps Remote Control)',
-					text: `garcon claude --account ${account || 'me@example.com'}`,
+					text: 'garcon claude',
 					note: 'Runs claude through a private socket so the claude.ai app can attach to the session. Put -- before any claude arguments.'
 				},
 				{
@@ -70,6 +69,11 @@ export function snippetsFor(base: string, harness: string, provider: string, acc
 			];
 		}
 		case 'hermes': {
+			if (provider === 'chatgpt') return [{
+				title: 'Hermes with a ChatGPT login',
+				text: `HERMES_CODEX_BASE_URL=${url}/backend-api/codex hermes chat --provider openai-codex`,
+				note: 'Uses Hermes’ own ChatGPT login. Account identity follows the credentials on each request.'
+			}];
 			const suffix = provider === 'openai' ? '/v1' : provider === 'openrouter' ? '/api/v1' : '';
 			const out: Snippet[] = [
 				{

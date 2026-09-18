@@ -29,13 +29,12 @@
 	let harness = $state('claude');
 	let customHarness = $state('');
 	let provider = $state('anthropic');
-	let account = $state('');
 	const harnessKey = $derived(harness === 'other' ? customHarness.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'myagent' : harness);
 	const allowedProviders = $derived(HARNESS_PROVIDERS[harness] ?? PROVIDERS.map((p) => p.key));
 	$effect(() => {
 		if (!allowedProviders.includes(provider)) provider = allowedProviders[0];
 	});
-	const snippets = $derived(snippetsFor(base, harnessKey, provider, account.trim()));
+	const snippets = $derived(snippetsFor(base, harnessKey, provider));
 	let copied = $state<string | null>(null);
 	async function copy(text: string, id: string) {
 		try {
@@ -68,7 +67,7 @@
 					<td><i class="dot" style="background: {harnessVar(c.harness)}"></i>{harnessLabel(c.harness)}</td>
 					<td>{c.account}</td>
 					<td>{[...c.providers].sort().join(', ')}</td>
-					<td><code>{baseUrl(base, c.harness, c.account, [...c.providers][0])}</code></td>
+					<td><code>{baseUrl(base, c.harness, [...c.providers][0])}</code></td>
 					<td class="num">{n(c.n)}</td>
 					<td class="num" class:error={c.errors > 0}>{n(c.errors)}</td>
 					<td>{when(c.last)}</td>
@@ -79,7 +78,7 @@
 		</tbody>
 	</table>
 </div>
-<p class="caption">A connection is a harness and account pair, identified by the path the tool was pointed at. Known harnesses:
+<p class="caption">A connection is a harness and account pair. Accounts are always detected from each request. Known harnesses:
 	{#each HARNESSES as h, i (h.key)}{i ? ', ' : ''}<span><i class="dot" style="background: {harnessVar(h.key)}"></i>{h.label} ({(HARNESS_PROVIDERS[h.key] ?? []).join(', ')})</span>{/each}; any other name works with any provider.
 </p>
 
@@ -100,7 +99,6 @@
 				{#each allowedProviders as p (p)}<option value={p}>{PROVIDERS.find((x) => x.key === p)?.label ?? p}</option>{/each}
 			</select>
 		</label>
-		<label>Account <input type="text" placeholder="me@example.com" bind:value={account} /></label>
 	</div>
 	{#each snippets as s, i (s.title)}
 		<div class="snippet">
@@ -112,7 +110,7 @@
 			{#if s.note}<p class="caption">{s.note}</p>{/if}
 		</div>
 	{/each}
-	<p class="caption">Use the login the harness signs in with. Verify with one call and a new row in Logs.</p>
+	<p class="caption">Accounts are detected automatically from each request. API keys without an account identity get an anonymous key label; credentials are never stored. Verify with one call and a new row in Logs.</p>
 </div>
 
 <style>

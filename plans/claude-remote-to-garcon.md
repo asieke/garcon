@@ -1,5 +1,8 @@
 # Plan: fold Claude Code Remote Control into Garcon (`garcon claude`)
 
+> Historical design record. Account routing and flags below are superseded by
+> [automatic account detection](../docs/account-detection.md); use account-free URLs.
+
 Status: implemented on branch `claude-remote-control` (2026-09-14) as `internal/claude`, following
 `claude-remote-control.md`. Verified on Linux against the 0.1.3 service; macOS items below remain
 unverified.

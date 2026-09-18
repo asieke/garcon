@@ -3,7 +3,7 @@
 // Claude Code refuses Remote Control (the session showing in the claude.ai app) when
 // ANTHROPIC_BASE_URL names any host but api.anthropic.com, which Garcon's proxy route does. Its
 // unix-socket transport (ANTHROPIC_UNIX_SOCKET) is exempt from that check, so this subcommand serves a
-// private socket for one session, relays it to Garcon's ordinary /claude/<account> route, and hands the
+// private socket for one session, relays it to Garcon's ordinary /claude route, and hands the
 // session its stored claude.ai login. Usage is recorded exactly as with the environment snippet.
 package claude
 
@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -36,21 +35,16 @@ func Main(args []string) {
 
 func run(args []string) (int, error) {
 	fs := flag.NewFlagSet("garcon claude", flag.ContinueOnError)
-	account := fs.String("account", "", "the account label Garcon records this session under, usually the login email")
 	dir := fs.String("config-dir", "", "Claude Code configuration directory (default $CLAUDE_CONFIG_DIR or ~/.claude)")
 	garcon := fs.String("url", onboarding.DefaultURL, "the running garcon")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "usage: garcon claude --account EMAIL [--config-dir DIR] [--url URL] [-- claude arguments]\n\nRuns claude through Garcon with Remote Control available. Put -- before any claude flag.\n\n")
+		fmt.Fprint(os.Stderr, "usage: garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n\nRuns claude through Garcon with Remote Control available. Accounts are detected automatically. Put -- before any claude flag.\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0, nil
 		}
-		return 2, nil
-	}
-	if *account == "" || strings.ContainsAny(*account, "/ \t\r\n") {
-		fs.Usage()
 		return 2, nil
 	}
 	if *dir == "" {
@@ -71,7 +65,7 @@ func run(args []string) (int, error) {
 	if err != nil {
 		return 1, errors.New("claude is not on PATH; install Claude Code first")
 	}
-	s := session{claude: exe, account: *account, dir: *dir, base: base}
+	s := session{claude: exe, dir: *dir, base: base}
 	creds, err := Load(s.dir)
 	if err != nil {
 		return 1, fmt.Errorf("%w; run claude once without garcon to log in, then retry", err)
@@ -90,7 +84,7 @@ func (s session) serve(creds Credentials, claudeArgs []string) (int, error) {
 	}
 	target, _ := url.Parse(s.base)
 	srv := &http.Server{
-		Handler:           handler(s.account, target, func() string { c, _ := Load(s.dir); return c.AccessToken }),
+		Handler:           handler(target, func() string { c, _ := Load(s.dir); return c.AccessToken }),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go srv.Serve(ln)

@@ -1,6 +1,6 @@
 // Garcon: a local pass-through proxy for coding agents that records usage.
 //
-// Point a harness at http://127.0.0.1:4141/<harness>/<account>/<provider>/ and
+// Point a harness at http://127.0.0.1:4141/<harness>/<provider>/ and
 // every request is forwarded verbatim to that provider. Completion calls are
 // recorded with the model and tokens the provider reports. The dashboard is
 // served at /, and Settings can sync the log with other machines through a
@@ -52,7 +52,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude --account EMAIL [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --create-project | --project-ref REF [--skip-schema]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --create-project | --project-ref REF [--skip-schema]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)

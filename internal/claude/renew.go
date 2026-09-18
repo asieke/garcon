@@ -71,13 +71,12 @@ func without(env []string, names ...string) []string {
 }
 
 type session struct {
-	claude  string // path to the claude executable
-	account string
-	dir     string // Claude Code configuration directory
-	base    string // Garcon's URL
+	claude string // path to the claude executable
+	dir    string // Claude Code configuration directory
+	base   string // Garcon's URL
 }
 
-func (s session) route() string { return s.base + "/claude/" + s.account }
+func (s session) route() string { return s.base + "/claude" }
 
 // renewLoop checks at once and then every minute, until the session ends.
 func (s session) renewLoop(ctx context.Context) {

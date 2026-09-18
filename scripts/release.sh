@@ -25,7 +25,7 @@ goarch() { case "$1" in x64) echo amd64 ;; arm64) echo arm64 ;; esac; }
 
 # The dashboard first: the Go packages embed its build output, so a fresh checkout cannot even compile without it.
 # Nothing in the build needs a package's lifecycle script, so none gets to run.
-echo "== dashboard"; (cd web && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && npm run check && npm run build >/dev/null)
+echo "== dashboard"; (cd web && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && npm run check && npm test && npm run build >/dev/null)
 go test ./...
 node --test npm/ai-garcon/test/*.test.js
 # Only files from this build can end up in the package.
