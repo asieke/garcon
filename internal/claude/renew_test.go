@@ -3,7 +3,6 @@ package claude
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 )
@@ -40,12 +39,5 @@ func TestLock(t *testing.T) {
 	}
 	if _, ok := lock(dir); !ok {
 		t.Error("stale lock not taken over")
-	}
-}
-
-func TestWithout(t *testing.T) {
-	env := []string{"A=1", "ANTHROPIC_UNIX_SOCKET=/s", "B=ANTHROPIC_UNIX_SOCKET", "CLAUDE_CODE_OAUTH_TOKEN=t"}
-	if got := without(env, sessionVars...); !slices.Equal(got, []string{"A=1", "B=ANTHROPIC_UNIX_SOCKET"}) {
-		t.Errorf("without = %q", got)
 	}
 }

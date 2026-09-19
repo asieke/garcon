@@ -288,3 +288,23 @@ func TestDiscoverProfilesAndHermes(t *testing.T) {
 		t.Fatal("different accounts merged")
 	}
 }
+
+func TestStartupRenewsBeforeCollectingLimits(t *testing.T) {
+	login := codexSource(jwt("a", "org", "a@example.com"), "")
+	s := testService(t, nil, transport(func(r *http.Request) (*http.Response, error) { return reply(200, codexFixture), nil }))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	maintained := false
+	s.maintain = func(context.Context) bool { maintained = true; return true }
+	s.discover = func(context.Context) []source {
+		if !maintained {
+			t.Error("quota collection ran before login maintenance")
+		}
+		cancel()
+		return []source{login}
+	}
+	s.Run(ctx)
+	if !maintained {
+		t.Fatal("startup did not maintain idle credentials")
+	}
+}
