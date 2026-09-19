@@ -91,3 +91,14 @@ export function widgetWindowLabel(window: LimitWindow | null, provider: string):
 	if (window.label.endsWith(' · Weekly')) return `Week · ${window.label.slice(0, -9)}`;
 	return window.label;
 }
+
+// Keep widget rows compact without confusing an unknown reset with an active timer.
+export function widgetReset(window: LimitWindow | null, now: number): { text: string; description: string } {
+	if (window == null) return { text: '—', description: 'Usage window unavailable' };
+	if (expired(window, now)) return { text: 'Pending', description: 'Waiting for updated usage after the previous window ended.' };
+	if (!window.resets_at) return { text: '—', description: 'The provider has not reported a reset time for this window.' };
+	return {
+		text: countdown(window.resets_at, now).replace('Resets in ', ''),
+		description: `Resets ${new Date(window.resets_at).toLocaleString()}`
+	};
+}

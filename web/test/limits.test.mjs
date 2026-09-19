@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetWindows, widgetWindowLabel, resetCreditInfo } from '../src/lib/limits.ts';
+import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo } from '../src/lib/limits.ts';
 
 const reset = Date.UTC(2030, 0, 8);
 const week = { id: 'week', label: 'Weekly', used_percent: 32, window_seconds: 604800, resets_at: reset, expired: false };
@@ -50,4 +50,18 @@ test('reset credits distinguish zero from unknown and stop counting known expira
 	assert.equal(resetCreditInfo(account, reset + 1000).count, 0);
 	assert.equal(resetCreditInfo({ provider: 'codex' }, reset).count, null);
 	assert.equal(resetCreditInfo({ ...account, reset_credits: { ...account.reset_credits, available_count: 0, credits: [] } }, reset).count, 0);
+});
+
+
+test('compact reset display preserves unknown, pending, and active states', () => {
+ assert.deepEqual(widgetReset(null, reset), { text: '—', description: 'Usage window unavailable' });
+ for (const used_percent of [0, 25, null]) {
+  const display = widgetReset({ ...week, used_percent, resets_at: 0 }, reset);
+  assert.equal(display.text, '—');
+  assert.match(display.description, /provider has not reported/);
+ }
+ assert.equal(widgetReset(week, reset).text, 'Pending');
+ assert.equal(widgetReset({ ...week, expired: true }, reset - 1000).text, 'Pending');
+ assert.equal(widgetReset(week, reset - 90000000).text, '1d 1h');
+ assert.equal(widgetReset(week, reset - 1).description, `Resets ${new Date(reset).toLocaleString()}`);
 });

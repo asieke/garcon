@@ -88,9 +88,29 @@ Claude's named `limits` entries take precedence over matching legacy windows.
 These provider endpoints can change; parsing and network failures retain the last
 good values with a stale status. They are isolated from completion proxying.
 
-Garcon never renews, writes, copies, or synchronizes provider credentials, launches
-a model request, or consumes reset credits to obtain limits. It reads access tokens
-for a refresh and sends them only to fixed provider HTTPS endpoints. Requests have
+Garcon checks Claude logins at startup and once a minute, even with the dashboard
+closed. Within five minutes of access-token expiry (or after waking with an expired
+token), it invokes the installed Claude CLI with empty input. Claude owns token
+rotation, its cross-process auth lock, and profile-specific credential storage.
+Garcon re-reads the saved login to confirm renewal and refreshes limits after a
+success. It never exchanges refresh tokens or writes, copies, or synchronizes
+provider credentials itself. Codex credential renewal remains owned by Codex.
+
+The renewal child runs in an empty temporary directory with hooks, MCP servers,
+project/user settings and tools disabled. It receives no prompt, ignores inherited
+auth overrides, and points its model API at a loopback endpoint with no upstream.
+No model request or reset credit is used. A per-profile lock prevents overlapping
+Garcon renewal children; failed attempts back off from two to 32 minutes, and a
+changed login bypasses that delay. Each child has a 45-second timeout.
+
+Claude must be installed on PATH or at `~/.local/bin/claude`. This behavior was
+verified with Claude Code 2.1.277: startup renews credentials before rejecting empty
+input. Future CLI changes may require adapting this mechanism. Missing or revoked
+refresh tokens cannot be repaired silently; sign in again using that profile's CLI.
+A successful process exit alone is never treated as proof of renewal.
+
+For quota collection, Garcon reads access tokens and sends them only to fixed
+provider HTTPS endpoints. Requests have
 timeouts and response-size limits, refuse redirects, and honor rate-limit backoff.
 Only credential digests and resolved identities are cached between refreshes.
 
@@ -99,8 +119,10 @@ and is written atomically with owner-only permissions. There is no history or
 Supabase quota table. A failed refresh preserves the previous update time and values.
 Snapshots older than ten minutes are marked stale. Once a reset deadline passes,
 the previous usage is shown as expired until the provider confirms a new window;
-Garcon never assumes it has reset to zero. Missing or expired logins require opening
-the appropriate CLI to refresh its login, after which collection recovers automatically.
+Garcon never assumes it has reset to zero. Missing or revoked logins require opening
+the appropriate CLI to sign in, after which collection recovers automatically.
+An idle Claude access token is renewed automatically while its saved refresh grant
+remains valid; failures retain the previous snapshot and its stale/login warning.
 
 ## Local API
 

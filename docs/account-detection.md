@@ -11,7 +11,7 @@ Use these base URLs without an account label:
 | Hermes / OpenRouter | `http://127.0.0.1:4141/hermes/openrouter/api/v1` |
 | Hermes / ChatGPT | `http://127.0.0.1:4141/hermes/chatgpt/backend-api/codex` |
 
-`garcon claude` always detects accounts, including its renewal requests.
+`garcon claude` always detects accounts. Its login maintenance invokes Claude with empty input and does not generate completion requests.
 There is no account flag or account field in the connection settings.
 
 For Hermes with a ChatGPT login, use

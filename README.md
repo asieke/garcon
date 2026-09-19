@@ -145,9 +145,11 @@ Codex accounts also show remaining reset credits and each credit's expiration da
 this is read-only and never redeems credits. Reset credits are a Codex-only feature.
 
 Garcon checks limits at startup and every five minutes, reading existing login files
-and Claude's profile-specific macOS Keychain entries without modifying them. Only the
-latest snapshot is cached locally; no credentials or quota history are stored or synced.
-Expired logins show **Login needs refresh** until the CLI refreshes them. See
+and Claude's profile-specific macOS Keychain entries. Once a minute, it also checks
+Claude logins and starts an isolated, empty-input Claude CLI when a token is within
+five minutes of expiry. Claude renews its own credentials without a model request.
+Only the latest snapshot is cached locally; no credentials or quota history are stored
+or synced by Garcon. Revoked or missing logins still require signing in through the CLI. See
 [subscription limits](docs/subscription-limits.md) for discovery, endpoint, and failure details.
 Sidebar group headings collapse independently and remember your choice in this browser.
 

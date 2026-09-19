@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"garcon/internal/claude"
 	"garcon/internal/local"
 )
 
@@ -48,6 +50,7 @@ type Service struct {
 	identities map[[32]byte]identity
 	backoff    map[string]time.Time
 	lastStart  time.Time
+	maintain   func(context.Context) bool
 }
 
 func New(dir string) *Service {
@@ -56,6 +59,23 @@ func New(dir string) *Service {
 		client:     &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		discover:   func(ctx context.Context) []source { return discover(ctx, home) },
 		identities: map[[32]byte]identity{}, backoff: map[string]time.Time{}, cache: Snapshot{Accounts: []Account{}}}
+	renewer := claude.NewRenewer()
+	s.maintain = func(ctx context.Context) bool {
+		changed := false
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		for _, dir := range roots(home, ".claude", os.Getenv("CLAUDE_CONFIG_DIR")) {
+			if ctx.Err() != nil {
+				break
+			}
+			fresh, err := renewer.Refresh(ctx, dir)
+			if err != nil && ctx.Err() == nil {
+				log.Printf("garcon: Claude idle renewal: %v", err)
+			}
+			changed = changed || fresh
+		}
+		return changed
+	}
 	if b, err := readFile(s.path); err == nil {
 		var c Snapshot
 		if json.Unmarshal(b, &c) == nil && c.Accounts != nil {
@@ -73,15 +93,24 @@ func New(dir string) *Service {
 }
 
 func (s *Service) Run(ctx context.Context) {
+	if s.maintain != nil {
+		s.maintain(ctx)
+	}
 	s.Refresh(ctx)
 	t := time.NewTicker(refreshSeconds * time.Second)
 	defer t.Stop()
+	renewal := time.NewTicker(time.Minute)
+	defer renewal.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 			s.Refresh(ctx)
+		case <-renewal.C:
+			if s.maintain != nil && s.maintain(ctx) {
+				s.Refresh(ctx)
+			}
 		}
 	}
 }
