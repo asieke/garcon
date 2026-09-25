@@ -23,7 +23,7 @@ scripts/install.sh --update
 It refuses to run with uncommitted changes, switches to `main` if needed, fast-forwards
 from `origin/main`, prints the commits that came in, rebuilds the dashboard and the
 binary, installs `~/.local/bin/garcon`, and restarts the service if one is running.
-Preserve usage logs, sync settings, sync state, credentials, and unrelated client settings.
+Preserve usage logs, credentials, and unrelated client settings.
 When upgrading from account-labeled routes, migrate configured Garcon URLs before restarting
 the proxy: Claude uses `http://127.0.0.1:4141/claude`, Codex uses
 `http://127.0.0.1:4141/codex/backend-api/codex`, and other harnesses use
@@ -36,8 +36,6 @@ configuration fields, and do not print credentials while verifying the migration
 
 1. `curl -s http://127.0.0.1:4141/api/config` answers (the script also waits for this).
 2. Linux: `systemctl --user status garcon`; macOS: `launchctl print gui/$(id -u)/dev.garcon`.
-3. If sync was on: `curl -s http://127.0.0.1:4141/api/settings | jq .settings.sync_enabled`
-   is still `true`, and the dashboard's Settings → Sync shows a recent push.
 
 ## If it fails
 

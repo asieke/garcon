@@ -3,8 +3,7 @@
 // Point a harness at http://127.0.0.1:4141/<harness>/<provider>/ and
 // every request is forwarded verbatim to that provider. Completion calls are
 // recorded with the model and tokens the provider reports. The dashboard is
-// served at /, and Settings can sync the log with other machines through a
-// Supabase project the user owns.
+// served at / and shows this machine's locally recorded usage.
 //
 // There is no authentication. What keeps all of this private is that the server
 // listens on loopback and answers only requests addressed to this machine, so
@@ -31,9 +30,7 @@ import (
 	"garcon/internal/prices"
 	"garcon/internal/proxy"
 	"garcon/internal/service"
-	"garcon/internal/setup"
 	"garcon/internal/store"
-	"garcon/internal/syncer"
 )
 
 // version is stamped at build time: go build -ldflags "-X main.version=1.2.3".
@@ -55,7 +52,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --create-project | --project-ref REF [--skip-schema]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)
@@ -65,9 +62,6 @@ func main() {
 			os.Exit(1)
 		case "service":
 			service.Main(os.Args[2:])
-			return
-		case "connect-supabase":
-			setup.Main(os.Args[2:])
 			return
 		case "claude":
 			claude.Main(os.Args[2:])
@@ -81,7 +75,6 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:4141", "address to listen on")
 	allowRemote := flag.Bool("allow-remote", false, "serve on a non-loopback -listen address; there is no authentication, so the dashboard, the settings and the relay are then open to that network")
 	data := flag.String("data", filepath.Join(home, ".local/share/garcon/usage.jsonl"), "usage log")
-	configPath := flag.String("config", filepath.Join(home, ".config/garcon/config.json"), "settings file")
 	flag.Parse()
 	if flag.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "unknown command %q; run garcon --help\n", flag.Arg(0))
@@ -96,8 +89,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	sy := syncer.New(st, *configPath)
-	go sy.Run()
 	li := limits.New(st.Dir())
 	go li.Run(context.Background())
 	started := time.Now()
@@ -120,7 +111,6 @@ func main() {
 	mux.Handle("/api/usage/recent", readOnly(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(st.RequestFeed())
 	}))
-	mux.Handle("/api/settings", own(sy, true))
 	mux.Handle("/api/limits", own(li, true))
 	mux.Handle("/api/limits/refresh", own(li, true))
 	mux.Handle("/api/routing/codex", own(routing, true))
@@ -141,7 +131,7 @@ func main() {
 	}))
 
 	if *allowRemote {
-		log.Printf("WARNING: -allow-remote: anyone who can reach %s can read the usage log, change the sync settings and relay through this proxy", *listen)
+		log.Printf("WARNING: -allow-remote: anyone who can reach %s can read the usage log, refresh subscription limits and relay through this proxy", *listen)
 	}
 	log.Printf("garcon %s listening on http://%s, logging to %s", version, *listen, *data)
 	srv := &http.Server{

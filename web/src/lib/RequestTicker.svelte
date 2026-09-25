@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { RequestQueue, requestProvider, requestTokens, requestMachine, type RecentRequest } from '$lib/ticker';
+	import { RequestQueue, requestProvider, requestTokens, type RecentRequest } from '$lib/ticker';
 	import { n, exact } from '$lib/format';
 
 	let { accountColors = {} }: { accountColors?: Record<string, string> } = $props();
@@ -82,17 +82,17 @@
 	});
 </script>
 
-<footer class="request-ticker" aria-label="New LLM requests across machines">
+<footer class="request-ticker" aria-label="New local LLM requests">
 	<div class="ticker-lane" class:still={reducedMotion} bind:this={lane} role="region" aria-label="Request chips">
 		<div class="ticker-belt" bind:this={belt} role="list">
 			{#each items as item (item.key)}
 				{@const provider = requestProvider(item.row)}
 				{@const tokens = requestTokens(item.row)}
-				<span class="request-chip" class:failed={item.row.status >= 400} style:margin-left={`${reducedMotion ? 0 : item.leadingSpace}px`} style:--chip-color={accountColors[item.row.account.toLowerCase()] || provider.color} role="listitem" title="{requestMachine(item.row)} · {new Date(item.row.time).toLocaleString()} · {item.row.model} · {exact(tokens)} total tokens (input, cache, output) · HTTP {item.row.status}"><span class="account">{item.row.account || 'Unknown account'}</span><span class="tool" style:--provider-color={provider.color}>{provider.label}</span><strong>{n(tokens).toLowerCase()}</strong><span class="machine">{requestMachine(item.row)}</span>{#if item.row.status >= 400}<span class="failure">{item.row.status}</span>{/if}</span>
+				<span class="request-chip" class:failed={item.row.status >= 400} style:margin-left={`${reducedMotion ? 0 : item.leadingSpace}px`} style:--chip-color={accountColors[item.row.account.toLowerCase()] || provider.color} role="listitem" title="{new Date(item.row.time).toLocaleString()} · {item.row.model} · {exact(tokens)} total tokens (input, cache, output) · HTTP {item.row.status}"><span class="account">{item.row.account || 'Unknown account'}</span><span class="tool" style:--provider-color={provider.color}>{provider.label}</span><strong>{n(tokens).toLowerCase()}</strong>{#if item.row.status >= 400}<span class="failure">{item.row.status}</span>{/if}</span>
 			{/each}
 		</div>
 	</div>
-	<div class="total-requests" class:stale={!connected} title={connected ? 'All recorded requests across this machine and synced machines' : 'Waiting for the latest all-machine request count'}><span>Total requests</span><strong>{totalRequests == null ? '—' : exact(totalRequests)}</strong></div>
+	<div class="total-requests" class:stale={!connected} title={connected ? 'All recorded requests on this machine' : 'Waiting for the latest local request count'}><span>Total requests</span><strong>{totalRequests == null ? '—' : exact(totalRequests)}</strong></div>
 </footer>
 
 <style>
@@ -103,7 +103,6 @@
 	.request-chip > :not(:first-child) { border-left: 1px solid color-mix(in srgb, var(--chip-color) 30%, transparent); margin-left: 10px; padding-left: 10px; }
 	.tool { color: color-mix(in srgb, var(--provider-color) 65%, var(--text-primary)); }
 	.failure { color: var(--status-critical); }
-	.machine { max-width: 150px; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
 	.failed { border-style: dashed; }
 	.total-requests { flex: none; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 11px; border: 1px solid var(--border); border-radius: 5px; color: var(--text-muted); background: var(--nav-hover); font-size: 11px; }
 	.total-requests strong { color: var(--text-primary); font-size: 12px; }

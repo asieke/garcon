@@ -1,5 +1,4 @@
-// Package store keeps this machine's usage log (append-only usage.jsonl) and the
-// cache of rows pulled from other machines (remote.jsonl) in memory and on disk.
+// Package store keeps this machine's append-only usage log in memory and on disk.
 package store
 
 import (
@@ -14,44 +13,27 @@ import (
 	"garcon/internal/usage"
 )
 
-// Store is safe for concurrent use. Local rows carry the device label in memory
-// only; remote rows carry id, device id and label on disk too.
+// Store is safe for concurrent use.
 type Store struct {
 	mu             sync.Mutex
 	path           string
-	device         string
 	records        []usage.Record
-	remote         []usage.Record
-	seen           map[string]struct{}
 	logFile        *os.File
-	remoteFile     *os.File
 	recent         []RecentRecord
 	recentSequence int
-	// OnSave, if set, is called (outside the lock) after every Save.
-	OnSave func()
 }
 
-// Open loads usage.jsonl at path and remote.jsonl beside it, creating both if needed.
+// Open loads the local usage log, creating it if needed. Legacy remote caches are ignored.
 func Open(path string) (*Store, error) {
-	s := &Store{path: path, records: []usage.Record{}, remote: []usage.Record{}, seen: map[string]struct{}{}}
+	s := &Store{path: path, records: []usage.Record{}}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
 	s.records = append(s.records, readRecords(path)...)
-	for _, rec := range readRecords(s.RemotePath()) {
-		if _, dup := s.seen[rec.ID]; rec.ID == "" || dup {
-			continue
-		}
-		s.seen[rec.ID] = struct{}{}
-		s.remote = append(s.remote, rec)
-	}
 	// Loaded history establishes the sequence baseline, but isn't live traffic.
-	s.recentSequence = len(s.records) + len(s.remote)
+	s.recentSequence = len(s.records)
 	var err error
 	if s.logFile, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err != nil {
-		return nil, err
-	}
-	if s.remoteFile, err = os.OpenFile(s.RemotePath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -69,41 +51,20 @@ func readRecords(path string) []usage.Record {
 	return out
 }
 
-// Path is the usage log; Dir holds it and the sync files; RemotePath is the remote cache.
-func (s *Store) Path() string       { return s.path }
-func (s *Store) Dir() string        { return filepath.Dir(s.path) }
-func (s *Store) RemotePath() string { return filepath.Join(s.Dir(), "remote.jsonl") }
+// Path is the usage log; Dir holds the local data files.
+func (s *Store) Path() string { return s.path }
+func (s *Store) Dir() string  { return filepath.Dir(s.path) }
 
-// Save appends one local record to the log and to memory. The line is written
-// without the device label so the on-disk format never changes.
+// Save appends one local record to the log and to memory.
 func (s *Store) Save(rec usage.Record) {
 	line, _ := json.Marshal(rec)
 	s.mu.Lock()
-	rec.Device = s.device
 	s.records = append(s.records, rec)
-	s.appendRecent(rec, false)
+	s.appendRecent(rec)
 	if _, err := s.logFile.Write(append(line, '\n')); err != nil {
 		log.Print(err)
 	}
 	s.mu.Unlock()
-	if s.OnSave != nil {
-		s.OnSave()
-	}
-}
-
-// SetDevice relabels every local row with this machine's display name.
-func (s *Store) SetDevice(name string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.device = name
-	for i := range s.records {
-		s.records[i].Device = name
-	}
-	for i := range s.recent {
-		if !s.recent[i].Remote {
-			s.recent[i].Device = name
-		}
-	}
 }
 
 // Len is the number of local records.
@@ -113,47 +74,34 @@ func (s *Store) Len() int {
 	return len(s.records)
 }
 
-// Batch copies local records [start, start+n), clipped to what exists.
-func (s *Store) Batch(start, n int) []usage.Record {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	end := min(start+n, len(s.records))
-	if start >= end {
-		return nil
-	}
-	return append([]usage.Record(nil), s.records[start:end]...)
-}
-
-// All returns local rows followed by remote rows, as one fresh slice.
+// All returns a fresh slice of local rows.
 func (s *Store) All() []usage.Record {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	all := make([]usage.Record, 0, len(s.records)+len(s.remote))
-	all = append(append(all, s.records...), s.remote...)
+	all := append([]usage.Record{}, s.records...)
 	for i := range all {
 		all[i].Account = accounts.DisplayLabel(all[i].Account)
 	}
 	return all
 }
 
-// RecentRecord orders local and synced records by arrival, not request timestamp.
+// RecentRecord orders local records by arrival, not request timestamp.
 type RecentRecord struct {
-	Sequence int  `json:"sequence"`
-	Remote   bool `json:"remote"`
+	Sequence int `json:"sequence"`
 	usage.Record
 }
 
-// appendRecent is called under mu only for new local or deduplicated sync arrivals.
-func (s *Store) appendRecent(rec usage.Record, remote bool) {
+// appendRecent is called under mu only for new local arrivals.
+func (s *Store) appendRecent(rec usage.Record) {
 	s.recentSequence++
-	s.recent = append(s.recent, RecentRecord{Sequence: s.recentSequence, Remote: remote, Record: rec})
+	s.recent = append(s.recent, RecentRecord{Sequence: s.recentSequence, Record: rec})
 	if len(s.recent) > 30 {
 		s.recent = s.recent[len(s.recent)-30:]
 	}
 }
 
 // Recent returns at most 30 new arrivals from this server run, oldest first.
-// Historical rows loaded from disk are excluded, as are duplicate sync rows.
+// Historical rows loaded from disk are excluded.
 func (s *Store) Recent() []RecentRecord {
 	return s.RequestFeed().Requests
 }
@@ -163,7 +111,7 @@ type RequestFeed struct {
 	TotalRequests int            `json:"total_requests"`
 }
 
-// RequestFeed takes the live arrivals and all-machine count under the same lock.
+// RequestFeed takes the live arrivals and local count under the same lock.
 func (s *Store) RequestFeed() RequestFeed {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -171,45 +119,5 @@ func (s *Store) RequestFeed() RequestFeed {
 	for i := range rows {
 		rows[i].Account = accounts.DisplayLabel(rows[i].Account)
 	}
-	return RequestFeed{Requests: rows, TotalRequests: len(s.records) + len(s.remote)}
-}
-
-// Remote returns a copy of the rows pulled from other machines.
-func (s *Store) Remote() []usage.Record {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]usage.Record(nil), s.remote...)
-}
-
-// AddRemote caches one row from another machine. It reports false for a
-// duplicate id (or a row without one), which is not written.
-func (s *Store) AddRemote(rec usage.Record) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, dup := s.seen[rec.ID]; dup || rec.ID == "" {
-		return false
-	}
-	s.seen[rec.ID] = struct{}{}
-	s.remote = append(s.remote, rec)
-	s.appendRecent(rec, true)
-	line, _ := json.Marshal(rec)
-	if _, err := s.remoteFile.Write(append(line, '\n')); err != nil {
-		log.Print(err)
-	}
-	return true
-}
-
-// ClearRemote forgets every cached remote row, in memory and on disk.
-func (s *Store) ClearRemote() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.remote, s.seen = []usage.Record{}, map[string]struct{}{}
-	local := s.recent[:0]
-	for _, row := range s.recent {
-		if !row.Remote {
-			local = append(local, row)
-		}
-	}
-	s.recent = local
-	s.remoteFile.Truncate(0)
+	return RequestFeed{Requests: rows, TotalRequests: len(s.records)}
 }

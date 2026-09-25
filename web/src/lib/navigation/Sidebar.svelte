@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { groupsFor, type ViewId } from './views';
-	let { active, syncEnabled = false, onnavigate }: { active: ViewId; syncEnabled?: boolean; onnavigate: () => void } = $props();
-	const groups = $derived(groupsFor(syncEnabled));
+	import { groups, type ViewId } from './views';
+	let { active, onnavigate }: { active: ViewId; onnavigate: () => void } = $props();
 	const storageKey = 'garcon.sidebar.collapsed';
 	let collapsed = $state<string[]>([]);
 	let ready = false;

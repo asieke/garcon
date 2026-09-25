@@ -1,7 +1,7 @@
 {
   "name": "ai-garcon",
   "version": "0.0.0",
-  "description": "Observability for coding agents: a local pass-through proxy that records what Claude Code, Codex and other agents spend in tokens, with a dashboard and optional cross-device sync.",
+  "description": "Observability for coding agents: a local pass-through proxy that records what Claude Code, Codex and other agents spend in tokens, with a local dashboard.",
   "keywords": [
     "claude-code",
     "codex",

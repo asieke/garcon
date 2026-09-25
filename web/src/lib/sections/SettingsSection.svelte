@@ -5,7 +5,6 @@
 	import ProvidersPanel from '../settings/ProvidersPanel.svelte';
 	import ModelsPanel from '../settings/ModelsPanel.svelte';
 	import HarnessesPanel from '../settings/HarnessesPanel.svelte';
-	import SyncPanel from '../settings/SyncPanel.svelte';
 	import PricesPanel from '../settings/PricesPanel.svelte';
 	import type { Row } from '../usage';
 
@@ -41,8 +40,6 @@
 			<ModelsPanel {rows} />
 		{:else if section === 'harnesses'}
 			<HarnessesPanel {rows} {config} />
-		{:else if section === 'sync'}
-			<SyncPanel {pollMs} />
 		{:else if section === 'prices'}
 			<PricesPanel {rows} />
 		{/if}

@@ -58,7 +58,7 @@ token, retains successes for an hour and failures for a minute, and is discarded
 at restart. A refreshed token is looked up independently and resolves to the same
 account when the provider returns the same identity. Requests and responses are
 forwarded unchanged, including when identity lookup fails. Existing usage and
-sync data are not rewritten.
+legacy remote caches are not rewritten.
 
 All harnesses use account-free routes: `/claude/…`, `/codex/…`, or
 `/<harness>/<provider>/…`. Account-labeled routes and the old account flag are
