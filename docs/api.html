@@ -16,14 +16,6 @@
 		<a class="nav" href="install.html">Install</a>
 		<a class="nav" href="connect.html">Connect a harness</a>
 		<a class="nav" href="dashboard.html">Dashboard</a>
-		<h2>Sync</h2>
-		<a class="nav" href="sync.html">Sync across devices</a>
-		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
-		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
-		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
-		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
-		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
-		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
 		<h2>Reference</h2>
 		<a class="nav" href="api.html" aria-current="page">HTTP API</a>
 		<a class="nav" href="files.html">Files and skills</a>
@@ -36,22 +28,22 @@
 
 		<section id="api">
 			<dl>
-				<dt>GET /api/usage</dt><dd>Every recorded row as a JSON array: this machine's, then any pulled in by sync. Each row carries <code>device</code>; remote rows also <code>id</code> and <code>device_id</code>.</dd>
-				<dt>GET /api/usage/recent</dt><dd>Returns <code>requests</code> (the latest 30 local or synced arrivals during this server run, oldest arrival first) and <code>total_requests</code> (all recorded local and synced rows, including history). Each arrival carries <code>sequence</code>, <code>remote</code>, and its machine label <code>device</code>. Loaded history and duplicate sync rows are excluded from arrivals; the widget uses its first response as a baseline. Reading this endpoint does not contact model providers.</dd>
+				<dt>GET /api/usage</dt><dd>Every locally recorded row as a JSON array.</dd>
+				<dt>GET /api/usage/recent</dt><dd>Returns <code>requests</code> (the latest 30 local arrivals during this server run, oldest arrival first) and <code>total_requests</code> (all locally recorded rows, including history). Each arrival carries <code>sequence</code>. Loaded history is excluded from arrivals; the widget uses its first response as a baseline. Reading this endpoint does not contact model providers.</dd>
 				<dt>GET /api/config</dt><dd>How the instance is wired: <code>listen</code>, <code>data</code>, local <code>rows</code>, log <code>bytes</code>, <code>started</code> (Unix milliseconds), <code>version</code>, providers and their upstreams, and implicit harnesses. Setup and doctor use this endpoint to identify Garcon and compare installed and running versions.</dd>
-				<dt>GET /api/settings</dt><dd><code>settings</code> (switch, device name, URL, <code>key_set</code>) and <code>status</code> (device id, pushed and pending counts, last push and pull, errors, rows from other devices, the devices table).</dd>
+
 				<dt>GET /api/prices</dt><dd>Model list prices for the cost estimates, USD per million tokens keyed by OpenRouter id: <code>source</code>, <code>fetched_at</code>, <code>models</code> (<code>input</code>, <code>cache_read</code>, <code>cache_write</code>, <code>output</code>), and <code>error</code>/<code>error_at</code> after a failed refresh. The proxy fetches <a href="https://openrouter.ai/api/v1/models">OpenRouter's public model list</a> (no key, nothing about your usage sent) the first time this is asked for and again when the copy is a day old; the last good copy is cached in <code>prices.json</code> next to the usage log.</dd>
 				<dt>POST /api/prices</dt><dd>Refresh the catalogue now and return it. Requires a loopback Host.</dd>
 				<dt>GET /api/limits</dt><dd>Cached local Codex and Claude subscription snapshots, independent of completion history. Returns <code>accounts</code>, <code>refreshing</code>, <code>updated_at</code>, and an optional <code>error</code>. Each account includes identity, provider, email, workspace, plan, status, last successful <code>fetched_at</code>, and limit windows. Windows contain a label, nullable <code>used_percent</code>, <code>window_seconds</code>, reset timestamp <code>resets_at</code> (Unix milliseconds), and <code>expired</code>. Missing usage is never zero. No credentials are returned.</dd>
 				<dt>POST /api/limits/refresh</dt><dd>Request a background collection and return HTTP 202 with the current snapshot. Concurrent refreshes coalesce, with a 30-second minimum interval and provider rate-limit backoff. Requires a loopback Host and rejects a different Origin. Collection also runs at startup and every five minutes without dashboard traffic.</dd>
-				<dt>PUT /api/settings</dt><dd>Send <code>sync_enabled</code>, <code>device_name</code> and <code>url</code>, with optional <code>key</code>, as JSON. <code>key</code> absent keeps the stored key, except when <code>url</code> changes: a new project URL must come with its key, since the stored one is only ever sent to the URL it was saved with. <code>""</code> clears it. Probes the table when the switch is on and answers 400 with the reason instead of saving. Requires <code>Content-Type: application/json</code> and a loopback Host.</dd>
+
 			</dl>
-			<p>For setup from a terminal, prefer <code>garcon doctor</code> for diagnostics and <code>garcon connect-supabase --project-url URL --key-stdin</code> for joining a project. Pass the key through stdin from a password manager or protected file. These commands use the local API; see <a href="sync.html#sync-others">the join example</a>.</p>
+			<p>Run <code>garcon doctor</code> for local installation diagnostics.</p>
 			<h3>Row fields</h3>
 			<p><code>time</code> (unix ms), <code>harness</code>, <code>account</code>, <code>provider</code>, <code>model</code>, <code>status</code>, <code>ms</code>, <code>input</code>, <code>cache_read</code>, <code>cache_write</code>, <code>output</code>, plus optional connection timings the proxy measures for itself: <code>queue_us</code>, <code>reused</code>, <code>connect_ms</code>, <code>dns_ms</code>, <code>tcp_ms</code>, <code>tls_ms</code>, <code>first_byte_ms</code>. Absent means not measured, never zero.</p>
 		</section>
 
-		<nav class="pager" aria-label="Pages"><a href="sync.html"><small>Previous</small>Sync across devices</a><a class="next" href="files.html"><small>Next</small>Files and skills</a></nav>
+		<nav class="pager" aria-label="Pages"><a href="dashboard.html"><small>Previous</small>Dashboard</a><a class="next" href="files.html"><small>Next</small>Files and skills</a></nav>
 	</main>
 </div>
 <script>

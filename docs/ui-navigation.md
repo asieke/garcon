@@ -18,13 +18,11 @@ analytics preserves the current filters during client navigation.
 
 After `garcon setup` starts and verifies the proxy, an empty dashboard points the
 user to Settings → Connect a harness. It explains how to copy the configuration,
-restart the tool, and send a first request. A separate note points users with an
-existing Supabase project to Settings → Sync; sync remains optional. Once usage
+restart the tool, and send a first request. Once usage
 arrives, the normal analytics view replaces this guidance automatically.
 
 An empty filtered result continues to offer “Show all usage”; it must not be
-mistaken for a new installation. Settings stays accessible before any usage exists
-and includes a distinct-device-name reminder when joining an existing project.
+mistaken for a new installation. Settings stays accessible before any usage exists.
 
 ## Design rationale
 
@@ -41,12 +39,9 @@ and includes a distinct-device-name reminder when joining an existing project.
 The content hierarchy is page title and purpose, shared filters, then metrics and
 charts. Existing analytics retain their calculations and chart colors. Shared
 surface, text, focus, and navigation tokens provide light and dark skins without
-external fonts or UI dependencies. Harnesses, accounts and devices use multi-select
+external fonts or UI dependencies. Harnesses and accounts use multi-select
 listboxes (nothing selected means all; fully keyboard-operable) so new values
-cannot expand the toolbar indefinitely. A Device select joins them only
-once sync has pulled in rows from a second machine; a single-device install never
-shows it. The Logs table adds a Device column whenever sync is enabled, and the
-sidebar brand shows the running version (the npm package version for npm installs).
+cannot expand the toolbar indefinitely. The sidebar brand shows the running version (the npm package version for npm installs).
 
 At widths of 760px and below, a disclosure menu replaces the persistent sidebar.
 It stays in document flow, closes on navigation or Escape, and supports normal

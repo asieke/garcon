@@ -1,6 +1,6 @@
 import type { Row } from './usage';
 
-export type RecentRequest = Row & { sequence: number; remote?: boolean };
+export type RecentRequest = Row & { sequence: number };
 
 /** The first snapshot is a baseline. Only later completions enter the FIFO. */
 export class RequestQueue {
@@ -37,8 +37,4 @@ export function requestProvider(row: Row): { label: string; color: string } {
 
 export function requestTokens(row: Row): number {
 	return (row.input || 0) + (row.cache_read || 0) + (row.cache_write || 0) + (row.output || 0);
-}
-
-export function requestMachine(row: RecentRequest): string {
-	return row.device || (row.remote ? 'Remote machine' : 'This machine');
 }

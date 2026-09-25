@@ -4,7 +4,7 @@
 #   scripts/install.sh --service    also run it in the background now and at every login
 #   scripts/install.sh --update     pull the latest main, then build + install + restart
 #   scripts/install.sh --uninstall  stop and remove the service, the binary and the settings file
-#                             (which holds the Supabase key, if sync was set up)
+#                             (including legacy sync credentials, if present)
 # Prefer `npm i -g ai-garcon@latest && garcon setup` unless you want to build from source.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -21,7 +21,7 @@ esac
 if [ "$MODE" = --uninstall ]; then
 	if [ -x "$BIN" ]; then "$BIN" service uninstall; fi
 	rm -f "$BIN" "$HOME/.config/garcon/config.json"
-	echo "garcon removed, with ~/.config/garcon/config.json (usage log and sync state kept in ~/.local/share/garcon)"
+	echo "garcon removed, with ~/.config/garcon/config.json (local data kept in ~/.local/share/garcon)"
 	exit 0
 fi
 

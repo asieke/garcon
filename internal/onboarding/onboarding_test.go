@@ -22,17 +22,17 @@ func TestLocalURL(t *testing.T) {
 }
 
 func TestDoctor(t *testing.T) {
-	for _, tc := range []struct{ name, version, settings, want string }{
-		{"local", "test", `{"settings":{"device_name":"laptop"},"status":{}}`, ""},
-		{"stale", "old", `{}`, "version mismatch"},
-		{"sync failure", "test", `{"settings":{"sync_enabled":true},"status":{"last_pull_error":"missing table"}}`, "missing table"},
+	for _, tc := range []struct{ name, version, want string }{
+		{"local", "test", ""},
+		{"stale", "old", "version mismatch"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/api/config" {
 					w.Write([]byte(`{"version":"` + tc.version + `","started":1,"data":"usage.jsonl","rows":0}`))
 				} else {
-					w.Write([]byte(tc.settings))
+					t.Errorf("unexpected endpoint: %s", r.URL.Path)
+					http.NotFound(w, r)
 				}
 			}))
 			defer server.Close()

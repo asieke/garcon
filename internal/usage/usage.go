@@ -49,12 +49,6 @@ type Record struct {
 	CacheRead  int64 `json:"cache_read"`
 	CacheWrite int64 `json:"cache_write"`
 	Output     int64 `json:"output"`
-
-	// Sync fields. Never written to usage.jsonl: Device is set in memory on local
-	// rows, and all three are on disk only for rows pulled from other devices.
-	ID       string `json:"id,omitempty"`
-	DeviceID string `json:"device_id,omitempty"`
-	Device   string `json:"device,omitempty"`
 }
 
 // block matches the Anthropic Messages, OpenAI Responses and OpenAI chat

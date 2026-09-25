@@ -4,7 +4,6 @@ const COLUMNS = [
 	'time',
 	'harness',
 	'account',
-	'device',
 	'provider',
 	'model',
 	'status',
@@ -26,7 +25,7 @@ const COLUMNS = [
 
 /**
  * Spreadsheets evaluate a cell that starts with = + - @ or a tab or carriage return as a formula, and
- * harness, account, device and model names arrive from the network. A leading apostrophe keeps them text.
+ * harness, account and model names arrive from the network. A leading apostrophe keeps them text.
  */
 function safeText(v: unknown): string {
 	const s = v === undefined || v === null ? '' : String(v);
@@ -49,7 +48,6 @@ export function toCsv(rows: Row[]): string {
 				new Date(r.time).toISOString(),
 				safeText(r.harness),
 				safeText(r.account),
-				safeText(r.device),
 				safeText(providerOf(r)),
 				safeText(r.model),
 				r.status,

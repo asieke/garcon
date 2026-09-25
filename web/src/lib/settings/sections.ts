@@ -4,7 +4,6 @@ export const SETTINGS_SECTIONS = [
 	{ id: 'providers', label: 'Providers', description: 'The upstream APIs the proxy can relay to, and how much has gone to each.' },
 	{ id: 'models', label: 'Models', description: 'Every model that has answered through this proxy, with the price used to cost it.' },
 	{ id: 'harnesses', label: 'Harnesses', description: 'The coding tools that have connected, and how to point another one at the proxy.' },
-	{ id: 'sync', label: 'Sync', description: 'Share the usage log across machines through a Supabase project you own.' },
 	{ id: 'prices', label: 'Prices', description: 'The list prices behind the cost estimates, fetched from a public catalogue.' }
 ] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id'];

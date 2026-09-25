@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { RequestQueue, requestProvider, requestTokens, requestMachine } from '../src/lib/ticker.ts';
+import { RequestQueue, requestProvider, requestTokens } from '../src/lib/ticker.ts';
 
 test('ticker skips initial history and queues new simultaneous requests once in arrival order', () => {
 	const queue = new RequestQueue();
@@ -48,17 +48,4 @@ test('ticker labels the provider subscription and counts cache tokens once', () 
 	assert.equal(requestProvider({ ...row, provider: 'anthropic' }).label, 'Claude');
 	assert.equal(requestTokens(row), 45000);
 	assert.equal(requestTokens({}), 0);
-});
-
-test('synced arrivals use arrival sequence and show their own machine label', () => {
-	const queue = new RequestQueue();
-	queue.update([{ sequence: 20, time: 1000 }]);
-	const remote = { sequence: 21, time: 10, remote: true, device: 'Desktop' };
-	queue.update([{ sequence: 20, time: 1000 }, remote]);
-	assert.equal(queue.next(), remote);
-	queue.update([remote]);
-	assert.equal(queue.next(), undefined);
-	assert.equal(requestMachine(remote), 'Desktop');
-	assert.equal(requestMachine({ remote: true }), 'Remote machine');
-	assert.equal(requestMachine({}), 'This machine');
 });

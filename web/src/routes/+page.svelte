@@ -5,14 +5,13 @@
 	import { browser } from '$app/environment';
 	import Sidebar from '$lib/navigation/Sidebar.svelte';
 	import MultiSelect from '$lib/MultiSelect.svelte';
-	import { views, viewFromParam, requiresSync } from '$lib/navigation/views';
+	import { views, viewFromParam } from '$lib/navigation/views';
 	import OverviewSection from '$lib/sections/OverviewSection.svelte';
 	import LimitsSection from '$lib/sections/LimitsSection.svelte';
 	import type { LimitsSnapshot } from '$lib/limits';
 	import UsageSection from '$lib/sections/UsageSection.svelte';
 	import ModelsSection from '$lib/sections/ModelsSection.svelte';
 	import AccountsSection from '$lib/sections/AccountsSection.svelte';
-	import MachinesSection from '$lib/sections/MachinesSection.svelte';
 	import LatencySection from '$lib/sections/LatencySection.svelte';
 	import LogsSection from '$lib/sections/LogsSection.svelte';
 	import CostSection from '$lib/sections/CostSection.svelte';
@@ -88,35 +87,19 @@
 	// Empty means "all"; the filters are multi-select.
 	let harnessFilter = $state<string[]>([]);
 	let accountFilter = $state<string[]>([]);
-	let deviceFilter = $state<string[]>([]);
 	let now = $state(Date.now());
-	let lastSync = $state<number | null>(null);
+	let lastUpdated = $state<number | null>(null);
 	let stale = $state(false);
 	// The running binary's version, from /api/config: "0.1.1" for npm installs, a git describe for source builds, "dev" otherwise.
 	let version = $state('');
 	const versionLabel = $derived(/^\d/.test(version) ? `v${version}` : version);
-	// Sync on means rows can come from several machines, so the device becomes worth a column of
-	// its own and the Machines view joins the navigation. The name marks this machine among them.
-	let syncEnabled = $state(false);
-	let deviceName = $state('');
-
 	async function refresh() {
-		// Settings are only needed to gate sync-only UI; the usage poll already reports an outage.
-		// Both are awaited before lastSync flips so the first paint doesn't briefly hide the Machines view.
-		const settings = fetch('/api/settings')
-			.then((r) => (r.ok ? r.json() : null))
-			.catch(() => null);
 		try {
 			const res = await fetch('/api/usage');
 			if (!res.ok) throw new Error(String(res.status));
 			rows = await res.json();
-			const data = await settings;
-			if (data) {
-				syncEnabled = Boolean(data.settings?.sync_enabled);
-				deviceName = String(data.settings?.device_name ?? '');
-			}
 			now = Date.now();
-			lastSync = now;
+			lastUpdated = now;
 			stale = false;
 		} catch {
 			stale = true;
@@ -139,8 +122,6 @@
 
 	const accountsAll = $derived([...new Set(rows.map((r) => r.account))].sort());
 	const harnessesAll = $derived(sortHarnesses(rows.map((r) => r.harness)));
-	// Only meaningful once sync has pulled another machine's rows in; the filter stays hidden until then.
-	const devicesAll = $derived([...new Set(rows.map((r) => r.device ?? ''))].filter(Boolean).sort());
 	const slots = $derived(accountSlots(accountsAll));
 	function colorForAccount(a: string): string {
 		const slot = slots.get(a);
@@ -151,7 +132,6 @@
 		rows.filter((r) => {
 			if (harnessFilter.length && !harnessFilter.includes(r.harness)) return false;
 			if (accountFilter.length && !accountFilter.includes(r.account)) return false;
-			if (deviceFilter.length && !deviceFilter.includes(r.device ?? '')) return false;
 			return true;
 		})
 	);
@@ -203,35 +183,6 @@
 		[...Map.groupBy(visible, (r) => r.model || '(unknown)')]
 			.map(([model, rs]) => ({ model, totals: sum(rs) }))
 			.sort((a, b) => tokensOf(b.totals) - tokensOf(a.totals))
-	);
-
-	// One entry per machine, this one included; rows are labelled with each machine's device name.
-	// Colours follow the sorted name list so a machine keeps its colour across the chart and cards.
-	const UNNAMED = '(unnamed)';
-	const machineOf = (r: Row) => r.device || UNNAMED;
-	const machinesVisible = $derived([...new Set(visible.map(machineOf))].sort());
-	const machineColor = $derived(new Map(machinesVisible.map((m, i) => [m, `var(--series-${(i % 8) + 1})`])));
-	const machineGroups = $derived(
-		[...Map.groupBy(visible, machineOf)]
-			.map(([machine, rs]) => ({
-				machine,
-				local: machine === (deviceName || UNNAMED),
-				harnesses: sortHarnesses(rs.map((r) => r.harness)),
-				accounts: [...new Set(rs.map((r) => r.account))].sort(),
-				totals: sum(rs),
-				trend: seriesFor(buckets, groupByBucket(rs, granularity), (b) => b.reduce((s, r) => s + tokensOf(r), 0)),
-				lastTime: Math.max(...rs.map((r) => r.time)),
-				color: machineColor.get(machine) ?? 'var(--text-muted)'
-			}))
-			.sort((a, b) => tokensOf(b.totals) - tokensOf(a.totals))
-	);
-	const machineTokenSeries = $derived(
-		machinesVisible.map((m) => ({
-			key: m,
-			label: m,
-			color: machineColor.get(m) ?? 'var(--text-muted)',
-			values: seriesFor(buckets, grouped, (rs) => rs.filter((r) => machineOf(r) === m).reduce((s, r) => s + tokensOf(r), 0))
-		}))
 	);
 
 	const accountGroups = $derived(
@@ -322,7 +273,7 @@
 		})
 	);
 
-	const loading = $derived(lastSync === null && !stale);
+	const loading = $derived(lastUpdated === null && !stale);
 </script>
 
 <svelte:head><title>{currentView.label} · Garcon</title></svelte:head>
@@ -332,16 +283,16 @@
 <div class="app-shell">
 	<aside class:open={menuOpen}>
 		<a class="brand" href="?view=overview" onclick={navigate}><span class="brand-mark" class:dev={DEV} aria-hidden="true">g.</span><span>Garcon<small>{DEV ? 'dev server' : versionLabel}</small></span></a>
-		<div class="navigation" id="primary-navigation"><Sidebar active={tab} {syncEnabled} onnavigate={navigate} /></div>
-		<div class="sidebar-footer"><span class="status-dot" class:offline={stale || !lastSync}></span>Local instance</div>
+		<div class="navigation" id="primary-navigation"><Sidebar active={tab} onnavigate={navigate} /></div>
+		<div class="sidebar-footer"><span class="status-dot" class:offline={stale || !lastUpdated}></span>Local instance</div>
 	</aside>
 	<div class="workspace">
 		<header class="topbar">
 			<button id="menu-toggle" class="menu-toggle" aria-expanded={menuOpen} aria-controls="primary-navigation" onclick={() => { menuOpen = !menuOpen; if (menuOpen) window.scrollTo({ top: 0, behavior: 'instant' }); }}>{menuOpen ? 'Close menu' : 'Menu'}</button>
 			<div class="breadcrumb">{currentView.group}<span aria-hidden="true">/</span><strong>{currentView.label}</strong></div>
-			<span class="sync" class:stale title={lastSync ? new Date(lastSync).toLocaleString() : undefined}>
-				<span class="status-dot" class:offline={stale || !lastSync}></span>
-				{#if stale}Connection lost{:else if lastSync}Synced {when(lastSync)}{:else}Connecting…{/if}
+			<span class="sync" class:stale title={lastUpdated ? new Date(lastUpdated).toLocaleString() : undefined}>
+				<span class="status-dot" class:offline={stale || !lastUpdated}></span>
+				{#if stale}Connection lost{:else if lastUpdated}Updated {when(lastUpdated)}{:else}Connecting…{/if}
 			</span>
 		</header>
 		<main id="main-content" tabindex="-1">
@@ -353,8 +304,7 @@
 					</div></div>
 					<MultiSelect id="harness" label="Harness" allLabel="All harnesses" options={harnessesAll.map((h) => ({ value: h, label: harnessLabel(h) }))} bind:selected={harnessFilter} />
 					<MultiSelect id="account" label="Account" allLabel="All accounts" options={accountsAll.map((a) => ({ value: a, label: a }))} bind:selected={accountFilter} />
-					{#if devicesAll.length > 1}<MultiSelect id="device" label="Device" allLabel="All devices" options={devicesAll.map((d) => ({ value: d, label: d }))} bind:selected={deviceFilter} />{/if}
-					{#if days !== 7 || harnessFilter.length || accountFilter.length || deviceFilter.length}<button class="reset" onclick={() => { days = 7; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Reset filters</button>{/if}
+					{#if days !== 7 || harnessFilter.length || accountFilter.length}<button class="reset" onclick={() => { days = 7; harnessFilter = []; accountFilter = []; }}>Reset filters</button>{/if}
 				</div>
 			{/if}
 			{#if stale}<p class="notice" role="status">Proxy unreachable; retrying.</p>{/if}
@@ -368,12 +318,10 @@
 	<LimitsSection snapshot={limits} now={limitsNow} error={limitsError} refreshing={limitsRefreshing} onrefresh={requestLimitsRefresh} />
 {:else if loading}
 	<p class="loading" role="status">Loading…</p>
-{:else if !lastSync}
+{:else if !lastUpdated}
 	<p class="empty-state">Proxy unreachable.</p>
-{:else if requiresSync(tab) && !syncEnabled}
-	<div class="empty-state"><h2>Turn on sync to explore by machine</h2><p>This view groups usage by the machine that recorded it, which only means something once sync is pulling in rows from other devices.</p><a href="?view=settings&section=sync">Open Settings → Sync</a></div>
 {:else if !visible.length}
-	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Garcon is ready for your first request'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Open Settings → Harnesses, choose your tool, and copy the generated configuration. Restart your tool, then make one short request; it will appear here automatically.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = []; accountFilter = []; deviceFilter = []; }}>Show all usage</button>{:else}<a href="?view=settings&section=harnesses">Connect your first harness</a><p>Already using Garcon on another machine? Use Settings → Sync to join the same Supabase project. Sync is optional.</p>{/if}</div>
+	<div class="empty-state"><h2>{rows.length ? 'No requests match these filters' : 'Garcon is ready for your first request'}</h2><p>{rows.length ? 'Widen the time range or clear a filter.' : 'Open Settings → Harnesses, choose your tool, and copy the generated configuration. Restart your tool, then make one short request; it will appear here automatically.'}</p>{#if rows.length}<button onclick={() => { days = 0; harnessFilter = []; accountFilter = []; }}>Show all usage</button>{:else}<a href="?view=settings&section=harnesses">Connect your first harness</a>{/if}</div>
 {:else}
 	{#if tab === 'overview'}
 		<OverviewSection {totals} {prevTotals} {buckets} {granularity} {harnessSeries} {errorCounts} {tokensTrend} {latencyTrend} />
@@ -383,8 +331,6 @@
 		<ModelsSection {modelGroups} />
 	{:else if tab === 'accounts'}
 		<AccountsSection {accountGroups} />
-	{:else if tab === 'machines'}
-		<MachinesSection {machineGroups} {machineTokenSeries} {buckets} {granularity} />
 	{:else if tab === 'latency'}
 		<LatencySection
 			{granularity}
@@ -416,7 +362,7 @@
 	{:else if tab === 'performance'}
 		<PerformanceSection rows={visible} />
 	{:else if tab === 'logs'}
-		<LogsSection rows={visible} showDevice={syncEnabled} />
+		<LogsSection rows={visible} />
 	{/if}
 {/if}
 

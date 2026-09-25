@@ -7,7 +7,6 @@ export type Session = {
 	id: string;
 	harness: string;
 	account: string;
-	device?: string;
 	start: number;
 	/** Wall-clock end: last request's start plus its duration. */
 	end: number;
@@ -34,7 +33,7 @@ export const DEFAULT_GAP_MS = 30 * 60_000;
 export function sessionize(rows: Row[], gapMs = DEFAULT_GAP_MS): Session[] {
 	const byKey = new Map<string, Row[]>();
 	for (const r of rows) {
-		const key = `${r.harness}|${r.account}|${r.device ?? ''}`;
+		const key = `${r.harness}|${r.account}`;
 		const list = byKey.get(key);
 		if (list) list.push(r);
 		else byKey.set(key, [r]);
@@ -84,10 +83,9 @@ function build(rows: Row[]): Session {
 		modelCounts.set(m, (modelCounts.get(m) ?? 0) + 1);
 	}
 	return {
-		id: `${first.harness}:${first.account}:${first.device ?? ''}:${first.time}`,
+		id: `${first.harness}:${first.account}:${first.time}`,
 		harness: first.harness,
 		account: first.account,
-		device: first.device,
 		start: first.time,
 		end,
 		rows,
