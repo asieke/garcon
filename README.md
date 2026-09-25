@@ -23,6 +23,10 @@ counts (uncached input, cache read, cache write, output). Subscription logins ke
 | `chatgpt` | chatgpt.com | `/backend-api/codex/responses` |
 
 Accounts for Claude, Codex and Hermes are detected from each request's credentials.
+With optional [Codex account routing](docs/codex-routing.md) enabled, Garcon instead
+chooses an enrolled local Codex OAuth account for each new conversation, based on
+available usage and model access, and keeps that conversation on its account.
+Enable it in **Limits → Codex account routing**. Other harnesses remain pass-through.
 Codex uses the selected ChatGPT account and token claims. Claude OAuth uses a cached
 Anthropic profile lookup. API keys without identity information get an anonymous,
 provider-specific key fingerprint; separate keys remain separate, and rotating a key
@@ -229,8 +233,15 @@ npm/ai-garcon/       the npm package (shim, README, built binaries)
 supabase/            sync table schema            .claude/    agent skills
 ```
 
-`go test ./...`; `cd web && npm run check && npm test && npm run dev` serves the dashboard at
-http://127.0.0.1:4242 and proxies `/api` to the garcon already running on 4141.
+Run `bash scripts/dev.sh` from the repository root, or `npm run dev` from `web/`.
+This builds the dashboard and Go binary, then runs one Garcon process serving the
+dashboard, `/api`, and harness proxy at http://127.0.0.1:4141. Dev and installed
+Garcon use the same address, so coding harness configuration stays unchanged.
+Stop the running Garcon before switching modes; an occupied port fails instead of
+selecting a different one. Restart the dev command after source edits to rebuild;
+there is no separate frontend server or hot reload. `npm run preview` uses the same flow.
+
+Checks: `go test ./...`; `cd web && npm run check && npm test`.
 Release: every merge into `main` publishes a new patch version of `ai-garcon` to npm
 (`.github/workflows/release.yml`; `[minor]` or `[major]` in the PR title bumps that part).
 Pull requests run the same build without publishing (`.github/workflows/ci.yml`). The release

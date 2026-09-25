@@ -4,9 +4,9 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "bash ../scripts/dev.sh",
 		"build": "vite build",
-		"preview": "vite preview",
+		"preview": "bash ../scripts/dev.sh",
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "node --experimental-strip-types --test test/*.test.mjs",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

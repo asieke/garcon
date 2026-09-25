@@ -8,6 +8,7 @@
 	import { views, viewFromParam, requiresSync } from '$lib/navigation/views';
 	import OverviewSection from '$lib/sections/OverviewSection.svelte';
 	import LimitsSection from '$lib/sections/LimitsSection.svelte';
+	import CodexRouting from '$lib/sections/CodexRouting.svelte';
 	import type { LimitsSnapshot } from '$lib/limits';
 	import UsageSection from '$lib/sections/UsageSection.svelte';
 	import ModelsSection from '$lib/sections/ModelsSection.svelte';
@@ -49,9 +50,6 @@
 		['All', 0]
 	] as const;
 	const POLL_MS = 10_000;
-	// Vite resolves this at compile time: true under `npm run dev`, false in `vite build`, so the
-	// embedded production dashboard never carries the red mark or this check.
-	const DEV = import.meta.env.DEV;
 
 	let rows = $state<Row[]>([]);
 	let limits = $state<LimitsSnapshot | null>(null);
@@ -94,6 +92,8 @@
 	let stale = $state(false);
 	// The running binary's version, from /api/config: "0.1.1" for npm installs, a git describe for source builds, "dev" otherwise.
 	let version = $state('');
+	// Dev and installed builds serve the same dashboard; the running binary identifies the mode.
+	const DEV = $derived(version === 'dev');
 	const versionLabel = $derived(/^\d/.test(version) ? `v${version}` : version);
 	// Sync on means rows can come from several machines, so the device becomes worth a column of
 	// its own and the Machines view joins the navigation. The name marks this machine among them.
@@ -365,6 +365,7 @@
 {#if tab === 'settings'}
 	<SettingsSection {rows} pollMs={POLL_MS} {now} section={settingsSection} />
 {:else if tab === 'limits'}
+	<CodexRouting />
 	<LimitsSection snapshot={limits} now={limitsNow} error={limitsError} refreshing={limitsRefreshing} onrefresh={requestLimitsRefresh} />
 {:else if loading}
 	<p class="loading" role="status">Loading…</p>

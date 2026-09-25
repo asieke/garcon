@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"garcon/internal/accounts"
+	"garcon/internal/codexrouting"
 	"garcon/internal/usage"
 )
 
@@ -81,10 +82,23 @@ func IsCompletion(rest string) bool {
 type Proxy struct {
 	Save     func(usage.Record)
 	Accounts accounts.Resolver
+	Codex    *codexrouting.Router
 }
 
 // Serve proxies one routed request.
 func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
+	routed := p.Codex != nil && rt.Harness == "codex" && rt.Provider == "chatgpt" && p.Codex.Enabled()
+	if routed {
+		// Clone before replacing identity so callers and other middleware keep
+		// their original request. The actual upstream identity drives attribution.
+		r = r.Clone(r.Context())
+		release, err := p.Codex.Prepare(r)
+		if err != nil {
+			codexrouting.WriteError(w, err)
+			return
+		}
+		defer release()
+	}
 	completion := IsCompletion(rt.Rest)
 	start := time.Now()
 
@@ -117,6 +131,11 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 			pr.Out = pr.Out.WithContext(httptrace.WithClientTrace(pr.Out.Context(), trace))
 		},
 		ModifyResponse: func(res *http.Response) error {
+			if routed {
+				id := r.Header.Get("ChatGPT-Account-Id")
+				p.Codex.Observe(id, res)
+				res.Header.Set("X-Garcon-Account-Id", id)
+			}
 			if !completion {
 				return nil
 			}
