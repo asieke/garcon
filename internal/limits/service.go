@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"garcon/internal/claude"
+	"garcon/internal/database"
 	"garcon/internal/local"
 )
 
@@ -41,6 +42,7 @@ type fetchError struct {
 func (e *fetchError) Error() string { return e.message }
 
 type Service struct {
+	db         *database.DB
 	mu         sync.Mutex
 	cache      Snapshot
 	path       string
@@ -53,7 +55,7 @@ type Service struct {
 	maintain   func(context.Context) bool
 }
 
-func New(dir string) *Service {
+func New(dir string, databases ...*database.DB) *Service {
 	home, _ := os.UserHomeDir()
 	s := &Service{path: filepath.Join(dir, "limits.json"), now: time.Now,
 		client:     &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
@@ -88,6 +90,22 @@ func New(dir string) *Service {
 				}
 			}
 		}
+	}
+	if len(databases) > 0 {
+		s.db = databases[0]
+		s.cache = Snapshot{Accounts: []Account{}}
+		_ = s.db.Get("limits", &s.cache)
+		filtered := []Account{}
+		for _, a := range s.cache.Accounts {
+			if a.Provider == "codex" {
+				a.Status = "stale"
+				filtered = append(filtered, a)
+			}
+		}
+		s.cache.Accounts = filtered
+		s.cache.Refreshing = false
+		s.discover = func(ctx context.Context) []source { return discoverCodex(home) }
+		s.maintain = nil
 	}
 	return s
 }
@@ -440,6 +458,9 @@ func (s *Service) fetch(ctx context.Context, endpoint string, src source) ([]byt
 }
 
 func (s *Service) persist(c Snapshot) error {
+	if s.db != nil {
+		return s.db.Put("limits", c)
+	}
 	if s.path == "" {
 		return nil
 	}

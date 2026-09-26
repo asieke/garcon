@@ -114,7 +114,7 @@ func codexSource(token, selected string) source {
 	return s
 }
 
-func discover(ctx context.Context, home string) []source {
+func discoverCodex(home string) []source {
 	out := []source{}
 	for _, dir := range roots(home, ".codex", os.Getenv("CODEX_HOME")) {
 		b, err := readFile(filepath.Join(dir, "auth.json"))
@@ -131,6 +131,11 @@ func discover(ctx context.Context, home string) []source {
 			out = append(out, codexSource(d.Tokens.Access, d.Tokens.Account))
 		}
 	}
+	return out
+}
+
+func discover(ctx context.Context, home string) []source {
+	out := discoverCodex(home)
 	for _, dir := range roots(home, ".hermes", os.Getenv("HERMES_HOME")) {
 		b, err := readFile(filepath.Join(dir, "auth.json"))
 		if err != nil {

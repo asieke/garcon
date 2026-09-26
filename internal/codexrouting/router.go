@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"garcon/internal/database"
 	"io"
 	"math"
 	"net"
@@ -25,8 +27,9 @@ import (
 )
 
 type Config struct {
-	Enabled  bool     `json:"enabled"`
-	Accounts []string `json:"accounts"`
+	Enabled    bool           `json:"enabled"`
+	Accounts   []string       `json:"accounts"`
+	Priorities map[string]int `json:"priorities,omitempty"`
 }
 type health struct {
 	models  map[string]bool
@@ -34,14 +37,19 @@ type health struct {
 	problem string
 }
 type Account struct {
-	ID            string   `json:"id"`
-	Email         string   `json:"email"`
-	Plan          string   `json:"plan"`
-	Enrolled      bool     `json:"enrolled"`
-	Status        string   `json:"status"`
-	Remaining     *float64 `json:"remaining_percent"`
-	Active        int      `json:"active_requests"`
-	Conversations int      `json:"conversations"`
+	ID            string          `json:"id"`
+	Priority      int             `json:"priority"`
+	Score         *float64        `json:"score"`
+	HoursLeft     *float64        `json:"hours_left"`
+	Profile       string          `json:"profile"`
+	Windows       []limits.Window `json:"windows"`
+	Email         string          `json:"email"`
+	Plan          string          `json:"plan"`
+	Enrolled      bool            `json:"enrolled"`
+	Status        string          `json:"status"`
+	Remaining     *float64        `json:"remaining_percent"`
+	Active        int             `json:"active_requests"`
+	Conversations int             `json:"conversations"`
 }
 type Status struct {
 	Enabled  bool      `json:"enabled"`
@@ -49,6 +57,7 @@ type Status struct {
 	Error    string    `json:"error,omitempty"`
 }
 type Router struct {
+	db           *database.DB
 	mu           sync.Mutex
 	refreshMu    sync.Mutex
 	dir          string
@@ -66,15 +75,37 @@ type Router struct {
 	now          func() time.Time
 }
 
-func New(dir string, snapshot func() limits.Snapshot) *Router {
+func New(dir string, snapshot func() limits.Snapshot, databases ...*database.DB) *Router {
 	home, _ := os.UserHomeDir()
 	r := &Router{dir: dir, pins: map[string]string{}, health: map[string]health{}, active: map[string]int{}, cooldown: map[string]time.Time{}, forceRefresh: map[string]bool{}, discover: func() []credential { return discover(home) }, renew: renew, snapshot: snapshot, now: time.Now,
 		client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
-	if err := readJSON(filepath.Join(dir, "codex-routing.json"), &r.config); err != nil && !os.IsNotExist(err) {
-		r.problem = "Cannot read Codex routing configuration"
-	}
-	if err := readJSON(filepath.Join(dir, "codex-routing-pins.json"), &r.pins); err != nil && !os.IsNotExist(err) {
-		r.problem = "Cannot read Codex conversation assignments"
+	if len(databases) > 0 {
+		r.db = databases[0]
+		if err := r.db.Get("codex-routing", &r.config); err != nil && err != sql.ErrNoRows {
+			r.problem = "Cannot read Codex routing configuration"
+		}
+		rows, err := r.db.Query("SELECT key,account_id FROM sessions")
+		if err != nil {
+			r.problem = "Cannot read Codex conversation assignments"
+		} else {
+			for rows.Next() {
+				var k, id string
+				if rows.Scan(&k, &id) == nil {
+					r.pins[k] = id
+				}
+			}
+			if rows.Err() != nil {
+				r.problem = "Cannot read Codex conversation assignments"
+			}
+			rows.Close()
+		}
+	} else {
+		if err := readJSON(filepath.Join(dir, "codex-routing.json"), &r.config); err != nil && !os.IsNotExist(err) {
+			r.problem = "Cannot read Codex routing configuration"
+		}
+		if err := readJSON(filepath.Join(dir, "codex-routing-pins.json"), &r.pins); err != nil && !os.IsNotExist(err) {
+			r.problem = "Cannot read Codex conversation assignments"
+		}
 	}
 	if r.pins == nil {
 		r.pins = map[string]string{}
@@ -119,13 +150,19 @@ func (r *Router) Configure(enabled bool) error {
 }
 
 func (r *Router) ConfigureAccounts(enabled bool, selected []string) error {
+	return r.ConfigurePriorities(enabled, selected, nil)
+}
+func (r *Router) ConfigurePriorities(enabled bool, selected []string, priorities map[string]int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	config := r.config
 	config.Enabled = enabled
-	if enabled {
+	if enabled || selected != nil {
 		config.Accounts = nil
 		available := map[string]bool{}
+		for _, id := range r.config.Accounts {
+			available[id] = true
+		}
 		for _, c := range r.discover() {
 			available[c.id] = true
 			config.Accounts = append(config.Accounts, c.id)
@@ -140,11 +177,26 @@ func (r *Router) ConfigureAccounts(enabled bool, selected []string) error {
 				config.Accounts = append(config.Accounts, id)
 			}
 		}
-		if len(config.Accounts) == 0 {
+		if enabled && len(config.Accounts) == 0 {
 			return errors.New("no file-based Codex OAuth logins found")
 		}
 	}
-	if err := writeJSON(filepath.Join(r.dir, "codex-routing.json"), config); err != nil {
+	if priorities != nil {
+		available := map[string]bool{}
+		for _, id := range r.config.Accounts {
+			available[id] = true
+		}
+		for _, c := range r.discover() {
+			available[c.id] = true
+		}
+		for id, p := range priorities {
+			if !available[id] || p < 1 || p > 99 {
+				return errors.New("priority must be between 1 and 99 for a discovered account")
+			}
+		}
+		config.Priorities = priorities
+	}
+	if err := r.persistConfig(config); err != nil {
 		return err
 	}
 	r.config = config
@@ -262,22 +314,27 @@ func headroom(a limits.Account, now time.Time) (float64, string) {
 }
 
 func (r *Router) account(c credential, model string, snapshot limits.Snapshot) Account {
-	a := Account{ID: c.id, Email: c.email, Plan: c.plan, Enrolled: r.enrolled(c.id), Status: "Not enrolled", Active: r.active[c.id]}
+	a := Account{ID: c.id, Email: c.email, Plan: c.plan, Enrolled: r.enrolled(c.id), Status: "Not enrolled", Active: r.active[c.id], Priority: max(1, r.config.Priorities[c.id]), Profile: filepath.Base(c.dir), Windows: []limits.Window{}}
 	for _, id := range r.pins {
 		if id == c.id {
 			a.Conversations++
 		}
 	}
-	if !a.Enrolled {
-		return a
-	}
 	a.Status = "Waiting for fresh usage limits"
 	for _, q := range snapshot.Accounts {
 		if q.Provider == "codex" && q.Workspace == c.id {
 			value, status := headroom(q, r.now())
+			a.Windows = q.Windows
 			a.Status = status
 			if status == "Ready" || status == "Usage exhausted" {
 				a.Remaining = &value
+				score, hours := quotaScore(q, r.now())
+				if score >= 0 {
+					a.Score = &score
+					a.HoursLeft = &hours
+				} else if status == "Ready" {
+					a.Status = "Waiting for a reset time"
+				}
 			}
 			break
 		}
@@ -295,6 +352,9 @@ func (r *Router) account(c credential, model string, snapshot limits.Snapshot) A
 	if r.now().Before(r.cooldown[c.id]) {
 		a.Status = "Temporarily unavailable after an upstream error"
 	}
+	if !a.Enrolled {
+		a.Status = "Not enrolled"
+	}
 	return a
 }
 
@@ -310,10 +370,22 @@ func (r *Router) Status() Status {
 	}
 	for _, id := range r.config.Accounts {
 		if !seen[id] {
-			s.Accounts = append(s.Accounts, Account{ID: id, Enrolled: true, Status: "Saved login missing"})
+			s.Accounts = append(s.Accounts, Account{ID: id, Priority: max(1, r.config.Priorities[id]), Enrolled: true, Status: "Saved login missing", Windows: []limits.Window{}})
 		}
 	}
-	sort.Slice(s.Accounts, func(i, j int) bool { return s.Accounts[i].Email < s.Accounts[j].Email })
+	sort.Slice(s.Accounts, func(i, j int) bool {
+		a, b := s.Accounts[i], s.Accounts[j]
+		if a.Priority != b.Priority {
+			return a.Priority < b.Priority
+		}
+		if (a.Score == nil) != (b.Score == nil) {
+			return a.Score != nil
+		}
+		if a.Score != nil && b.Score != nil && *a.Score != *b.Score {
+			return *a.Score > *b.Score
+		}
+		return a.Email < b.Email
+	})
 	return s
 }
 
@@ -380,6 +452,7 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	if session == "" && req.Method != http.MethodGet {
 		return nil, &routingError{400, "A stable Codex session identifier is required for account routing"}
 	}
+	*req = *req.WithContext(context.WithValue(req.Context(), detailKey{}, RequestDetails{Session: session, Model: body.Model}))
 	key := ""
 	if session != "" {
 		key = fmt.Sprintf("%x", sha256.Sum256([]byte(session)))
@@ -399,16 +472,18 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	}
 	var chosen credential
 	best := -1.0
+	bestPriority := 100
 	for _, c := range creds {
 		if pinned != "" && c.id != pinned {
 			continue
 		}
 		a := r.account(c, body.Model, snapshot)
-		if a.Status != "Ready" || !a.Enrolled || a.Remaining == nil {
+		if a.Status != "Ready" || !a.Enrolled || a.Score == nil {
 			continue
 		}
-		score := *a.Remaining / float64(1+a.Active)
-		if score > best {
+		score := *a.Score
+		if a.Priority < bestPriority || (a.Priority == bestPriority && score > best) {
+			bestPriority = a.Priority
 			chosen = c
 			best = score
 		}
@@ -421,15 +496,21 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 		return nil, &routingError{503, message}
 	}
 	if key != "" && r.pins[key] == "" {
-		if len(r.pins) >= 8000 {
+		if r.db == nil && len(r.pins) >= 8000 {
 			return nil, &routingError{503, "Codex conversation assignment store is full"}
 		}
 		r.pins[key] = chosen.id
-		if err := writeJSON(filepath.Join(r.dir, "codex-routing-pins.json"), r.pins); err != nil {
+		if err := r.persistPin(key, session, chosen, body.Model); err != nil {
 			delete(r.pins, key)
 			return nil, &routingError{503, "Could not persist Codex conversation assignment"}
 		}
 	}
+	if key != "" && r.db != nil {
+		if err := r.persistPin(key, session, chosen, body.Model); err != nil {
+			return nil, &routingError{503, "Could not persist Codex session activity"}
+		}
+	}
+	*req = *req.WithContext(context.WithValue(req.Context(), detailKey{}, RequestDetails{Session: session, Model: body.Model, Account: chosen.email, AccountID: chosen.id}))
 	for _, h := range []string{"Authorization", "ChatGPT-Account-Id", "OpenAI-Organization", "OpenAI-Project", "X-Api-Key", "Cookie"} {
 		req.Header.Del(h)
 	}
@@ -467,4 +548,59 @@ func (r *Router) Observe(id string, res *http.Response) {
 	if res.StatusCode == 401 {
 		r.forceRefresh[id] = true
 	}
+}
+
+// The most constrained general quota window determines the account's score.
+func quotaScore(a limits.Account, now time.Time) (float64, float64) {
+	score, hours := math.Inf(1), 0.0
+	found := false
+	for _, w := range a.Windows {
+		if !strings.HasPrefix(w.ID, "codex:") {
+			continue
+		}
+		if w.UsedPercent == nil || w.ResetsAt <= now.UnixMilli() {
+			return -1, 0
+		}
+		h := float64(w.ResetsAt-now.UnixMilli()) / 3600000
+		v := math.Max(0, 100-*w.UsedPercent) / h
+		if v < score {
+			score, hours = v, h
+		}
+		found = true
+	}
+	if !found {
+		return -1, 0
+	}
+	return score, hours
+}
+func (r *Router) persistConfig(c Config) error {
+	if r.db != nil {
+		return r.db.Put("codex-routing", c)
+	}
+	return writeJSON(filepath.Join(r.dir, "codex-routing.json"), c)
+}
+func (r *Router) persistPin(key, session string, c credential, model string) error {
+	if r.db == nil {
+		return writeJSON(filepath.Join(r.dir, "codex-routing-pins.json"), r.pins)
+	}
+	now := r.now().UnixMilli()
+	_, err := r.db.Exec(`INSERT INTO sessions(key,session_id,account_id,account,model,created_at,last_seen) VALUES(?,?,?,?,?,?,?)
+ ON CONFLICT(key) DO UPDATE SET session_id=excluded.session_id,account=excluded.account,model=CASE WHEN excluded.model!='' THEN excluded.model ELSE sessions.model END,last_seen=excluded.last_seen,
+ created_at=CASE WHEN sessions.created_at=0 THEN excluded.created_at ELSE sessions.created_at END`, key, session, c.id, c.email, model, now, now)
+	return err
+}
+
+type detailKey struct{}
+type RequestDetails struct{ Session, Model, Account, AccountID string }
+
+func Details(req *http.Request) RequestDetails {
+	v, _ := req.Context().Value(detailKey{}).(RequestDetails)
+	return v
+}
+func ErrorStatus(err error) int {
+	var e *routingError
+	if errors.As(err, &e) {
+		return e.status
+	}
+	return 503
 }

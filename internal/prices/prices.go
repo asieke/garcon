@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"garcon/internal/database"
 	"garcon/internal/local"
 )
 
@@ -57,6 +58,7 @@ type Catalog struct {
 
 // Service fetches, caches and serves the catalogue.
 type Service struct {
+	db     *database.DB
 	URL    string
 	path   string
 	client *http.Client
@@ -68,7 +70,7 @@ type Service struct {
 }
 
 // New loads the cached catalogue from dir, if any. Nothing is fetched until asked.
-func New(dir string) *Service {
+func New(dir string, databases ...*database.DB) *Service {
 	s := &Service{URL: DefaultURL, path: filepath.Join(dir, "prices.json"),
 		client: &http.Client{Timeout: 30 * time.Second}, now: time.Now}
 	s.cat = Catalog{Source: DefaultURL, Models: map[string]Price{}}
@@ -77,6 +79,11 @@ func New(dir string) *Service {
 		if json.Unmarshal(data, &cached) == nil && cached.Models != nil {
 			s.cat = cached
 		}
+	}
+	if len(databases) > 0 {
+		s.db = databases[0]
+		s.cat = Catalog{Source: DefaultURL, Models: map[string]Price{}}
+		_ = s.db.Get("prices", &s.cat)
 	}
 	return s
 }
@@ -155,7 +162,7 @@ func (s *Service) Refresh() {
 		return
 	}
 	s.cat.Models, s.cat.FetchedAt, s.cat.Error, s.cat.ErrorAt = models, s.now().UnixMilli(), "", 0
-	if err := writeJSON(s.path, s.cat); err != nil {
+	if err := s.persist(); err != nil {
 		log.Printf("prices: could not cache to %s: %v", s.path, err)
 	}
 }
@@ -257,4 +264,11 @@ func writeJSON(path string, v any) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func (s *Service) persist() error {
+	if s.db != nil {
+		return s.db.Put("prices", s.cat)
+	}
+	return writeJSON(s.path, s.cat)
 }

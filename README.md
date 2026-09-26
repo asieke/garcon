@@ -1,18 +1,32 @@
 # Garcon
 
-Observability for coding agents. A local pass-through proxy in front of Claude Code, Codex,
-OpenClaw, Hermes or any compatible client records what every call cost in tokens and shows it
-in one dashboard, across accounts and tools on this machine. No Go dependencies, dashboard embedded in the binary, loopback only, no credentials stored.
+Your local routing desk for Codex. One web app and proxy API, one SQLite database,
+and one stable endpoint at **127.0.0.1:4141**. Discover local Codex OAuth accounts,
+set priority groups, and route new sessions by remaining quota per hour until reset.
+Track real session assignments, watch live requests, inspect logs, and explore
+usage, models, and API-equivalent cost. The dashboard is embedded in one Go binary;
+SQLite runs inside that process. OAuth credentials stay in Codex's login files.
 
 **Docs:** https://asieke.github.io/garcon/
+
+## The routing desk
+
+- **Accounts:** one expandable Codex pool, individual enrollment, reorderable priority groups, and live usage/reset scores.
+- **Sessions:** real session-to-account assignments preserved across restarts.
+- **Live ticker:** requests and their selected accounts, including in-flight streams.
+- **Logs:** searchable, paginated metadata with error and interruption states.
+- **Analytics:** tokens, model mix, cache usage, and estimated API-equivalent cost.
+
+Existing local JSON/JSONL data is imported once into SQLite. Original files are
+preserved. See [routing and storage details](docs/codex-routing.md).
 
 ## How it works
 
 Point Claude at `http://127.0.0.1:4141/claude`, Codex at
 `http://127.0.0.1:4141/codex/backend-api/codex`, and Hermes at
 `http://127.0.0.1:4141/hermes/<provider>` plus its API prefix. Requests are
-forwarded unchanged and replies streamed back; completion calls are appended to
-`~/.local/share/garcon/usage.jsonl` with model, status, latency and the provider's token
+forwarded and replies streamed back; request metadata is saved in
+`~/.local/share/garcon/usage.db` with model, status, latency and the provider's token
 counts (uncached input, cache read, cache write, output). Subscription logins keep working.
 
 | provider | upstream | recorded |
@@ -26,7 +40,7 @@ Accounts for Claude, Codex and Hermes are detected from each request's credentia
 With optional [Codex account routing](docs/codex-routing.md) enabled, Garcon instead
 chooses an enrolled local Codex OAuth account for each new conversation, based on
 available usage and model access, and keeps that conversation on its account.
-Enable it in **Limits → Codex account routing**. Other harnesses remain pass-through.
+Enable it in **Accounts → Codex**. Other harnesses remain pass-through.
 Codex uses the selected ChatGPT account and token claims. Claude OAuth uses a cached
 Anthropic profile lookup. API keys without identity information get an anonymous,
 provider-specific key fingerprint; separate keys remain separate, and rotating a key
@@ -176,7 +190,8 @@ Legacy sync settings and remote caches are ignored; local usage history is prese
 cmd/garcon/          entry point: flags, subcommands, HTTP wiring
 internal/proxy/      routing and the pass-through proxy
 internal/usage/      the Record type and usage-block parsing
-internal/store/      usage.jsonl and the remote-row cache
+internal/store/      SQLite request ledger, sessions, logs, and analytics
+internal/database/   schema and transactional legacy migration
 internal/service/    systemd and launchd management
 internal/dashboard/  embedded build output of web/
 web/                 SvelteKit dashboard          docs/       GitHub Pages site

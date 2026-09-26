@@ -28,9 +28,9 @@
 
 		<section id="files">
 			<dl>
-				<dt>~/.local/share/garcon/usage.jsonl</dt><dd>This machine's log, one JSON object per completion call. Append-only.</dd>
-				<dt>~/.local/share/garcon/prices.json</dt><dd>The last model price catalogue fetched from OpenRouter for the cost estimates. Safe to delete; fetched again on the next dashboard visit.</dd>
-				<dt>~/.local/share/garcon/limits.json</dt><dd>Latest normalized Codex and Claude subscription snapshots, written atomically with owner-only permissions. Contains no credentials or history and is never synced. Safe to delete; rebuilt by background collection.</dd>
+				<dt>~/.local/share/garcon/usage.db</dt><dd>Local SQLite database: requests, sessions, routing preferences, usage snapshots, prices, and diagnostics.</dd>
+				<dt>Legacy JSON and JSONL files</dt><dd>Imported once into usage.db. Original files are retained as a migration backup and are no longer updated.</dd>
+
 				<dt>~/.local/share/garcon/bin/garcon</dt><dd>The private service executable, copied from the installed package by setup or service restart. It survives npm cache cleanup and Node version changes.</dd>
 				<dt>~/.config/systemd/user/garcon.service</dt><dd>Linux autostart service, sandboxed with seccomp (no new privileges, native system calls from the @system-service set, only Unix and IP sockets, no namespaces, realtime or setuid, no writable-and-executable memory, umask 077). Inspect it with <code>garcon service status</code>; logs are available with <code>journalctl --user -u garcon</code>.</dd>
 				<dt>~/Library/LaunchAgents/dev.garcon.plist</dt><dd>macOS autostart service. Its log is <code>~/Library/Logs/garcon.log</code>.</dd>

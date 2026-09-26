@@ -112,7 +112,7 @@ provider HTTPS endpoints. Requests have
 timeouts and response-size limits, refuse redirects, and honor rate-limit backoff.
 Only credential digests and resolved identities are cached between refreshes.
 
-`limits.json`, beside `usage.jsonl`, contains only the latest normalized snapshots
+The `limits` state in the local `usage.db` SQLite database contains only the latest normalized snapshots
 and is written atomically with owner-only permissions. There is no quota history. A failed refresh preserves the previous update time and values.
 Snapshots older than ten minutes are marked stale. Once a reset deadline passes,
 the previous usage is shown as expired until the provider confirms a new window;

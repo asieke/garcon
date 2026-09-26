@@ -15,17 +15,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		var config struct {
-			Enabled  *bool    `json:"enabled"`
-			Accounts []string `json:"accounts"`
+			Enabled    *bool          `json:"enabled"`
+			Accounts   []string       `json:"accounts"`
+			Priorities map[string]int `json:"priorities"`
 		}
-		d := json.NewDecoder(io.LimitReader(req.Body, 1024))
+		d := json.NewDecoder(io.LimitReader(req.Body, 32<<10))
 		d.DisallowUnknownFields()
 		if d.Decode(&config) != nil || config.Enabled == nil {
 			WriteError(w, &routingError{400, "Expected an enabled boolean"})
 			return
 		}
-		if err := r.ConfigureAccounts(*config.Enabled, config.Accounts); err != nil {
-			WriteError(w, &routingError{400, "Could not save routing configuration or no Codex OAuth logins were found"})
+		if err := r.ConfigurePriorities(*config.Enabled, config.Accounts, config.Priorities); err != nil {
+			WriteError(w, &routingError{400, "Could not save configuration: check account selection and priorities (1–99)"})
 			return
 		}
 		go r.Refresh(context.Background())

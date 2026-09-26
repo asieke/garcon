@@ -23,7 +23,7 @@ func TestAllGroupsExistingAccountLabelsWithoutRewritingLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.logFile.Close()
+	defer s.Close()
 	s.Save(usage.Record{Account: "a@example.com", Input: 5})
 	all := s.All()
 	var total int64
@@ -36,7 +36,9 @@ func TestAllGroupsExistingAccountLabelsWithoutRewritingLogs(t *testing.T) {
 	if len(all) != 2 || total != 8 {
 		t.Fatalf("lost usage: rows=%d, input=%d", len(all), total)
 	}
-	if s.records[0].Account != "a@example.com [chatgpt:workspace-a]" {
+	var original string
+	s.DB.QueryRow("SELECT json_extract(record, '$.account') FROM requests ORDER BY sequence LIMIT 1").Scan(&original)
+	if original != "a@example.com [chatgpt:workspace-a]" {
 		t.Fatal("changed underlying local records")
 	}
 	got, err := os.ReadFile(remotePath)
@@ -50,7 +52,7 @@ func TestRecentIsBoundedAndKeepsIdenticalCompletions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.logFile.Close()
+	defer s.Close()
 	if got := s.Recent(); got == nil || len(got) != 0 {
 		t.Fatalf("empty response: %#v", got)
 	}
@@ -67,7 +69,7 @@ func TestRecentIsBoundedAndKeepsIdenticalCompletions(t *testing.T) {
 		}
 	}
 	rows[0].Account = "changed"
-	if s.Recent()[0].Account != "a@example.com" || s.records[0].Account != "a@example.com [chatgpt:workspace]" {
+	if s.Recent()[0].Account != "a@example.com" {
 		t.Fatal("recent snapshot changed the underlying log")
 	}
 }
@@ -85,7 +87,7 @@ func TestRecentExcludesHistoryAndLegacyRemoteCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.logFile.Close()
+	defer s.Close()
 	if len(s.Recent()) != 0 || s.RequestFeed().TotalRequests != 1 {
 		t.Fatal("history entered arrivals or remote cache entered total")
 	}
@@ -103,8 +105,39 @@ func TestOpenDoesNotCreateRemoteCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.logFile.Close()
+	defer s.Close()
 	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "remote.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("remote cache created: %v", err)
+	}
+}
+
+func TestSQLiteLifecycleAndRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := usage.Record{RequestID: "request-1", SessionID: "session", AccountID: "account", Time: 100, State: "streaming"}
+	if err = s.SaveRecord(rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.State = "complete"
+	rec.Status = 200
+	rec.Input = 7
+	s.Save(rec)
+	if s.Len() != 1 || len(s.Recent()) != 1 || s.Recent()[0].Input != 7 {
+		t.Fatal("request lifecycle created duplicate usage")
+	}
+	s.Save(usage.Record{RequestID: "interrupted", Time: 101, State: "streaming"})
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var state string
+	s.DB.QueryRow("SELECT state FROM requests WHERE request_id='interrupted'").Scan(&state)
+	if state != "interrupted" || len(s.All()) != 2 {
+		t.Fatalf("restart recovery: %s / %d", state, len(s.All()))
 	}
 }

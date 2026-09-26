@@ -66,8 +66,8 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 	}))
 	defer upstream.Close()
 	target, _ := url.Parse(upstream.URL)
-	var record usage.Record
-	p := Proxy{Codex: router, Save: func(r usage.Record) { record = r }}
+	var record, started usage.Record
+	p := Proxy{Codex: router, Start: func(r usage.Record) { started = r }, Save: func(r usage.Record) { record = r }}
 	route, _ := ParseRoute("/codex/backend-api/codex/responses")
 	route.Target = target
 	call := func() *httptest.ResponseRecorder {
@@ -87,13 +87,16 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 	if w.Code != 200 || record.Account != "b@example.com" || record.Input != 1 || record.Output != 2 || w.Header().Get("X-Garcon-Account-Id") != "b" {
 		t.Fatalf("incorrect attribution or stream: %d %+v", w.Code, record)
 	}
+	if started.State != "streaming" || record.State != "complete" || started.RequestID == "" || started.RequestID != record.RequestID || record.SessionID != "conversation" || record.AccountID != "b" {
+		t.Fatalf("lost request lifecycle %+v %+v", started, record)
+	}
 	upstreamStatus = 429
 	w = call()
 	if w.Code != 429 || calls != 2 {
 		t.Fatal("replayed a rejected request")
 	}
 	w = call()
-	if w.Code != 503 || calls != 2 {
+	if w.Code != 503 || calls != 2 || record.Status != 503 || record.State != "failed" {
 		t.Fatal("rerouted an unavailable pinned conversation")
 	}
 }

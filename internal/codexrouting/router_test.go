@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"garcon/internal/database"
 	"garcon/internal/limits"
 )
 
@@ -172,7 +173,7 @@ func TestEligibilityAndNoSilentFailover(t *testing.T) {
 	}
 }
 
-func TestConcurrentReservations(t *testing.T) {
+func TestConcurrentRequestsKeepQuotaScore(t *testing.T) {
 	r, _, _ := setup(t)
 	first := request("first")
 	done, err := r.Prepare(first)
@@ -186,8 +187,8 @@ func TestConcurrentReservations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer done2()
-	if first.Header.Get("ChatGPT-Account-Id") == second.Header.Get("ChatGPT-Account-Id") {
-		t.Fatal("ignored in-flight reservation")
+	if first.Header.Get("ChatGPT-Account-Id") != second.Header.Get("ChatGPT-Account-Id") {
+		t.Fatal("active requests incorrectly changed the quota-per-hour score")
 	}
 	var wg sync.WaitGroup
 	for range 20 {
@@ -332,5 +333,106 @@ func TestExplicitEnrollment(t *testing.T) {
 	release()
 	if req.Header.Get("ChatGPT-Account-Id") != "c" {
 		t.Fatal("routed outside selected pool")
+	}
+}
+
+func TestPriorityThenQuotaPerHour(t *testing.T) {
+	r, s, _ := setup(t)
+	// B has most remaining quota, but A resets sooner and has more percent/hour.
+	s.Accounts[0].Windows[0].ResetsAt = r.now().Add(10 * time.Minute).UnixMilli()
+	first := request("score")
+	release, err := r.Prepare(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if first.Header.Get("ChatGPT-Account-Id") != "a" {
+		t.Fatal("ignored remaining hours")
+	}
+	if err = r.ConfigurePriorities(true, nil, map[string]int{"a": 2, "b": 1, "c": 2}); err != nil {
+		t.Fatal(err)
+	}
+	second := request("priority")
+	release, err = r.Prepare(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if second.Header.Get("ChatGPT-Account-Id") != "b" {
+		t.Fatal("score overrode priority group")
+	}
+	exhausted := 100.0
+	s.Accounts[1].Windows[0].UsedPercent = &exhausted
+	third := request("fallback")
+	release, err = r.Prepare(third)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if third.Header.Get("ChatGPT-Account-Id") != "a" {
+		t.Fatal("did not fall back to next eligible group")
+	}
+	if err = r.ConfigurePriorities(false, []string{}, map[string]int{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.config.Accounts) != 0 || r.config.Enabled {
+		t.Fatal("could not remove last account")
+	}
+}
+
+func TestScoreUsesMostConstrainedWindow(t *testing.T) {
+	r, s, _ := setup(t)
+	a := s.Accounts[0]
+	used := 90.0
+	a.Windows = append(a.Windows, limits.Window{ID: "codex:1", UsedPercent: &used, ResetsAt: r.now().Add(100 * time.Hour).UnixMilli()})
+	score, hours := quotaScore(a, r.now())
+	if score != 0.1 || hours != 100 {
+		t.Fatalf("wrong bottleneck score %v %v", score, hours)
+	}
+	a.Windows[1].ResetsAt = 0
+	if score, _ = quotaScore(a, r.now()); score != -1 {
+		t.Fatal("scored unknown reset time")
+	}
+}
+
+func TestSQLiteAssignmentAndConfigurationSurviveRestart(t *testing.T) {
+	r, _, _ := setup(t)
+	db, err := database.Open(filepath.Join(t.TempDir(), "usage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	r.db = db
+	if err = r.ConfigurePriorities(true, nil, map[string]int{"a": 2, "b": 1, "c": 2}); err != nil {
+		t.Fatal(err)
+	}
+	req := request("real-session-id")
+	release, err := r.Prepare(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	var id, account string
+	if err = db.QueryRow("SELECT session_id,account_id FROM sessions").Scan(&id, &account); err != nil {
+		t.Fatal(err)
+	}
+	if id != "real-session-id" || account != "b" {
+		t.Fatal("session tracker lost exact assignment")
+	}
+	restarted := New(r.dir, r.snapshot, db)
+	restarted.discover = r.discover
+	restarted.now = r.now
+	restarted.health = r.health
+	if len(restarted.pins) != 1 || restarted.config.Priorities["a"] != 2 {
+		t.Fatal("SQLite routing state did not survive restart")
+	}
+	resumed := request("real-session-id")
+	release, err = restarted.Prepare(resumed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if resumed.Header.Get("ChatGPT-Account-Id") != "b" {
+		t.Fatal("resumed session moved accounts")
 	}
 }
