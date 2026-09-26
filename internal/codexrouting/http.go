@@ -19,9 +19,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Accounts   []string       `json:"accounts"`
 			Priorities map[string]int `json:"priorities"`
 		}
-		d := json.NewDecoder(io.LimitReader(req.Body, 32<<10))
+		d := json.NewDecoder(http.MaxBytesReader(w, req.Body, 32<<10))
 		d.DisallowUnknownFields()
-		if d.Decode(&config) != nil || config.Enabled == nil {
+		var extra any
+		if d.Decode(&config) != nil || config.Enabled == nil || d.Decode(&extra) != io.EOF {
 			WriteError(w, &routingError{400, "Expected an enabled boolean"})
 			return
 		}

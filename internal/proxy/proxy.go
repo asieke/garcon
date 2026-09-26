@@ -50,6 +50,15 @@ type Route struct {
 // ParseRoute splits /<harness>/[<provider>/]<rest>. Claude and Codex
 // imply their provider. Account labels are not accepted in routing paths.
 func ParseRoute(path string) (Route, bool) {
+	providers := map[string]string{}
+	for name, target := range Providers {
+		providers[name] = target.String()
+	}
+	return ParseRouteWithProviders(path, providers)
+}
+
+// ParseRouteWithProviders uses a snapshot, avoiding shared mutable route maps.
+func ParseRouteWithProviders(path string, providers map[string]string) (Route, bool) {
 	harness, rest, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
 	if harness == "" {
 		return Route{}, false
@@ -66,8 +75,8 @@ func ParseRoute(path string) (Route, bool) {
 	} else {
 		provider, rest, _ = strings.Cut(rest, "/")
 	}
-	target := Providers[provider]
-	if target == nil {
+	target, err := url.Parse(providers[provider])
+	if err != nil || target.Host == "" {
 		return Route{}, false
 	}
 	return Route{Harness: harness, Provider: provider, Rest: rest, Target: target}, true

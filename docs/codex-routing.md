@@ -41,7 +41,7 @@ Upstream 401, 403, or 429 responses temporarily exclude an account from new assi
 
 ## Logins and renewal
 
-Use **Providers → Add account → Codex OAuth account** for browser sign-in. Garcon needs the Codex CLI and creates a separate `~/.codex-garcon-*` profile. Enable the new account in the pool afterward.
+Use **Add provider → Codex → Copy skill** in either local or remote mode, or run `garcon accounts login codex --profile NAME` on the server. Garcon needs the Codex CLI and creates a separate `~/.codex-garcon-*` profile. Run `garcon accounts refresh`, verify with `garcon accounts list`, then enroll the new account separately.
 
 Discovery reads `~/.codex/auth.json`, `~/.codex-*/auth.json`, and the service's `CODEX_HOME`. Duplicate accounts prefer the token with the latest expiry. Keyring-only logins, API keys, and Hermes profiles aren't part of this pool.
 
@@ -56,3 +56,7 @@ Sessions shows task titles, projects, account assignments, and model traffic. Ta
 Routed calls and configuration changes require a local client and matching Origin when supplied. Successful upstream responses include `X-Garcon-Account-Id`. Routing supports HTTP streaming; WebSocket upgrades and bodies over 32 MiB are rejected.
 
 See [the API reference](api.html) for Sessions, Logs, and Analytics endpoints, and [local files](files.html) for storage and migration.
+
+## Remote dashboard
+
+With `-allow-remote`, routing changes and all other dashboard writes return 403, even from localhost or through a reverse proxy. Use `garcon routing show`, then pipe JSON to `garcon routing set --json-stdin` on the server. Include all selected account IDs and priorities to preserve the existing pool; append `--data FILE` when using a custom database. Existing sessions stay pinned.

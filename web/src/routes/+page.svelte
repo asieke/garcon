@@ -1,5 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import codexSkill from "$lib/account-skills/codex.md?raw";
+  import claudeSkill from "$lib/account-skills/claude.md?raw";
+  import openrouterSkill from "$lib/account-skills/openrouter.md?raw";
+  const accountSkills = { codex: codexSkill, claude: claudeSkill, openrouter: openrouterSkill };
+  let skillProvider = $state<keyof typeof accountSkills>("codex");
+  let inventory = $state<{accounts: {id:string; provider:string; email:string; status:string}[]; openrouter_configured?: boolean}>({accounts:[]});
+  let providerURLs = $state<Record<string,string>>({});
+  let configReady = $state(false);
   import Icon from "$lib/console/Icon.svelte";
   import CodexLogo from "$lib/console/CodexLogo.svelte";
   import { parseCatalog, type Catalog } from "$lib/pricing";
@@ -37,7 +45,9 @@
     version: "",
     listen: "127.0.0.1:4141",
     rows: 0,
+    remote_read_only: true,
   });
+  const readOnly = $derived(!configReady || config.remote_read_only !== false);
   let loaded = $state(false),
     connected = $state(false),
     busy = $state(false),
@@ -47,7 +57,6 @@
     notice = $state(""),
     now = $state(Date.now());
   let modal = $state<"account" | "connect" | null>(null),
-    profile = $state("new-account"),
     copied = $state("");
   let query = $state(""),
     sessionQuery = $state(""),
@@ -179,9 +188,6 @@
     });
   });
   const peak = $derived(Math.max(1, ...bars.map((b) => b.value)));
-  const command = $derived(
-    `CODEX_HOME="$HOME/.codex-${/^[a-z0-9][a-z0-9-]{0,31}$/.test(profile) ? profile : "personal"}" codex -c 'cli_auth_credentials_store="file"' login`,
-  );
   const connectConfig =
     'model_provider = "garcon"\n\n[model_providers.garcon]\nname = "Garcon"\nbase_url = "http://127.0.0.1:4141/codex/backend-api/codex"\nwire_api = "responses"\nrequires_openai_auth = true\nsupports_websockets = false';
   async function api(path: string, options?: RequestInit) {
@@ -213,12 +219,14 @@
   }
   async function poll() {
     try {
-      const [r, s, f] = await Promise.all([
+      const [r, s, f, c, a, p] = await Promise.all([
         api("/api/routing/codex"),
         api("/api/sessions"),
         api("/api/usage/recent"),
+        api("/api/config"), api("/api/accounts"), api("/api/providers"),
       ]);
       if (!alive) return;
+      config = c; configReady = true; inventory = a; providerURLs = p;
       if (!busy) routing = r;
       sessions = s;
       feed = [...f.requests].reverse();
@@ -229,6 +237,7 @@
       if (view === "analytics") await loadAnalytics();
     } catch {
       if (alive) {
+        configReady = false;
         connected = false;
         loaded = true;
       }
@@ -244,11 +253,6 @@
     void poll();
     void loadLogs();
     void loadAnalytics();
-    void api("/api/config")
-      .then((v) => {
-        if (alive) config = v;
-      })
-      .catch(() => {});
     void api("/api/prices")
       .then((v) => {
         if (alive) catalog = parseCatalog(v);
@@ -294,6 +298,7 @@
       routing.accounts.map((a) => [a.id, a.priority]),
     ),
   ) {
+    if (readOnly) return;
     busy = true;
     error = "";
     try {
@@ -347,6 +352,7 @@
     void configure(ids.length ? routing.enabled : false, ids);
   }
   async function refresh() {
+    if (readOnly) return;
     refreshing = true;
     error = "";
     try {
@@ -360,13 +366,27 @@
       refreshing = false;
     }
   }
+  let copyError = $state("");
   async function copy(text: string, id: string) {
+    copyError = "";
     try {
-      await navigator.clipboard.writeText(text);
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // Plain HTTP remote dashboards may not have the Clipboard API.
+        const previous = document.activeElement as HTMLElement | null;
+        const field = document.createElement("textarea");
+        field.value = text;
+        field.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(field);
+        try { field.select(); if (!document.execCommand("copy")) throw new Error("copy failed"); }
+        finally { field.remove(); previous?.focus(); }
+      }
       copied = id;
       setTimeout(() => (copied = ""), 2000);
     } catch {
-      error = "Clipboard unavailable. Select and copy the command.";
+      copyError = "Clipboard unavailable. Select the text and copy it manually.";
+      error = copyError;
     }
   }
   async function systemLogs() {
@@ -491,6 +511,13 @@
       </div>
     </header>
     <main>
+      {#if configReady && config.remote_read_only}<div class="remote-notice" role="status">
+        <strong>Remote mode: view-only</strong>
+        <span>Run changes in a terminal on the Garcon host. All dashboard writes are disabled, including from localhost.</span>
+        <code>garcon accounts refresh</code>
+        <code>garcon routing set --json-stdin</code>
+        <code>garcon providers add NAME HTTPS_ORIGIN</code>
+      </div>{/if}
       <div class="page-heading">
         <div>
           <div class="eyebrow">YOUR LOCAL ROUTING DESK</div>
@@ -498,15 +525,15 @@
           <p>{title.description}</p>
         </div>
         <div class="heading-actions">
-          {#if view === "accounts"}<button
+          {#if view === "accounts"}{#if !readOnly}<button
               class="button secondary"
               disabled={refreshing}
               onclick={refresh}
               ><Icon name="refresh" size={16} />{refreshing
                 ? "Refreshing…"
                 : "Refresh"}</button
-            ><button class="button primary" onclick={() => (modal = "account")}
-              ><Icon name="plus" size={17} />Add account</button
+            >{/if}<button class="button primary" onclick={() => (modal = "account")}
+              ><Icon name="plus" size={17} />Add provider</button
             >{:else if view === "analytics"}<label class="range-label"
               ><Icon name="clock" size={16} /><select
                 aria-label="Analytics period"
@@ -570,7 +597,7 @@
             <div class="provider-actions">
               <span class="provider-summary"
                 >{ready.length} ready <span>·</span> {active} in flight</span
-              ><span class="switch-label">Auto-route</span><button
+              >{#if readOnly}<code title="Run locally: garcon routing set --json-stdin">Auto-route: {routing.enabled ? "on" : "off"}</code>{:else}<span class="switch-label">Auto-route</span><button
                 class="switch"
                 class:on={routing.enabled}
                 role="switch"
@@ -584,7 +611,7 @@
                       ? enrolled.map((a) => a.id)
                       : routing.accounts.map((a) => a.id),
                   )}><span></span></button
-              >
+              >{/if}
             </div>
           </div>
           {#if expanded}<div class="provider-body">
@@ -614,7 +641,7 @@
                       >
                     </div>
                     <div class="group-controls">
-                      <span>Highest score wins</span><button
+                      <span>Highest score wins</span>{#if !readOnly}<button
                         aria-label={`Move priority ${group} up`}
                         disabled={busy || gi === 0}
                         onclick={() => moveGroup(group, -1)}
@@ -624,7 +651,7 @@
                         disabled={busy || gi === groups.length - 1}
                         onclick={() => moveGroup(group, 1)}
                         ><Icon name="down" size={14} /></button
-                      >
+                      >{/if}
                     </div>
                   </div>
                   <div class="account-columns">
@@ -697,7 +724,7 @@
                         ><small>% / hour</small>
                       </div>
                       <div>
-                        <select
+                        {#if readOnly}<span title="Run locally: garcon routing set --json-stdin">P{a.priority}</span>{:else}<select
                           class="priority-select"
                           aria-label={`Priority for ${a.email}`}
                           value={a.priority}
@@ -707,10 +734,10 @@
                           >{#each [...new Set( [...Array.from({ length: Math.max(3, routing.accounts.length + 1) }, (_, i) => i + 1), ...groups] )] as n}<option
                               value={n}>P{n}</option
                             >{/each}</select
-                        >
+                        >{/if}
                       </div>
                       <div>
-                        <button
+                        {#if readOnly}<span title="Run locally: garcon routing set --json-stdin">{a.enrolled ? "Enrolled" : "Excluded"}</span>{:else}<button
                           class="pool-check"
                           class:checked={a.enrolled}
                           aria-label={`${a.enrolled ? "Remove" : "Enroll"} ${a.email}`}
@@ -721,7 +748,7 @@
                               name="check"
                               size={13}
                             />{:else}<Icon name="plus" size={13} />{/if}</button
-                        >
+                        >{/if}
                       </div>
                     </div>{/each}
                 </div>{/each}
@@ -730,6 +757,16 @@
                 <span>Separate login. Same endpoint.</span></button
               >
             </div>{/if}
+        </section>
+        <section class="remote-notice" aria-label="Other providers and local commands">
+          <strong>Providers</strong>
+          {#each Object.entries(providerURLs) as [name, url]}<span>{name} · {url}</span>{/each}
+          {#each inventory.accounts.filter(a => a.provider !== "codex") as a}<span>{a.provider} · {a.email || a.id} · {a.status}</span>{/each}
+          <span>OpenRouter key: {inventory.openrouter_configured ? "saved (not verified)" : "not configured"}</span>
+          <code>garcon providers add NAME HTTPS_ORIGIN</code>
+          <code>garcon providers remove NAME</code>
+          {#if readOnly}<code>garcon accounts refresh</code><code>garcon routing set --json-stdin</code>{/if}
+          <button class="button secondary" onclick={() => (modal = "account")}>Add provider · copy setup skill</button>
         </section>
         <div class="routing-notes">
           <div>
@@ -1282,7 +1319,7 @@
       aria-label={selected
         ? "Request details"
         : modal === "account"
-          ? "Add Codex account"
+          ? "Add provider"
           : "Connect Codex"}
       tabindex="-1"
     >
@@ -1328,74 +1365,18 @@
             size={16}
           />{copied === "request" ? "Copied" : "Copy request metadata"}</button
         >
-      {:else if modal === "account"}<span class="drawer-art"
-          ><CodexLogo size={36} /><span>+</span></span
-        >
-        <h2>Add Codex account</h2>
-        <p class="drawer-description">
-          Each Codex profile holds its own OpenAI login. Garcon discovers
-          profiles on this computer automatically.
-        </p>
-        <div class="setup-step">
-          <span>01</span>
-          <div>
-            <h3>Name your profile</h3>
-            <p>Use a new name to keep your existing login intact.</p>
-            <label class="profile-input"
-              ><span>~/.codex-</span><input
-                aria-label="Codex profile name"
-                bind:value={profile}
-                pattern={"[a-z0-9][a-z0-9-]{0,31}"}
-                placeholder="personal"
-              /></label
-            >{#if !/^[a-z0-9][a-z0-9-]{0,31}$/.test(profile)}<small
-                class="validation"
-                >Use lowercase letters, numbers, and hyphens (1–32 characters).</small
-              >{/if}
-          </div>
-        </div>
-        <div class="setup-step">
-          <span>02</span>
-          <div>
-            <h3>Sign in from your terminal</h3>
-            <p>
-              Run this command, then choose the OpenAI account in the browser.
-            </p>
-            <div class="code-box">
-              <code>{command}</code><button
-                aria-label="Copy login command"
-                onclick={() => copy(command, "login")}
-                ><Icon
-                  name={copied === "login" ? "check" : "copy"}
-                  size={16}
-                /></button
-              >
-            </div>
-          </div>
-        </div>
-        <div class="setup-step">
-          <span>03</span>
-          <div>
-            <h3>Add it to your pool</h3>
-            <p>
-              Refresh accounts, enable the new login, and choose its priority
-              group.
-            </p>
-          </div>
-        </div>
-        <button
-          class="button primary full"
-          disabled={refreshing}
-          onclick={async () => {
-            await refresh();
-            modal = null;
-          }}
-          ><Icon name="refresh" size={16} />I've signed in · discover accounts</button
-        >
-        <p class="drawer-fine">
-          Scans ~/.codex, ~/.codex-*, and CODEX_HOME. Duplicate logins appear
-          once. Credentials remain in Codex's own files.
-        </p>
+      {:else if modal === "account"}
+        <h2>Add provider</h2>
+        <p class="drawer-description">Copy this Markdown skill into Codex to add an account on the Garcon host. It works in local and remote mode.</p>
+        <label class="profile-input">Provider <select aria-label="Account provider" bind:value={skillProvider}>
+          <option value="codex">Codex</option><option value="claude">Claude</option><option value="openrouter">OpenRouter</option>
+        </select></label>
+        {#if copyError}<p role="status">{copyError}</p>{/if}
+        <div class="code-box block skill-preview"><pre>{accountSkills[skillProvider]}</pre></div>
+        <button class="button primary full" onclick={() => copy(accountSkills[skillProvider], "account-skill")}>
+          <Icon name={copied === "account-skill" ? "check" : "copy"} size={16}/>{copied === "account-skill" ? "Copied" : "Copy skill"}
+        </button>
+        <p class="drawer-fine">Run on the server, using its data path: <code>{config.data || "default database"}</code>. Credentials stay out of the skill and chat.</p>
       {:else}<span class="drawer-art"><Icon name="link" size={36} /></span>
         <h2>Connect Codex</h2>
         <p class="drawer-description">

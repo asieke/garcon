@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  let { email, color }: { email: string; color: string } = $props();
+  let { email, color, readOnly = true }: { email: string; color: string; readOnly?: boolean } = $props();
   const storageKey = $derived(`garcon.account-nickname.${email.toLowerCase()}`);
   let nickname = $state("");
   let draft = $state("");
@@ -10,6 +10,7 @@
   let trigger = $state<HTMLButtonElement>();
 
   async function persist(value: string) {
+    if (readOnly) return;
     const res = await fetch(
       `/api/nickname?account=${encodeURIComponent(email)}`,
       {
@@ -31,7 +32,7 @@
         const data = await res.json();
         if (!alive) return;
         nickname = data.nickname;
-        if (!data.exists) {
+        if (!data.exists && !readOnly) {
           const previous = localStorage.getItem(storageKey);
           if (previous) {
             await persist(previous);
@@ -49,6 +50,7 @@
   });
 
   async function edit() {
+    if (readOnly) return;
     draft = nickname;
     editing = true;
     await tick();
@@ -77,7 +79,8 @@
 
 <div class="nickname">
   <i style:background={color} aria-hidden="true"></i>
-  {#if editing}
+  {#if readOnly}<span title="Run locally: garcon accounts nickname EMAIL NAME">{nickname || email}</span>
+  {:else if editing}
     <form onsubmit={save}>
       <input
         bind:this={input}

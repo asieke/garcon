@@ -26,7 +26,7 @@
 		<h1>HTTP API</h1>
 		<p class="lede">The local endpoints behind the dashboard.</p>
 
-<section id="api"><p>Base URL: <code>http://127.0.0.1:4141</code>. Garcon defaults to loopback access and has no app login. Read endpoints generally accept GET and HEAD; individual mutation routes enforce local Host, client, and Origin checks. Don't expose this API as a public service.</p>
+<section id="api"><p>Base URL: <code>http://127.0.0.1:4141</code>. Garcon defaults to loopback access and has no app login. Read endpoints generally accept GET and HEAD. With <code>-allow-remote</code>, an explicit read allowlist rejects dashboard mutations with <code>403 Remote mode: view-only</code>, regardless of method, localhost access, or forwarded headers. Manage through the local CLI's private Unix socket. Local-mode mutation routes retain their Host, client, and Origin checks. Don't expose this API as a public service.</p>
 <h2>Requests and sessions</h2>
 <dl>
 <dt>GET /api/sessions</dt><dd>Up to 1,000 saved assignments, in-flight first, then most recently used. Includes <code>session_id</code>, account, model, counts, timestamps, <code>active_reviews</code>, <code>active_since</code>, and last request state/status/error. Local clients may receive <code>task</code> with title, cwd, and archived. Missing task metadata is omitted.</dd>
@@ -39,11 +39,12 @@
 <h2>Accounts and settings</h2>
 <dl>
 <dt>GET /api/routing/codex · PUT</dt><dd>Read routing status or change enrollment. PUT requires <code>enabled</code>; optional <code>accounts</code> selects IDs and <code>priorities</code> maps IDs to 1–99. <a href="codex-routing.md">Routing rules</a>.</dd>
+<dt>GET /api/accounts · GET /api/providers</dt><dd>Account snapshots (including OpenRouter key presence, never the key) and configured provider destinations. Manage with <code>garcon accounts</code> and <code>garcon providers</code> locally. <code>GET /api/config</code> includes <code>remote_read_only</code>.</dd>
 <dt>GET /api/limits · POST /api/limits/refresh</dt><dd>Cached subscription snapshots; POST requests background collection and returns 202. <a href="subscription-limits.md">Fields and refresh behavior</a>.</dd>
 <dt>POST /api/accounts/login</dt><dd>Start browser sign-in with <code>{"provider":"codex"}</code> or <code>{"provider":"claude"}</code>. Poll <code>GET ?id=…</code>; cancel with DELETE and the same ID. Only one attempt runs at a time. States include starting, waiting, discovering, connected, error, and cancelled.</dd>
 <dt>GET /api/providers/openrouter · PUT · DELETE</dt><dd>Read <code>configured</code>, save <code>{"key":"…"}</code>, or remove the local key. Reads never return it. Saving doesn't validate it upstream.</dd>
 <dt>GET /api/nickname?account=… · PUT</dt><dd>Read a local nickname or save <code>{"nickname":"…"}</code> for that account.</dd>
-<dt>GET /api/prices · POST</dt><dd>Cached API list prices. GET refreshes an old or missing catalog; POST requests a refresh. Prices come from OpenRouter's public catalog and are cached in SQLite.</dd>
+<dt>GET /api/prices · POST</dt><dd>Cached API list prices. In local mode, GET refreshes an old or missing catalog and POST requests a refresh. Remote-mode GET only reads the cache; use <code>garcon prices refresh</code> locally. Prices come from OpenRouter's public catalog and are cached in SQLite.</dd>
 <dt>GET /api/config</dt><dd>Listen address, data path, row count, uptime start, version, provider endpoints, and implicit harnesses.</dd>
 </dl>
 <h2>Record conventions</h2>

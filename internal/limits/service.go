@@ -97,15 +97,12 @@ func New(dir string, databases ...*database.DB) *Service {
 		_ = s.db.Get("limits", &s.cache)
 		filtered := []Account{}
 		for _, a := range s.cache.Accounts {
-			if a.Provider == "codex" {
-				a.Status = "stale"
-				filtered = append(filtered, a)
-			}
+			a.Status = "stale"
+			filtered = append(filtered, a)
 		}
 		s.cache.Accounts = filtered
 		s.cache.Refreshing = false
-		s.discover = func(ctx context.Context) []source { return discoverCodex(home) }
-		s.maintain = nil
+		s.discover = func(ctx context.Context) []source { return append(discoverCodex(home), discoverClaude(ctx, home)...) }
 	}
 	return s
 }

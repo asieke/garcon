@@ -54,7 +54,25 @@ Open [the compact widget](http://127.0.0.1:4141/usage-widget/) for Codex and Cla
 
 Garcon stores request metadata, account assignments, preferences, and snapshots in `~/.local/share/garcon/usage.db`. It doesn't save prompts, response bodies, or OAuth tokens in the ledger. Provider CLIs own their logins. A saved OpenRouter key lives in a separate owner-only file.
 
-Task titles and paths are read from Codex's local index without changing it. Data stays on this machine; there is no cross-device sync. Garcon has no app login, so keep its default loopback binding. `-allow-remote` exposes the dashboard and relay to the network.
+Task titles and paths are read from Codex's local index without changing it. Data stays on this machine; there is no cross-device sync. Garcon has no app login, so keep its default loopback binding. `-allow-remote` exposes a **view-only dashboard** and the relay to the network. Dashboard mutations return `403` even from localhost or behind a reverse proxy. The dashboard and compact widget show **Remote mode: view-only**; account setup offers short, copyable Codex skills for Codex, Claude, and OpenRouter in both modes.
+
+Manage the running server from a terminal on that machine (or over SSH):
+
+```sh
+garcon providers list
+garcon providers add example https://api.example.com
+garcon providers remove example
+garcon accounts login codex --profile work
+garcon accounts login claude --profile work
+garcon accounts refresh
+garcon accounts list
+garcon routing show
+printf '%s' '{"enabled":true,"accounts":["ACCOUNT_ID"],"priorities":{"ACCOUNT_ID":1}}' | garcon routing set --json-stdin
+```
+
+Use an unused profile name to keep existing logins intact. `garcon accounts logout codex|claude --profile NAME` signs out that profile. Claude profiles connect with `garcon claude --config-dir "$HOME/.claude-garcon-NAME"`; they do not join the Codex pool. Supply an OpenRouter key privately through stdin with `garcon accounts key openrouter --key-stdin`; remove it with `garcon accounts remove-key openrouter`. Never put keys in chat or shell history. Account inventory reports whether a key is stored, not whether it is valid. The stored key is used only for same-origin local OpenRouter relay requests.
+
+Append `--data FILE` to management commands for a non-default server database. Administration uses `<database>.control/admin.sock` (0600) in a private directory (0700), never a browser-accessible TCP endpoint. Changes apply to the running server without a restart. Built-in provider destinations cannot be replaced. `garcon accounts nickname EMAIL NAME` edits account labels; `garcon prices refresh` refreshes prices. In remote mode, reading prices only reads the cache. Background account collection and model relaying continue normally.
 
 ## Update or troubleshoot
 

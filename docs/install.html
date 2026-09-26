@@ -44,7 +44,7 @@ garcon doctor --wait 10s</code></pre></div>
 <p>Production uses <strong>4141</strong>. <code>bash scripts/dev.sh</code> builds and runs development on <strong>4242</strong>. For frontend hot reload, run <code>npm run dev:frontend</code> from <code>web/</code>; it uses the installed backend. Both modes use real local data. Development builds don't update production.</p>
 <h3 id="uninstall">Remove it</h3>
 <p>Restore your tools' original provider URLs first. Then run <code>garcon service uninstall</code> and <code>npm uninstall -g ai-garcon</code>. Your usage and settings remain.</p>
-<p>Keep the default loopback binding. Garcon has no app login; <code>-allow-remote</code> opens its dashboard and relay to the network.</p>
+<p>Keep the default loopback binding. Garcon has no app login; <code>-allow-remote</code> opens a view-only dashboard and the relay to the network. All dashboard changes are rejected, including from localhost and reverse proxies. Use <code>garcon accounts</code>, <code>garcon providers</code>, and <code>garcon routing</code> locally on the server. The private CLI socket is created alongside the database.</p>
 </section>
 
 		<nav class="pager" aria-label="Pages"><a href="index.html"><small>Previous</small>Overview</a><a class="next" href="connect.html"><small>Next</small>Connect your tools</a></nav>

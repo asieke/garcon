@@ -7,6 +7,8 @@
 
 	let snapshot = $state<LimitsSnapshot | null>(null);
 	let error = $state('');
+	let readOnly = $state(true);
+	let remoteMode = $state(false);
 	let requesting = $state(false);
 	let now = $state(Date.now());
 	const groups = $derived(widgetGroups(snapshot?.accounts ?? []));
@@ -18,13 +20,17 @@
 
 	async function load() {
 		try {
+			const config = await fetch('/api/config');
+			if (!config.ok) throw new Error();
+			remoteMode = (await config.json()).remote_read_only;
+			readOnly = remoteMode !== false;
 			const res = await fetch('/api/limits');
 			if (!res.ok) throw new Error();
 			snapshot = await res.json(); error = '';
-		} catch { error = 'Cannot reach Garcon. Retrying automatically.'; }
+		} catch { readOnly = true; error = 'Cannot reach Garcon. Retrying automatically.'; }
 	}
 	async function refresh() {
-		if (busy) return;
+		if (busy || readOnly) return;
 		requesting = true;
 		try {
 			const res = await fetch('/api/limits/refresh', { method: 'POST' });
@@ -55,8 +61,9 @@
 	<section class="widget" aria-label="Account usage widget">
 		<header>
 			<h1><a href="/?view=limits" title="Open the full Limits dashboard">Usage</a></h1>
-			<div class="summary"><span>{snapshot?.accounts.length ?? 0} profiles</span><span class:stale title={checkedAt > 0 ? `Last provider check: ${new Date(checkedAt).toLocaleString()}` : undefined}>{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}</span>{#if staleAccounts}<span class="stale">{staleAccounts} {staleAccounts === 1 ? 'profile needs' : 'profiles need'} attention</span>{/if}<button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button></div>
+			<div class="summary"><span>{snapshot?.accounts.length ?? 0} profiles</span><span class:stale title={checkedAt > 0 ? `Last provider check: ${new Date(checkedAt).toLocaleString()}` : undefined}>{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}</span>{#if staleAccounts}<span class="stale">{staleAccounts} {staleAccounts === 1 ? 'profile needs' : 'profiles need'} attention</span>{/if}{#if !readOnly}<button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button>{/if}</div>
 		</header>
+		{#if remoteMode}<p class="notice" role="status"><strong>Remote mode: view-only</strong> · Run <code>garcon accounts refresh</code> locally. Nicknames: <code>garcon accounts nickname EMAIL NAME</code>.</p>{/if}
 		{#if error || snapshot?.error}<p class="notice" role="status">{error || snapshot?.error}</p>{/if}
 		<div class="columns" aria-hidden="true"><span>Tool</span><span>Window</span><span>Used</span><span>Resets in</span></div>
 		{#each groups as group, i (group.key)}
@@ -83,7 +90,7 @@
 		{:else}
 			<p class="empty" role="status">{!snapshot || busy ? 'Loading account usage…' : 'No local subscription logins found. Sign in with Codex or Claude, then refresh.'}</p>
 		{/each}
-		<footer aria-label="Account color key">{#each groups as group, i (group.key)}<div class="account-key"><AccountNickname email={group.label} color={groupColors[i % groupColors.length]} />{#each group.accounts.filter(a => a.provider === 'codex') as account (account.id)}<ResetCredits {account} {now} compact />{/each}</div>{/each}</footer>
+		<footer aria-label="Account color key">{#each groups as group, i (group.key)}<div class="account-key"><AccountNickname {readOnly} email={group.label} color={groupColors[i % groupColors.length]} />{#each group.accounts.filter(a => a.provider === 'codex') as account (account.id)}<ResetCredits {account} {now} compact />{/each}</div>{/each}</footer>
 	</section>
 </main>
 <RequestTicker accountColors={Object.fromEntries(groups.map((group, i) => [group.key, groupColors[i % groupColors.length]]))} />
