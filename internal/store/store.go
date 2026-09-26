@@ -4,6 +4,7 @@ package store
 import (
 	"encoding/json"
 	"garcon/internal/accounts"
+	"garcon/internal/codexmetadata"
 	"garcon/internal/database"
 	"garcon/internal/usage"
 	"log"
@@ -13,6 +14,7 @@ import (
 
 type Store struct {
 	DB       *database.DB
+	Tasks    *codexmetadata.Reader
 	mu       sync.Mutex
 	recent   []RecentRecord
 	baseline int

@@ -899,6 +899,30 @@ td code,
 .session-id strong {
   font: 11px var(--desk-mono);
 }
+.task-title {
+  display: block;
+  max-width: 360px;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--desk-ink);
+  font: inherit;
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  min-width: 180px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.task-title:hover { text-decoration: underline; }
+.session-reference { display: flex; align-items: center; gap: 4px; }
+.session-activity { white-space: nowrap; }
+.request-task-name { font-weight: 600; overflow-wrap: anywhere; }
+.ticker-task { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .session-symbol {
   color: var(--desk-muted);
   display: grid;

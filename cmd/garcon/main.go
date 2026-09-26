@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"garcon/internal/claude"
+	"garcon/internal/codexmetadata"
 	"garcon/internal/codexrouting"
 	"garcon/internal/dashboard"
 	"garcon/internal/limits"
@@ -97,6 +98,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer st.Close()
+	st.Tasks = codexmetadata.New()
 	log.SetOutput(io.MultiWriter(os.Stderr, st.DB))
 	li := limits.New(st.Dir(), st.DB)
 	go li.Run(context.Background())
