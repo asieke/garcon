@@ -1840,3 +1840,19 @@ td code,
 .skill-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 340px; overflow: auto; }
 
 .profile-input select { margin-left: 12px; padding: 6px 8px; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 4px; }
+
+/* Both inventory and provider rows use AccountUsage and the same quota snapshot. */
+.usage-explanation { color: var(--desk-muted); font-size: 11px; margin: -6px 0 18px; }
+.account-inventory { margin-bottom: 28px; }
+.inventory-add-account { margin: 0 !important; padding: 17px 22px !important; }
+.provider-explanation { padding: 16px 22px; color: var(--desk-muted); font-size: 11px; line-height: 1.6; }
+.provider-destinations { margin: 24px 0; color: var(--desk-muted); font-size: 11px; }
+.provider-destinations summary { cursor: pointer; }
+.provider-destinations code { display: block; margin: 9px 0; overflow-wrap: anywhere; }
+.openrouter-summary { display: grid; grid-template-columns: minmax(180px,.8fr) minmax(0,1.5fr); gap: 28px; padding: 22px; font-size: 12px; }
+.openrouter-summary p { color: var(--desk-muted); font-size: 10px; }
+.account-row.excluded { opacity: 1; }
+@media (min-width: 761px) {
+  .account-columns, .account-row { grid-template-columns: minmax(150px,.85fr) minmax(200px,1.5fr) 72px 60px 52px; gap: 16px; }
+}
+@media (max-width: 850px) { .openrouter-summary { grid-template-columns: 1fr; gap: 16px; } }

@@ -1,11 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import type { LimitAccount } from "$lib/limits";
+  import AccountUsage from "$lib/console/AccountUsage.svelte";
+  import AccountSummaryRow from "$lib/console/AccountSummaryRow.svelte";
+  import { quotaForRoute, usageAccounts } from "$lib/console/account-usage";
+  import claudeLogo from "$lib/assets/providers/claude-app.png";
   import codexSkill from "$lib/account-skills/codex.md?raw";
   import claudeSkill from "$lib/account-skills/claude.md?raw";
   import openrouterSkill from "$lib/account-skills/openrouter.md?raw";
   const accountSkills = { codex: codexSkill, claude: claudeSkill, openrouter: openrouterSkill };
   let skillProvider = $state<keyof typeof accountSkills>("codex");
-  let inventory = $state<{accounts: {id:string; provider:string; email:string; status:string}[]; openrouter_configured?: boolean}>({accounts:[]});
+  let inventory = $state<{accounts: LimitAccount[]; openrouter_configured?: boolean}>({accounts:[]});
   let providerURLs = $state<Record<string,string>>({});
   let configReady = $state(false);
   import Icon from "$lib/console/Icon.svelte";
@@ -17,7 +22,6 @@
     tokens,
     cost,
     ago,
-    duration,
     initials,
     tone,
     mergeGroups,
@@ -32,6 +36,10 @@
   type View = "accounts" | "sessions" | "analytics" | "logs";
   let view = $state<View>("accounts");
   let routing = $state<Routing>({ enabled: false, accounts: [] });
+  const accountRows = $derived(usageAccounts(inventory.accounts, routing.accounts));
+  const accountCount = $derived(accountRows.length + (inventory.openrouter_configured ? 1 : 0));
+  const claudeRows = $derived(accountRows.filter(a => a.provider === "claude"));
+  let claudeExpanded = $state(true);
   let sessions = $state<Session[]>([]),
     aggregates = $state<Aggregate[]>([]),
     feed = $state<RequestRow[]>([]);
@@ -75,7 +83,7 @@
     {
       id: "accounts",
       label: "Accounts",
-      description: "Manage Codex accounts and routing priorities.",
+      description: "Subscription usage for every account, wherever it is used.",
     },
     {
       id: "sessions",
@@ -471,7 +479,7 @@
           aria-current={view === item.id ? "page" : undefined}
           ><Icon name={item.id} /><span>{item.label}</span
           >{#if item.id === "accounts"}<small
-              >{routing.accounts.length.toString().padStart(2, "0")}</small
+              >{accountCount.toString().padStart(2, "0")}</small
             >{:else if item.id === "sessions" && active > 0}<small
               class="active-count">{active}</small
             >{/if}</button
@@ -521,7 +529,7 @@
       <div class="page-heading">
         <div>
           <div class="eyebrow">YOUR LOCAL ROUTING DESK</div>
-          <h1>{view === "accounts" ? "Account selection" : title.label}</h1>
+          <h1>{view === "accounts" ? "Accounts & providers" : title.label}</h1>
           <p>{title.description}</p>
         </div>
         <div class="heading-actions">
@@ -561,6 +569,17 @@
           <span class="loading-line"></span>Loading…
         </div>
       {:else if view === "accounts"}
+        <section aria-label="Connected accounts" class="account-inventory">
+          <div class="section-label"><span>ACCOUNTS</span><span>{accountCount} connected</span></div>
+          <p class="usage-explanation">Usage is the percentage of each allowance consumed. Limits belong to an account and are shared across clients.</p>
+          <div class="provider-card">
+            {#each accountRows as account (account.key)}<AccountSummaryRow {account} {now}/>{/each}
+            {#if inventory.openrouter_configured}<div class="openrouter-summary"><div><strong>OpenRouter</strong><p>API key saved · not verified</p></div><AccountUsage provider="openrouter" {now}/></div>{/if}
+            {#if !accountRows.length && !inventory.openrouter_configured}<div class="empty-state"><h3>No connected accounts</h3><p>Add an account to see its subscription limits.</p></div>{/if}
+            <button class="add-inline inventory-add-account" onclick={() => (modal = "account")}><Icon name="plus" size={16}/> Add account · copy setup skill</button>
+          </div>
+        </section>
+        <div class="section-label"><span>PROVIDERS</span><span>The same account limits in each client</span></div>
         <section class="routing-overview" aria-label="Routing overview">
           <div class="flow-intro">
             <span class="mini-label"
@@ -576,7 +595,7 @@
           </div>
         </section>
         <div class="section-label">
-          <span>ACCOUNT POOL</span><span
+          <span>CODEX ROUTING</span><span
             >{enrolled.length} enrolled <span class="separator">/</span>
             {routing.accounts.length} discovered</span
           >
@@ -655,12 +674,13 @@
                     </div>
                   </div>
                   <div class="account-columns">
-                    <span>ACCOUNT</span><span>AVAILABLE USAGE</span><span
+                    <span>ACCOUNT</span><span>SUBSCRIPTION USAGE</span><span
                       >ROUTING SCORE</span
                     ><span>PRIORITY</span><span>IN POOL</span>
                   </div>
                   {#each routing.accounts.filter((a) => a.priority === group) as a (a.id)}<div
                       class="account-row"
+                      data-account-id={quotaForRoute(a, inventory.accounts)?.id || `routing:${a.id}`}
                       class:excluded={!a.enrolled}
                     >
                       <div class="account-identity">
@@ -689,34 +709,7 @@
                         </div>
                       </div>
                       <div class="account-usage">
-                        {#if a.remaining_percent !== null}<div
-                            class="usage-top"
-                          >
-                            <strong
-                              >{a.remaining_percent.toFixed(0)}<small
-                                >% left</small
-                              ></strong
-                            ><span>{duration(a.hours_left)} to reset</span>
-                          </div>
-                          <div class="meter">
-                            <span
-                              class:low={a.remaining_percent < 15}
-                              style:width={`${a.remaining_percent}%`}
-                            ></span>
-                          </div>
-                          {#if a.windows.filter( (w) => w.id.startsWith("codex:") ).length > 1}<div
-                              class="quota-details"
-                            >
-                              {#each a.windows.filter( (w) => w.id.startsWith("codex:") ) as w}<span
-                                  title={`Resets ${new Date(w.resets_at).toLocaleString()}`}
-                                  >{w.label}: {w.used_percent === null
-                                    ? "—"
-                                    : (100 - w.used_percent).toFixed(0)}% left</span
-                                >{/each}
-                            </div>{/if}{:else}<span class="muted"
-                            >Usage unavailable</span
-                          >
-                          <div class="meter"></div>{/if}
+                        <AccountUsage quota={quotaForRoute(a, inventory.accounts)} provider="codex" {now}/>
                       </div>
                       <div class="score">
                         <strong
@@ -758,16 +751,27 @@
               >
             </div>{/if}
         </section>
-        <section class="remote-notice" aria-label="Other providers and local commands">
-          <strong>Providers</strong>
-          {#each Object.entries(providerURLs) as [name, url]}<span>{name} · {url}</span>{/each}
-          {#each inventory.accounts.filter(a => a.provider !== "codex") as a}<span>{a.provider} · {a.email || a.id} · {a.status}</span>{/each}
-          <span>OpenRouter key: {inventory.openrouter_configured ? "saved (not verified)" : "not configured"}</span>
+        <section class="provider-card" aria-label="Claude Code provider">
+          <div class="provider-header">
+            <button class="provider-title" onclick={() => (claudeExpanded = !claudeExpanded)} aria-expanded={claudeExpanded} aria-controls="claude-accounts">
+              <span class="provider-logo"><img src={claudeLogo} width="32" height="32" alt=""/></span>
+              <span><strong>Claude Code</strong><small>{claudeRows.length} accounts · Claude OAuth</small></span>
+              <span class="provider-chevron" class:open={claudeExpanded}><Icon name="chevron" size={16}/></span>
+            </button>
+            <button class="button secondary" onclick={() => { skillProvider = "claude"; modal = "account"; }}>Add Claude account</button>
+          </div>
+          {#if claudeExpanded}<div id="claude-accounts">
+            {#each claudeRows as account (account.key)}<AccountSummaryRow {account} {now}/>
+            {:else}<div class="empty-state"><h3>No Claude accounts found</h3><p>Add a Claude login to see its reported limits.</p></div>{/each}
+            <p class="provider-explanation">Claude Code uses the account signed in to its selected profile. The 5-hour, weekly, and model-specific allowances shown here are the same limits shown in Accounts above.</p>
+          </div>{/if}
+        </section>
+        <details class="provider-destinations"><summary>Provider destinations & local commands</summary>
+          {#each Object.entries(providerURLs) as [name, url]}<p>{name} · {url}</p>{/each}
           <code>garcon providers add NAME HTTPS_ORIGIN</code>
           <code>garcon providers remove NAME</code>
           {#if readOnly}<code>garcon accounts refresh</code><code>garcon routing set --json-stdin</code>{/if}
-          <button class="button secondary" onclick={() => (modal = "account")}>Add provider · copy setup skill</button>
-        </section>
+        </details>
         <div class="routing-notes">
           <div>
             <span class="note-icon"><Icon name="analytics" /></span>

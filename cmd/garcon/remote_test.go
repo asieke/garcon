@@ -247,3 +247,49 @@ func TestLoginUsesSeparateProfiles(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountReadsPreserveIndependentProviderWindows(t *testing.T) {
+	_, _, st := testHandlers(t, true)
+	zero, weekly, fable, codex := 0.0, 14.0, 5.0, 2.0
+	snapshot := limits.Snapshot{Accounts: []limits.Account{
+		{ID: "claude:one", Provider: "claude", Email: "same@example.com", Status: "fresh", FetchedAt: time.Now().UnixMilli(), Windows: []limits.Window{
+			{ID: "session", Label: "5-hour", UsedPercent: &zero, WindowSeconds: 18000},
+			{ID: "week", Label: "Weekly", UsedPercent: &weekly, WindowSeconds: 604800, ResetsAt: time.Now().Add(48 * time.Hour).UnixMilli()},
+			{ID: "fable", Label: "Fable · Weekly", UsedPercent: &fable, WindowSeconds: 604800, ResetsAt: time.Now().Add(48 * time.Hour).UnixMilli()},
+		}},
+		{ID: "codex:one", Provider: "codex", Email: "same@example.com", Workspace: "codex-workspace", Status: "fresh", FetchedAt: time.Now().UnixMilli(), Windows: []limits.Window{
+			{ID: "codex:0", Label: "Weekly", UsedPercent: &codex, WindowSeconds: 604800},
+		}},
+	}}
+	if err := st.DB.Put("limits", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	li := limits.New(st.Dir(), st.DB)
+	routing := codexrouting.New(st.Dir(), li.Snapshot, st.DB)
+	web, _, err := newHandlers(st, li, routing, "0.0.0.0:4141", true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/accounts", "/api/limits"} {
+		w := request(web, "GET", path, "")
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body)
+		}
+		var got limits.Snapshot
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Accounts) != 2 {
+			t.Fatal("accounts combined", got)
+		}
+		for _, a := range got.Accounts {
+			if a.Provider == "claude" {
+				if len(a.Windows) != 3 || *a.Windows[0].UsedPercent != 0 || a.Windows[0].ResetsAt != 0 || *a.Windows[1].UsedPercent != 14 || *a.Windows[2].UsedPercent != 5 {
+					t.Fatalf("lost Claude limits: %+v", a.Windows)
+				}
+			} else if len(a.Windows) != 1 || *a.Windows[0].UsedPercent != 2 {
+				t.Fatalf("invented or altered Codex limits: %+v", a.Windows)
+			}
+		}
+	}
+}

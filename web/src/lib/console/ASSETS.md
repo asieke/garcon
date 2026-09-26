@@ -12,3 +12,7 @@ The same original icon is displayed in both light and dark themes.
 
 The OpenAI logo belongs to OpenAI. Its use identifies the supported provider
 and does not imply endorsement. See [OpenAI brand guidelines](https://openai.com/brand/).
+
+`../assets/providers/claude-app.png` is reused byte-for-byte from the existing
+local Providers dashboard asset. It identifies Claude in both the account
+inventory and provider header; no pixels were changed.

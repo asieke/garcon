@@ -50,6 +50,8 @@ The ticker and request inspector also show task names. **Analytics** shows token
 
 ## Limits and local data
 
+The account inventory and nested provider rows share the same usage display. Every reported allowance has a numerical **percentage used**, a meter, and its own reset time. Claude includes 5-hour, weekly all-model, and Fable weekly limits when reported; Codex shows whichever general and feature-specific windows that account reports. Missing values and reset times stay explicitly unknown. Stale or expired snapshots are labeled as last reported rather than implying fresh capacity.
+
 Open [the compact widget](http://127.0.0.1:4141/usage-widget/) for Codex and Claude allowances, reset times, and Codex reset credits. Press **R** to refresh. Provider limits include work done outside Garcon; missing data isn't counted as unused quota.
 
 Garcon stores request metadata, account assignments, preferences, and snapshots in `~/.local/share/garcon/usage.db`. It doesn't save prompts, response bodies, or OAuth tokens in the ledger. Provider CLIs own their logins. A saved OpenRouter key lives in a separate owner-only file.
