@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Icon from "$lib/console/Icon.svelte";
+  import CodexLogo from "$lib/console/CodexLogo.svelte";
   import { parseCatalog, type Catalog } from "$lib/pricing";
   import {
     count,
@@ -65,23 +66,22 @@
     {
       id: "accounts",
       label: "Accounts",
-      description: "Choose your accounts. Let Garcon handle the rest.",
+      description: "Manage Codex accounts and routing priorities.",
     },
     {
       id: "sessions",
       label: "Sessions",
-      description: "Every conversation, connected to the account behind it.",
+      description: "Session assignments and recent activity.",
     },
     {
       id: "analytics",
       label: "Analytics",
-      description: "A clear picture of your compute, from tokens to cost.",
+      description: "Usage, models, and estimated API cost.",
     },
     {
       id: "logs",
       label: "Logs",
-      description:
-        "The complete local request ledger. Every route, every result.",
+      description: "Search requests and service logs.",
     },
   ];
   const title = $derived(views.find((v) => v.id === view)!);
@@ -391,7 +391,7 @@
 </script>
 
 <svelte:head
-  ><title>Garcon — Your local routing desk</title><meta
+  ><title>Garcon</title><meta
     name="description"
     content="One local home for Codex accounts, sessions, and usage."
   /></svelte:head
@@ -415,9 +415,7 @@
         navigate("accounts");
       }}
       aria-label="Garcon home"
-      ><span class="brand-mark">g<span>•</span></span><span
-        >garcon<span class="brand-period">.</span></span
-      ></a
+      ><span class="brand-mark">g<span>•</span></span><span>Garcon</span></a
     >
     <div class="workspace">
       <span class="workspace-symbol"><Icon name="terminal" size={16} /></span>
@@ -513,7 +511,7 @@
           reconnecting automatically.
         </div>{/if}
       {#if !loaded}<div class="loading-state">
-          <span class="loading-line"></span>Opening your routing desk…
+          <span class="loading-line"></span>Loading…
         </div>
       {:else if view === "accounts"}
         <section class="routing-overview" aria-label="Routing overview">
@@ -521,41 +519,13 @@
             <span class="mini-label"
               ><span class="status-dot" class:offline={!routing.enabled}
               ></span>{routing.enabled
-                ? "SMART ROUTING IS ON"
-                : "SMART ROUTING IS OFF"}</span
+                ? "Automatic routing enabled"
+                : "Automatic routing disabled"}</span
             >
-            <h2>
-              {routing.enabled
-                ? "The right account.\nFor every new session."
-                : "Your accounts, in sync."}
-            </h2>
-            <p>
-              Set your priorities. Garcon finds the best available account and
-              keeps each conversation connected.
-            </p>
-          </div>
-          <div class="route-diagram">
-            <div class="flow-node">
-              <span class="node-icon"><Icon name="terminal" size={24} /></span
-              ><strong>Codex</strong><small>Desktop & CLI</small>
-            </div>
-            <span class="flow-line"><i></i></span>
-            <div class="flow-node center-node">
-              <span class="node-icon">g<span>•</span></span><strong
-                >Garcon</strong
-              ><small>Local router</small>
-            </div>
-            <span class="flow-line"><i></i></span>
-            <div class="flow-node destination">
-              <span
-                class="node-icon account-avatar tone-{tone(next?.email ?? '')}"
-                >{next ? initials(next.email) : "—"}</span
-              ><strong
-                >{next ? next.email.split("@")[0] : "Awaiting account"}</strong
-              ><small
-                >{next ? "Next eligible account" : "No eligible account"}</small
-              >
-            </div>
+            <span class="routing-next"
+              >Next account <strong>{next?.email ?? "None available"}</strong
+              ></span
+            >
           </div>
         </section>
         <div class="section-label">
@@ -570,9 +540,7 @@
               class="provider-title"
               onclick={() => (expanded = !expanded)}
               aria-expanded={expanded}
-              ><span class="provider-logo"
-                ><Icon name="terminal" size={23} /></span
-              ><span
+              ><span class="provider-logo"><CodexLogo size={32} /></span><span
                 ><strong>Codex</strong><small>OpenAI OAuth accounts</small
                 ></span
               ><span class="provider-chevron" class:open={expanded}
@@ -604,7 +572,7 @@
                   <span class="empty-icon"
                     ><Icon name="accounts" size={28} /></span
                   >
-                  <h3>Your first account starts here.</h3>
+                  <h3>No accounts found</h3>
                   <p>
                     Sign in to Codex with a local profile. Garcon will discover
                     it automatically.
@@ -747,7 +715,7 @@
           <div>
             <span class="note-icon"><Icon name="analytics" /></span>
             <div>
-              <h3>A simple, transparent score.</h3>
+              <h3>Routing order</h3>
               <p>
                 Remaining quota ÷ hours until reset. Highest score wins within a
                 priority group; the most constrained window sets the score.
@@ -757,7 +725,7 @@
           <div>
             <span class="note-icon"><Icon name="link" /></span>
             <div>
-              <h3>Conversations stay connected.</h3>
+              <h3>Session assignments</h3>
               <p>
                 Priority changes apply to new sessions. Existing sessions keep
                 their account, even after a restart.
@@ -862,9 +830,7 @@
           {#if !filteredSessions.length}<div class="empty-state">
               <Icon name="sessions" size={30} />
               <h3>
-                {sessionQuery
-                  ? "No matching sessions."
-                  : "Ready for your next conversation."}
+                {sessionQuery ? "No matching sessions." : "No sessions yet"}
               </h3>
               <p>
                 {sessionQuery
@@ -975,7 +941,7 @@
                 <h3>
                   {query || errorsOnly
                     ? "No matching requests."
-                    : "A clean slate."}
+                    : "No requests yet"}
                 </h3>
                 <p>
                   {query || errorsOnly
@@ -1079,17 +1045,17 @@
             <div>
               <h2>
                 {metric === "cost"
-                  ? "Compute, in dollars."
+                  ? "Estimated cost"
                   : metric === "models"
-                    ? "Every model call."
-                    : "Your compute rhythm."}
+                    ? "Model requests"
+                    : "Token usage"}
               </h2>
               <p>
                 {metric === "cost"
                   ? "Estimated API equivalent, not your subscription bill."
                   : metric === "models"
                     ? "Completed and failed requests across your models."
-                    : "Token volume through your local routing desk."}
+                    : "Tokens processed through Garcon."}
               </p>
             </div>
             <span class="chart-legend"
@@ -1138,7 +1104,7 @@
                 ><span>Now</span>
               </div>
               {#if totalRequests === 0}<div class="chart-empty">
-                  Your first request starts the story.
+                  No requests in this period.
                 </div>{/if}
             </div>
           </div>
@@ -1310,7 +1276,7 @@
           }}><Icon name="close" /></button
         >
       </div>
-      {#if selected}<h2>One request.<br />The whole picture.</h2>
+      {#if selected}<h2>Request details</h2>
         <div class="detail-status">
           <span
             class="status-label"
@@ -1338,9 +1304,9 @@
           />{copied === "request" ? "Copied" : "Copy request metadata"}</button
         >
       {:else if modal === "account"}<span class="drawer-art"
-          ><Icon name="terminal" size={36} /><span>+</span></span
+          ><CodexLogo size={36} /><span>+</span></span
         >
-        <h2>Another account.<br />More room to build.</h2>
+        <h2>Add Codex account</h2>
         <p class="drawer-description">
           Each Codex profile holds its own OpenAI login. Garcon discovers
           profiles on this computer automatically.
@@ -1406,7 +1372,7 @@
           once. Credentials remain in Codex's own files.
         </p>
       {:else}<span class="drawer-art"><Icon name="link" size={36} /></span>
-        <h2>One endpoint.<br />All your accounts.</h2>
+        <h2>Connect Codex</h2>
         <p class="drawer-description">
           Add this provider to <code>~/.codex/config.toml</code>. Keep your
           existing model and other preferences. Restart Codex Desktop or start a
