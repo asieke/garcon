@@ -71,7 +71,7 @@
     {
       id: "sessions",
       label: "Sessions",
-      description: "Session assignments and recent activity.",
+      description: "Find your Codex tasks and see which account is serving them.",
     },
     {
       id: "analytics",
@@ -98,11 +98,29 @@
     sessions.filter(
       (s) =>
         (!activeOnly || s.active > 0) &&
-        `${s.session_id} ${s.account} ${s.model} ${s.account_id}`
+        `${s.task?.title ?? ""} ${s.task?.cwd ?? ""} ${s.session_id} ${s.account} ${s.model} ${s.account_id}`
           .toLowerCase()
           .includes(sessionQuery.toLowerCase()),
     ),
   );
+  const sessionIndex = $derived(new Map(sessions.map((s) => [s.session_id, s])));
+  function taskName(id?: string) {
+    return id ? sessionIndex.get(id)?.task?.title || `Session ${id.slice(0, 8)}…${id.slice(-6)}` : "Unassigned session";
+  }
+  function projectName(s: Session) {
+    return s.task?.cwd.split(/[\\/]/).filter(Boolean).at(-1) || "Project unavailable";
+  }
+  function sessionActivity(s: Session) {
+    if (s.active > s.active_reviews) return "Model responding";
+    if (s.active > 0) return "Background review";
+    if (s.last_state === "failed" || s.last_status >= 400) return "Last request failed";
+    if (s.last_state === "interrupted") return "Last request interrupted";
+    return "No model request";
+  }
+  function elapsed(t: number) {
+    const seconds = Math.max(0, Math.floor((now - t) / 1000));
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
   const totalTokens = $derived(aggregates.reduce((n, r) => n + tokens(r), 0));
   const totalRequests = $derived(
     aggregates.reduce((n, r) => n + r.requests, 0),
@@ -363,6 +381,8 @@
   }
   function sessionLogs(s: Session) {
     query = s.session_id || s.account_id;
+    logMode = "requests";
+    errorsOnly = false;
     offset = 0;
     navigate("logs");
   }
@@ -739,7 +759,7 @@
             <span>TRACKED SESSIONS</span><strong>{sessions.length}</strong>
           </div>
           <div>
-            <span>ACTIVE NOW</span><strong
+            <span>SESSIONS IN FLIGHT</span><strong
               >{sessions.filter((s) => s.active > 0).length}<i class="tiny-live"
               ></i></strong
             >
@@ -752,8 +772,7 @@
           <div class="summary-explanation">
             <Icon name="link" />
             <p>
-              One conversation, one account.<br />Assignments persist across
-              restarts.
+              Matched to your local Codex tasks.<br />Active model requests appear first.
             </p>
           </div>
         </div>
@@ -761,7 +780,7 @@
           <div class="panel-toolbar">
             <label class="search-box"
               ><Icon name="search" size={17} /><input
-                placeholder="Find a session, account, or model…"
+                placeholder="Find a task, project, account, or session ID…"
                 aria-label="Search sessions"
                 bind:value={sessionQuery}
               /></label
@@ -769,14 +788,14 @@
               class="filter-button"
               class:selected={activeOnly}
               onclick={() => (activeOnly = !activeOnly)}
-              ><span class="status-dot"></span>Active only</button
+              ><span class="status-dot"></span>In flight only</button
             >
           </div>
           <div class="table-scroll">
             <table class="session-table">
               <thead
                 ><tr
-                  ><th>SESSION</th><th>ROUTED ACCOUNT</th><th>MODEL</th><th
+                  ><th>CODEX TASK</th><th>ACTIVITY</th><th>ROUTED ACCOUNT</th><th>MODEL</th><th
                     >REQUESTS</th
                   ><th>LAST SEEN</th><th></th></tr
                 ></thead
@@ -791,19 +810,20 @@
                           /></span
                         >
                         <div>
-                          <strong title={s.session_id || s.key}
-                            >{s.session_id
-                              ? `${s.session_id.slice(0, 8)}…${s.session_id.slice(-6)}`
-                              : `legacy-${s.key.slice(0, 8)}`}</strong
-                          ><small
-                            >{s.active > 0
-                              ? `${s.active} in flight`
-                              : s.session_id
-                                ? "Account pinned"
-                                : "ID available when resumed"}</small
-                          >
+                          <button class="task-title" title={s.task?.title || s.session_id || s.key}
+                            disabled={!s.session_id} onclick={() => sessionLogs(s)}
+                            >{s.task?.title || (s.session_id ? taskName(s.session_id) : `Legacy session ${s.key.slice(0, 8)}`)}</button>
+                          <small title={s.task?.cwd}>{projectName(s)}{s.task?.archived ? " · Archived" : ""}</small>
+                          <small class="session-reference"><span title={s.session_id || s.key}>{s.session_id ? `${s.session_id.slice(0, 8)}…${s.session_id.slice(-6)}` : "ID available when resumed"}</span>
+                            {#if s.session_id}<button class="row-action" title="Copy full session ID" aria-label={copied === s.key ? "Session ID copied" : `Copy session ID for ${taskName(s.session_id)}`} onclick={() => copy(s.session_id, s.key)}><Icon name={copied === s.key ? "check" : "copy"} size={12}/></button>{/if}
+                            {#if !s.task}<span> · Title unavailable</span>{/if}
+                          </small>
                         </div>
                       </div></td
+                    ><td class="session-activity">
+                        <span class="status-label" class:streaming={s.active > 0} class:bad={s.active === 0 && (s.last_state === "failed" || s.last_state === "interrupted" || s.last_status >= 400)} title={s.last_error || undefined}><span></span>{sessionActivity(s)}</span>
+                        <small>{s.active > 0 ? `${s.active} in flight · ${elapsed(s.active_since)}` : `Last seen ${ago(s.last_seen, now)}`}</small>
+                      </td
                     ><td
                       ><div class="table-account">
                         <span
@@ -834,13 +854,14 @@
               </h3>
               <p>
                 {sessionQuery
-                  ? "Try another account or session identifier."
+                  ? "Try another task title, project, account, or session identifier."
                   : "Start a Codex session through Garcon to see its account assignment here."}
               </p>
             </div>{/if}
           <div class="panel-footer">
-            {filteredSessions.length} sessions
-            <span>Showing the 1,000 most recently used assignments</span>
+            <span>{filteredSessions.length} {filteredSessions.length === 1 ? "session" : "sessions"}</span>
+            <span>Activity reflects model traffic. Tasks may run tools between requests.</span>
+            {#if sessions.length === 1000}<span>Showing up to 1,000 assignments, in-flight first</span>{/if}
           </div>
         </section>
       {:else if view === "logs"}
@@ -915,7 +936,7 @@
                           >{r.method || "POST"} · {r.kind === "request"
                             ? "Metadata request"
                             : r.session_id
-                              ? `Session ${r.session_id.slice(0, 8)}`
+                              ? taskName(r.session_id)
                               : "Completion"}</small
                         ></td
                       ><td class="log-account">{r.account || "Unassigned"}</td
@@ -1198,6 +1219,7 @@
             >
               {#each feed.slice(0, 12) as r}<button
                   class="ticker-item"
+                  title={taskName(r.session_id)}
                   tabindex={duplicate === 1 ? -1 : 0}
                   onclick={() => (selected = r)}
                   ><span
@@ -1212,7 +1234,7 @@
                           r.state === "failed"
                         ? "↘"
                         : "↗"}</span
-                  ><strong>{r.model || "Codex request"}</strong><Icon
+                  >{#if r.session_id}<span class="ticker-task">{taskName(r.session_id)}</span>{/if}<strong>{r.model || "Codex request"}</strong><Icon
                     name="arrow"
                     size={12}
                   /><span>{r.account || "Unassigned"}</span><small
@@ -1277,6 +1299,9 @@
         >
       </div>
       {#if selected}<h2>Request details</h2>
+        {#if selected.session_id}<p class="request-task-name">{taskName(selected.session_id)}</p>
+          {#if sessionIndex.get(selected.session_id)?.task?.cwd}<p class="drawer-fine">{sessionIndex.get(selected.session_id)?.task?.cwd}</p>{/if}
+        {/if}
         <div class="detail-status">
           <span
             class="status-label"

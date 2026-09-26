@@ -44,6 +44,7 @@ export type RequestRow = {
   first_byte_ms?: number;
 };
 export type Session = {
+	task?: { title: string; cwd: string; archived: boolean };
   key: string;
   session_id: string;
   account_id: string;
@@ -53,6 +54,11 @@ export type Session = {
   last_seen: number;
   requests: number;
   active: number;
+  active_reviews: number;
+  active_since: number;
+  last_state: string;
+  last_status: number;
+  last_error: string;
 };
 export type Aggregate = {
   time: number;

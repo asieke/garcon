@@ -109,7 +109,23 @@ Malformed legacy data stops migration with an error rather than silently losing 
 Older hashed-only assignments remain sticky; their readable session ID appears
 when that conversation next passes through Garcon.
 
-The **Sessions** view shows real assignments, active requests, and last activity.
+The **Sessions** view matches session IDs to task titles and workspace paths in
+the local Codex task index. Search by title, project, account, model, or full ID;
+click a title to inspect that task's requests, or copy its full session ID. Titles
+also appear in the request ticker, logs, and request inspector. In-flight sessions
+appear first, with elapsed request time. Background `codex-auto-review` calls are
+identified separately and do not replace the main conversation model.
+
+Activity describes model traffic only: a task may be running tools or waiting for
+input between requests. "No model request" does not mean the Codex task is done.
+Task metadata is read on demand from `state_*.sqlite` in `~/.codex`, `~/.codex-*`,
+and `CODEX_HOME`, using read-only connections. Only matching titles, workspace
+paths, and archive flags are read; they are not copied into Garcon's database.
+This is a best-effort adapter for Codex's private schema: unavailable or newer
+incompatible indexes fall back to session IDs. Metadata is only exposed to local
+clients, including when Garcon uses `-allow-remote`.
+
+The **Sessions** view also shows account assignments and last activity.
 **Logs** is a searchable, paginated request ledger including routing failures,
 upstream errors, and interrupted streams. Requests are inserted at dispatch and
 updated at completion, so in-flight traffic appears in the bottom ticker. A

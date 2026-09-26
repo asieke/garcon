@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"garcon/internal/local"
 	"garcon/internal/usage"
 	"net/http"
 	"strconv"
@@ -20,7 +21,25 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.URL.Path {
 	case "/api/sessions":
-		result, err = s.sessions()
+		var sessions []map[string]any
+		sessions, err = s.sessions()
+		// Task titles and workspace paths are exposed only to local clients,
+		// even if the operator enables the remote usage dashboard.
+		if err == nil && s.Tasks != nil && local.Host(r.RemoteAddr) && local.Host(r.Host) {
+			ids := []string{}
+			for _, session := range sessions {
+				if id := session["session_id"].(string); id != "" {
+					ids = append(ids, id)
+				}
+			}
+			tasks := s.Tasks.Lookup(r.Context(), ids)
+			for _, session := range sessions {
+				if task, ok := tasks[session["session_id"].(string)]; ok {
+					session["task"] = task
+				}
+			}
+		}
+		result = sessions
 	case "/api/logs":
 		result, err = s.logs(r)
 	case "/api/events":
@@ -40,21 +59,33 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Store) sessions() ([]map[string]any, error) {
 	rows, err := s.DB.Query(`SELECT s.key,s.session_id,s.account_id,s.account,s.model,s.created_at,s.last_seen,
  (SELECT count(*) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!=''),
- (SELECT count(*) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.state='streaming')
- FROM sessions s ORDER BY s.last_seen DESC LIMIT 1000`)
+ (SELECT count(*) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.state='streaming') AS active,
+ (SELECT count(*) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.state='streaming' AND r.model='codex-auto-review'),
+ coalesce((SELECT min(time) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.state='streaming'),0),
+ coalesce((SELECT record FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.kind='completion' AND r.model!='codex-auto-review' ORDER BY time DESC,sequence DESC LIMIT 1),'{}')
+ FROM sessions s ORDER BY (active>0) DESC,s.last_seen DESC LIMIT 1000`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var key, id, aid, account, model string
-		var created, last int64
-		var n, active int
-		if err = rows.Scan(&key, &id, &aid, &account, &model, &created, &last, &n, &active); err != nil {
+		var key, id, aid, account, model, latestJSON string
+		var created, last, activeSince int64
+		var n, active, reviews int
+		if err = rows.Scan(&key, &id, &aid, &account, &model, &created, &last, &n, &active, &reviews, &activeSince, &latestJSON); err != nil {
 			return nil, err
 		}
-		out = append(out, map[string]any{"key": key, "session_id": id, "account_id": aid, "account": account, "model": model, "created_at": created, "last_seen": last, "requests": n, "active": active})
+		var latest usage.Record
+		if err = json.Unmarshal([]byte(latestJSON), &latest); err != nil {
+			return nil, err
+		}
+		if latest.Model != "" {
+			model = latest.Model
+		} else if model == "codex-auto-review" {
+			model = ""
+		}
+		out = append(out, map[string]any{"key": key, "session_id": id, "account_id": aid, "account": account, "model": model, "created_at": created, "last_seen": last, "requests": n, "active": active, "active_reviews": reviews, "active_since": activeSince, "last_state": latest.State, "last_status": latest.Status, "last_error": latest.Error})
 	}
 	return out, rows.Err()
 }

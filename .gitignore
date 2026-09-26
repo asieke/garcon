@@ -1,4 +1,5 @@
 /garcon
+/AGENTS.md
 /npm/ai-garcon/dist/
 /internal/dashboard/build/*
 !/internal/dashboard/build/.gitkeep
