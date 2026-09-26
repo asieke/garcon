@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Dashboard · Garcon</title>
-	<meta name="description" content="What each view shows and how the shared filters scope them.">
+	<meta name="description" content="Find an account, follow a task, inspect a request.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,37 +14,34 @@
 		<h2>Start</h2>
 		<a class="nav" href="index.html">Overview</a>
 		<a class="nav" href="install.html">Install</a>
-		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="connect.html">Connect your tools</a>
 		<a class="nav" href="dashboard.html" aria-current="page">Dashboard</a>
 		<h2>Reference</h2>
 		<a class="nav" href="api.html">HTTP API</a>
-		<a class="nav" href="files.html">Files and skills</a>
+		<a class="nav" href="files.html">Local files</a>
 		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
 	</nav>
 
 	<main id="top">
 		<h1>Dashboard</h1>
-		<p class="lede">What each view shows and how the shared filters scope them.</p>
+		<p class="lede">Find an account, follow a task, inspect a request.</p>
 
-		<section id="dashboard">
-			<p>After <code>garcon setup</code>, the empty dashboard guides you to Settings → Connect a harness. Choose your tool, copy its configuration, restart the tool and send one short request. The dashboard refreshes automatically when usage arrives. <a href="connect.html#verify">Verify the first request</a>.</p>
-			<p><a href="http://127.0.0.1:4141">http://127.0.0.1:4141</a>. Usage views share time-range, harness and account filters. Limits and Overview's account-limit summary always show account-wide allowances, independently of these filters. Sidebar group headings collapse and remember your choice in this browser.</p>
-			<dl>
-				<dt>Overview, Usage, Models, Accounts</dt><dd>Request and token volume, composition, rankings.</dd>
-				<dt>Limits</dt><dd>Current Codex and Claude subscription allowances from local logins, including named profiles and Hermes Codex logins. Each meter shows percentage used, a reset countdown, and an elapsed-period marker as an even-use reference. Claude includes five-hour, weekly, and named model limits such as Fable when reported. Multiple harnesses using one subscription share one card. Snapshots refresh every five minutes; only the latest is cached, and quota data stays local. Login files are read-only: open the relevant CLI when a login needs refreshing.</dd>
+<section id="dashboard"><p>Open <a href="http://127.0.0.1:4141">localhost:4141</a>. The app refreshes as requests arrive.</p>
+<dl>
+<dt>Providers</dt><dd>Connected accounts, browser sign-in, and tool configuration. The Codex card shows quota, reset times, health, scores, and pool membership. Connecting an account doesn't automatically enroll it.</dd>
+<dt>Sessions</dt><dd>Codex task names, projects, assigned accounts, and request activity. Search by title, project, account, model, or ID. Click a title for its request history or copy the full session ID. Unavailable titles fall back to IDs.</dd>
+<dt>Analytics</dt><dd>Usage, Cost, and Models tabs with time filters. Cost is an API-equivalent estimate, not a ChatGPT subscription charge. Missing prices are disclosed.</dd>
+<dt>Logs</dt><dd>Searchable request history, including routing errors and interrupted streams. Open a request for its task, account, model, timing, tokens, and errors. Service diagnostics have a separate System tab.</dd>
+</dl>
+<h2>What “active” means</h2>
+<p>In-flight sessions appear first, with elapsed time. Labels distinguish model responses from background reviews. <strong>No model request</strong> doesn't mean a task is finished; it may be running tools or waiting for input.</p>
+<p>Task names come from Codex's local index. Garcon reads them without changing that index or copying titles into its own database. Existing account assignments survive restarts.</p>
+<h2>Keep an eye on usage</h2>
+<p>The bottom ticker shows recent routes and opens the request inspector. Pause it to read an item. The separate <a href="http://127.0.0.1:4141/usage-widget/">usage widget</a> shows subscription allowances, reset countdowns, and Codex reset credits. Press <kbd>R</kbd> to refresh.</p>
+<p>Provider limits include work outside Garcon. Missing or stale data is labeled rather than treated as zero. <a href="subscription-limits.md">About subscription limits</a>.</p>
+</section>
 
-				<dt>Cost</dt><dd>Estimated spend at published pay-as-you-go list prices (never a bill), cache savings, blended $/1M tokens, run rate. Prices come from OpenRouter's public model list through the proxy; see Settings → Prices.</dd>
-				<dt>Sessions</dt><dd>Requests grouped into coding sessions per account and harness, with a timeline and per-session tokens, peak context and cost.</dd>
-				<dt>Activity</dt><dd>Hour-of-day and calendar heatmaps, streaks, peak concurrency.</dd>
-				<dt>Performance, Latency</dt><dd>Generation speed and time-to-first-byte by model; the proxy's own connection overhead versus upstream time.</dd>
-				<dt>Logs</dt><dd>Sortable, filterable request table with CSV export.</dd>
-				<dt>Settings</dt><dd>Five pages behind one entry: Instance (address, log, uptime), Providers (upstreams and traffic per provider), Models (every model seen and where its price comes from), Harnesses (connections seen and a snippet builder for adding one), Prices (the list prices behind the cost estimates, fetched from OpenRouter's public catalogue, with a refresh button).</dd>
-			</dl>
-			<p><a href="http://127.0.0.1:4141/usage-widget/">/usage-widget</a> is a standalone compact limits view, grouped by account email with percentage bars, elapsed-period markers, and reset countdowns. It adapts to phone widths and the system light/dark theme. Press <kbd>R</kbd> or use the refresh button to refresh the same cached account snapshots.</p>
-			<p>If the dashboard becomes unreachable, run <code>garcon doctor</code>. After an update, <code>garcon doctor --wait 10s</code> can wait for the new version to start.</p>
-		</section>
-
-		<nav class="pager" aria-label="Pages"><a href="connect.html"><small>Previous</small>Connect a harness</a><a class="next" href="api.html"><small>Next</small>Local API</a></nav>
+		<nav class="pager" aria-label="Pages"><a href="connect.html"><small>Previous</small>Connect your tools</a><a class="next" href="api.html"><small>Next</small>Local API</a></nav>
 	</main>
 </div>
 <script>

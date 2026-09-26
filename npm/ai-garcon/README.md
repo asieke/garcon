@@ -1,87 +1,32 @@
 # ai-garcon
 
-Observability for coding agents. One tiny local proxy sits in front of Claude Code, Codex,
-OpenClaw, Hermes or any compatible client, records what every call cost in tokens, and shows
-it in one dashboard, across accounts and tools on this machine.
-Requests and replies are forwarded unchanged; prompts, replies and keys are never stored.
+See which account is doing the work.
 
-Documentation: https://asieke.github.io/garcon/ · Source: https://github.com/asieke/garcon
+Garcon runs locally between your coding tools and their providers. It routes new Codex conversations across accounts you choose, keeps each conversation on its account, and shows requests, usage, and errors in a dashboard.
 
-## Install and set up this machine
+[Documentation](https://asieke.github.io/garcon/) · [Source](https://github.com/asieke/garcon)
+
+## Start
 
 ```sh
 npm install -g ai-garcon@latest
 garcon setup
 ```
 
-macOS and Linux, x64 and arm64; Node 18+ is needed to run the npm command.
-`setup` starts Garcon at login and verifies http://127.0.0.1:4141. Open the printed
-Settings link, choose your harness, and copy its configuration.
-Restart the harness, send one short request, and check Logs. Existing usage is preserved when setup is rerun.
+macOS or Linux, x64 or arm64; Node 18+. Open **http://127.0.0.1:4141**, add accounts under **Providers**, then copy your tool's connection settings. Browser sign-in needs the provider CLI; pool enrollment is separate.
 
-To try it without a global install: `npx ai-garcon@latest` runs in the foreground.
-For containers or Linux without a systemd user session, run `garcon` in one terminal
-and `garcon setup --no-service` in another. A custom foreground address works with
-`garcon -listen 127.0.0.1:4242` and `garcon setup --no-service --url http://127.0.0.1:4242`.
+Codex uses Codex accounts only. Pi can use the Codex pool or OpenRouter. Claude Code uses its selected Claude profile. Sessions shows local Codex task titles, projects, and in-flight model requests; a task may still run tools between requests. Source docs may describe unreleased features.
 
-If installation fails with EACCES, use a Node version manager or a user-owned npm
-prefix ([npm's instructions](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/)).
-Run setup as your normal user. If `garcon` is not found, ensure `$(npm prefix -g)/bin`
-is on PATH and restart your shell. `type -a garcon` finds competing source/npm installs.
-
-## Update
+## Keep it running
 
 ```sh
 garcon update
-```
-
-This updates the owning global npm installation, refreshes an installed service,
-and waits for its new version to answer. Without a service, it tells you how to start
-one or restart your foreground process. Local usage is kept.
-Updating briefly restarts the proxy; finish active agent requests first.
-For an older Garcon without `update`, use:
-
-```sh
-npm install -g ai-garcon@latest
-garcon service restart
 garcon doctor --wait 10s
-```
-
-The service uses its own executable at `~/.local/share/garcon/bin/garcon`, so changing
-Node versions or clearing an npx cache cannot remove it. After changing Node versions,
-reinstall the npm command in the new environment and run `garcon setup`.
-
-## Check or remove an installation
-
-```sh
-garcon doctor                     # reachability, versions, first request
 garcon service status
-garcon service uninstall          # stop autostart; keep usage and settings
-npm uninstall -g ai-garcon
 ```
 
-Restore each harness's original base URL/provider before removing the proxy, so your
-tools can keep connecting. Linux service logs: `journalctl --user -u garcon`.
-macOS logs: `~/Library/Logs/garcon.log`.
+Finish active requests before updating—the proxy restarts. To try it without a service, run `npx ai-garcon@latest`.
 
-## Point an agent at it
+History stays in local SQLite. Prompts and replies aren't saved. OAuth credentials stay with the provider CLIs; an OpenRouter key is stored separately. API-equivalent costs are estimates, not subscription charges.
 
-```sh
-# Claude Code, with Remote Control (the session shows in the claude.ai app)
-garcon claude            # arguments after -- go to claude
-
-# Claude Code, environment only (no Remote Control)
-ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude \
-_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude
-```
-
-Codex, OpenClaw, Hermes and anything OpenAI- or Anthropic-compatible: Settings → Connect a
-harness generates the exact configuration, or see the
-[docs](https://asieke.github.io/garcon/connect.html). Make one short call and the row appears
-in Logs.
-
-
-## Local data
-
-Each installation records and displays its own usage. Cross-device syncing has been removed.
-Legacy sync settings and remote caches are ignored; local usage history is preserved.
+Before uninstalling, restore your tools' original provider URLs. Then run `garcon service uninstall` and `npm uninstall -g ai-garcon`. Your usage and settings remain.

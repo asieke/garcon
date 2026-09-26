@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>HTTP API · Garcon</title>
-	<meta name="description" content="The endpoints the dashboard uses, and the fields of a recorded row.">
+	<meta name="description" content="The local endpoints behind the dashboard.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,36 +14,44 @@
 		<h2>Start</h2>
 		<a class="nav" href="index.html">Overview</a>
 		<a class="nav" href="install.html">Install</a>
-		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="connect.html">Connect your tools</a>
 		<a class="nav" href="dashboard.html">Dashboard</a>
 		<h2>Reference</h2>
 		<a class="nav" href="api.html" aria-current="page">HTTP API</a>
-		<a class="nav" href="files.html">Files and skills</a>
+		<a class="nav" href="files.html">Local files</a>
 		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
 	</nav>
 
 	<main id="top">
 		<h1>HTTP API</h1>
-		<p class="lede">The endpoints the dashboard uses, and the fields of a recorded row. Every endpoint answers only requests addressed to this machine (a Host of <code>127.0.0.1</code>, <code>localhost</code> or <code>[::1]</code>; 403 otherwise), and the read-only ones answer GET only.</p>
+		<p class="lede">The local endpoints behind the dashboard.</p>
 
-		<section id="api">
-			<dl>
-				<dt>GET /api/usage</dt><dd>Every locally recorded row as a JSON array.</dd>
-				<dt>GET /api/usage/recent</dt><dd>Returns <code>requests</code> (the latest 30 local arrivals during this server run, oldest arrival first) and <code>total_requests</code> (all locally recorded rows, including history). Each arrival carries <code>sequence</code>. Loaded history is excluded from arrivals; the widget uses its first response as a baseline. Reading this endpoint does not contact model providers.</dd>
-				<dt>GET /api/config</dt><dd>How the instance is wired: <code>listen</code>, <code>data</code>, local <code>rows</code>, log <code>bytes</code>, <code>started</code> (Unix milliseconds), <code>version</code>, providers and their upstreams, and implicit harnesses. Setup and doctor use this endpoint to identify Garcon and compare installed and running versions.</dd>
+<section id="api"><p>Base URL: <code>http://127.0.0.1:4141</code>. Garcon defaults to loopback access and has no app login. Read endpoints generally accept GET and HEAD; individual mutation routes enforce local Host, client, and Origin checks. Don't expose this API as a public service.</p>
+<h2>Requests and sessions</h2>
+<dl>
+<dt>GET /api/sessions</dt><dd>Up to 1,000 saved assignments, in-flight first, then most recently used. Includes <code>session_id</code>, account, model, counts, timestamps, <code>active_reviews</code>, <code>active_since</code>, and last request state/status/error. Local clients may receive <code>task</code> with title, cwd, and archived. Missing task metadata is omitted.</dd>
+<dt>GET /api/logs</dt><dd>Paginated request ledger: <code>requests</code>, <code>total</code>, <code>offset</code>, <code>limit</code>. Query with <code>q</code>, <code>errors=true</code>, <code>limit</code> (1–200; default 50), and <code>offset</code>. Search matches account, session, model, path, or request ID.</dd>
+<dt>GET /api/events</dt><dd>System diagnostics, with the same limit/offset pagination.</dd>
+<dt>GET /api/analytics?since=&lt;unix-ms&gt;</dt><dd>Hourly model/account aggregates: requests, errors, tokens, and duration.</dd>
+<dt>GET /api/usage</dt><dd>Non-streaming completion records, including failed completions.</dd>
+<dt>GET /api/usage/recent</dt><dd>The latest 30 arrivals from this server run, oldest first, plus <code>total_requests</code>. Each row has a sequence; history isn't loaded into the arrival feed.</dd>
+</dl>
+<h2>Accounts and settings</h2>
+<dl>
+<dt>GET /api/routing/codex · PUT</dt><dd>Read routing status or change enrollment. PUT requires <code>enabled</code>; optional <code>accounts</code> selects IDs and <code>priorities</code> maps IDs to 1–99. <a href="codex-routing.md">Routing rules</a>.</dd>
+<dt>GET /api/limits · POST /api/limits/refresh</dt><dd>Cached subscription snapshots; POST requests background collection and returns 202. <a href="subscription-limits.md">Fields and refresh behavior</a>.</dd>
+<dt>POST /api/accounts/login</dt><dd>Start browser sign-in with <code>{"provider":"codex"}</code> or <code>{"provider":"claude"}</code>. Poll <code>GET ?id=…</code>; cancel with DELETE and the same ID. Only one attempt runs at a time. States include starting, waiting, discovering, connected, error, and cancelled.</dd>
+<dt>GET /api/providers/openrouter · PUT · DELETE</dt><dd>Read <code>configured</code>, save <code>{"key":"…"}</code>, or remove the local key. Reads never return it. Saving doesn't validate it upstream.</dd>
+<dt>GET /api/nickname?account=… · PUT</dt><dd>Read a local nickname or save <code>{"nickname":"…"}</code> for that account.</dd>
+<dt>GET /api/prices · POST</dt><dd>Cached API list prices. GET refreshes an old or missing catalog; POST requests a refresh. Prices come from OpenRouter's public catalog and are cached in SQLite.</dd>
+<dt>GET /api/config</dt><dd>Listen address, data path, row count, uptime start, version, provider endpoints, and implicit harnesses.</dd>
+</dl>
+<h2>Record conventions</h2>
+<p>Times are Unix milliseconds; duration fields use milliseconds except <code>queue_us</code>. Records carry request/session/account IDs, harness, provider, model, path, method, status, and state. States include streaming, complete, failed, and interrupted. Tokens are split into input, cache_read, cache_write, and output.</p>
+<p>Optional connection timings include connect, DNS, TCP, TLS, and first byte. Missing timing means unmeasured. Prompts, reply bodies, and credential headers aren't part of the ledger.</p>
+</section>
 
-				<dt>GET /api/prices</dt><dd>Model list prices for the cost estimates, USD per million tokens keyed by OpenRouter id: <code>source</code>, <code>fetched_at</code>, <code>models</code> (<code>input</code>, <code>cache_read</code>, <code>cache_write</code>, <code>output</code>), and <code>error</code>/<code>error_at</code> after a failed refresh. The proxy fetches <a href="https://openrouter.ai/api/v1/models">OpenRouter's public model list</a> (no key, nothing about your usage sent) the first time this is asked for and again when the copy is a day old; the last good copy is cached in <code>prices.json</code> next to the usage log.</dd>
-				<dt>POST /api/prices</dt><dd>Refresh the catalogue now and return it. Requires a loopback Host.</dd>
-				<dt>GET /api/limits</dt><dd>Cached local Codex and Claude subscription snapshots, independent of completion history. Returns <code>accounts</code>, <code>refreshing</code>, <code>updated_at</code>, and an optional <code>error</code>. Each account includes identity, provider, email, workspace, plan, status, last successful <code>fetched_at</code>, and limit windows. Windows contain a label, nullable <code>used_percent</code>, <code>window_seconds</code>, reset timestamp <code>resets_at</code> (Unix milliseconds), and <code>expired</code>. Missing usage is never zero. No credentials are returned.</dd>
-				<dt>POST /api/limits/refresh</dt><dd>Request a background collection and return HTTP 202 with the current snapshot. Concurrent refreshes coalesce, with a 30-second minimum interval and provider rate-limit backoff. Requires a loopback Host and rejects a different Origin. Collection also runs at startup and every five minutes without dashboard traffic.</dd>
-
-			</dl>
-			<p>Run <code>garcon doctor</code> for local installation diagnostics.</p>
-			<h3>Row fields</h3>
-			<p><code>time</code> (unix ms), <code>harness</code>, <code>account</code>, <code>provider</code>, <code>model</code>, <code>status</code>, <code>ms</code>, <code>input</code>, <code>cache_read</code>, <code>cache_write</code>, <code>output</code>, plus optional connection timings the proxy measures for itself: <code>queue_us</code>, <code>reused</code>, <code>connect_ms</code>, <code>dns_ms</code>, <code>tcp_ms</code>, <code>tls_ms</code>, <code>first_byte_ms</code>. Absent means not measured, never zero.</p>
-		</section>
-
-		<nav class="pager" aria-label="Pages"><a href="dashboard.html"><small>Previous</small>Dashboard</a><a class="next" href="files.html"><small>Next</small>Files and skills</a></nav>
+		<nav class="pager" aria-label="Pages"><a href="dashboard.html"><small>Previous</small>Dashboard</a><a class="next" href="files.html"><small>Next</small>Local files</a></nav>
 	</main>
 </div>
 <script>

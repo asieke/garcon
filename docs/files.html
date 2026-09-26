@@ -3,8 +3,8 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Files and skills · Garcon</title>
-	<meta name="description" content="Where Garcon keeps its data and settings, and the agent skills the repository ships.">
+	<title>Local files · Garcon</title>
+	<meta name="description" content="What lives on this machine, and who owns it.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,34 +14,34 @@
 		<h2>Start</h2>
 		<a class="nav" href="index.html">Overview</a>
 		<a class="nav" href="install.html">Install</a>
-		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="connect.html">Connect your tools</a>
 		<a class="nav" href="dashboard.html">Dashboard</a>
 		<h2>Reference</h2>
 		<a class="nav" href="api.html">HTTP API</a>
-		<a class="nav" href="files.html" aria-current="page">Files and skills</a>
+		<a class="nav" href="files.html" aria-current="page">Local files</a>
 		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
 	</nav>
 
 	<main id="top">
-		<h1>Files and skills</h1>
-		<p class="lede">Where Garcon keeps its data and settings, and the agent skills the repository ships.</p>
+		<h1>Local files</h1>
+		<p class="lede">What lives on this machine, and who owns it.</p>
 
-		<section id="files">
-			<dl>
-				<dt>~/.local/share/garcon/usage.db</dt><dd>Local SQLite database: requests, sessions, routing preferences, usage snapshots, prices, and diagnostics.</dd>
-				<dt>Legacy JSON and JSONL files</dt><dd>Imported once into usage.db. Original files are retained as a migration backup and are no longer updated.</dd>
+<section id="files"><dl>
+<dt>~/.local/share/garcon/usage.db</dt><dd>SQLite request history, session assignments, routing preferences, nicknames, quota snapshots, prices, and diagnostics. WAL mode and owner-only permissions are enabled.</dd>
+<dt>~/.local/share/garcon/openrouter-key</dt><dd>The optional saved OpenRouter key, separate from the ledger and readable only by its owner.</dd>
+<dt>~/.codex-garcon-* · ~/.claude-garcon-*</dt><dd>Separate profiles created by browser sign-in. Provider CLIs own their credentials; Claude may use profile-specific macOS Keychain entries.</dd>
+<dt>Codex state_*.sqlite</dt><dd>Read-only source for matching task titles, workspace paths, and archive flags. Garcon uses known Codex profile directories and doesn't copy this metadata into its ledger.</dd>
+<dt>~/.local/share/garcon/bin/garcon</dt><dd>The service's private executable. Setup and service restart refresh it, so clearing npm's cache doesn't remove the running installation.</dd>
+<dt>~/Library/LaunchAgents/dev.garcon.plist</dt><dd>macOS autostart. Logs go to <code>~/Library/Logs/garcon.log</code>.</dd>
+<dt>~/.config/systemd/user/garcon.service</dt><dd>Linux user service. Read logs with <code>journalctl --user -u garcon</code>.</dd>
+</dl>
+<p>A custom <code>-data</code> path changes the database location and nearby key storage. Legacy JSON/JSONL data is imported once in a transaction; original files remain as backups. Malformed migration data stops startup rather than being silently discarded.</p>
+<p>There is no cross-device sync. Setup and updates keep local history. Uninstalling the service keeps usage and settings; restore your tools' original URLs before removing the proxy. <a href="install.html#uninstall">Uninstall steps</a>.</p>
+</section>
+<section id="skills"><h2>For contributors</h2>
+<p><code>web/</code> contains the UI; <code>internal/</code> holds the proxy, routing, metadata adapter, and storage. This documentation site is plain HTML/CSS with no build step. <a href="ui-navigation.md">Navigation reference</a>.</p>
 
-				<dt>~/.local/share/garcon/bin/garcon</dt><dd>The private service executable, copied from the installed package by setup or service restart. It survives npm cache cleanup and Node version changes.</dd>
-				<dt>~/.config/systemd/user/garcon.service</dt><dd>Linux autostart service, sandboxed with seccomp (no new privileges, native system calls from the @system-service set, only Unix and IP sockets, no namespaces, realtime or setuid, no writable-and-executable memory, umask 077). Inspect it with <code>garcon service status</code>; logs are available with <code>journalctl --user -u garcon</code>.</dd>
-				<dt>~/Library/LaunchAgents/dev.garcon.plist</dt><dd>macOS autostart service. Its log is <code>~/Library/Logs/garcon.log</code>.</dd>
-			</dl>
-			<p><code>garcon setup</code> and <code>garcon update</code> preserve local usage. <code>garcon service uninstall</code> stops autostart and keeps usage and settings; <code>npm uninstall -g ai-garcon</code> removes the npm command. The source installer’s <code>--uninstall</code> also removes the settings file. See <a href="install.html#uninstall">uninstall instructions</a> before removing the proxy.</p>
-		</section>
-		<section id="skills">
-			<h2>Agent skills</h2>
-			<p>The repository ships skills in <code>.claude/skills/</code> so a coding agent can do all of the above: <code>install-garcon</code> (install, set up, remove), <code>update-garcon</code> (update an npm installation with <code>garcon update</code>, or pull and rebuild a source checkout), <code>add-provider</code> (point any harness at any provider).</p>
-			<p class="muted">Design notes for the dashboard navigation are in <a href="ui-navigation.md">ui-navigation.md</a>.</p>
-		</section>
+</section>
 
 		<nav class="pager" aria-label="Pages"><a href="api.html"><small>Previous</small>HTTP API</a><span></span></nav>
 	</main>

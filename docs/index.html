@@ -3,8 +3,8 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Garcon documentation</title>
-	<meta name="description" content="Garcon puts one tiny local proxy in front of every coding agent you run, records what each call cost in tokens, and shows it all in one dashboard, across accounts and tools.">
+	<title>Garcon · Garcon</title>
+	<meta name="description" content="See which account is doing the work.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,120 +14,37 @@
 		<h2>Start</h2>
 		<a class="nav" href="index.html" aria-current="page">Overview</a>
 		<a class="nav" href="install.html">Install</a>
-		<a class="nav" href="connect.html">Connect a harness</a>
+		<a class="nav" href="connect.html">Connect your tools</a>
 		<a class="nav" href="dashboard.html">Dashboard</a>
 		<h2>Reference</h2>
 		<a class="nav" href="api.html">HTTP API</a>
-		<a class="nav" href="files.html">Files and skills</a>
+		<a class="nav" href="files.html">Local files</a>
 		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
 	</nav>
 
 	<main id="top">
 		<h1>Garcon</h1>
-		<p class="lede">Observability for coding agents. One tiny local proxy sits in front of Claude Code, Codex, OpenClaw, Hermes or anything else you run, records what every call cost in tokens, and shows it all in one dashboard, across accounts and tools on this machine.</p>
-		<figure class="shot"><img src="images/overview.png" width="1440" height="960" alt="The Garcon dashboard's Overview: request, token, cache-hit, error-rate and latency tiles with deltas against the prior period, and a requests-by-harness chart over seven days." loading="eager"><figcaption>The Overview, on synthetic data: two accounts, three tools, seven days.</figcaption></figure>
+		<p class="lede">See which account is doing the work.</p>
 
-		<section id="problem">
-			<h2>The problem</h2>
-			<p>Coding agents burn tokens on your behalf all day, and the evidence is scattered. Each tool keeps its own logs in its own format, each provider shows a different slice of the bill, subscription plans hide the per-call cost entirely, and none of it lines up across the laptop, the desktop and the server you also run agents on. Questions that should be trivial are not: which account is doing the work, which model, how much context is being re-read every turn, how much of that is cache hits, how fast the model is streaming, and what all of it would cost at list price.</p>
-			<p>The usual answer is a gateway such as <a href="https://github.com/BerriAI/litellm">LiteLLM</a>: put a proxy in the path of every LLM call and observe the traffic there instead of in each tool. That is exactly the value proposition of Garcon. The difference is where the line is drawn.</p>
-		</section>
-
-		<section id="what">
-			<h2>What Garcon does</h2>
-			<figure class="diagram">
-				<svg viewBox="0 0 760 300" role="img" aria-labelledby="diagram-title" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">
-					<title id="diagram-title">Harnesses send requests through Garcon to providers; Garcon records usage locally, serves a dashboard.</title>
-					<defs>
-						<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-muted)"/></marker>
-					</defs>
-					<g fill="var(--surface)" stroke="var(--border)">
-						<rect x="10" y="20" width="150" height="34" rx="6"/><rect x="10" y="66" width="150" height="34" rx="6"/><rect x="10" y="112" width="150" height="34" rx="6"/><rect x="10" y="158" width="150" height="34" rx="6"/>
-						<rect x="600" y="20" width="150" height="34" rx="6"/><rect x="600" y="66" width="150" height="34" rx="6"/><rect x="600" y="112" width="150" height="34" rx="6"/><rect x="600" y="158" width="150" height="34" rx="6"/>
-					</g>
-					<g fill="var(--text)" text-anchor="middle">
-						<text x="85" y="42">Claude Code</text><text x="85" y="88">Codex</text><text x="85" y="134">OpenClaw, Hermes</text><text x="85" y="180">any other client</text>
-						<text x="675" y="42">api.anthropic.com</text><text x="675" y="88">chatgpt.com</text><text x="675" y="134">api.openai.com</text><text x="675" y="180">openrouter.ai</text>
-					</g>
-					<rect x="290" y="20" width="180" height="172" rx="10" fill="var(--accent-soft)" stroke="var(--accent-border)"/>
-					<text x="380" y="52" text-anchor="middle" font-weight="700" font-size="16" fill="var(--accent)">Garcon</text>
-					<text x="380" y="74" text-anchor="middle" fill="var(--text-secondary)">127.0.0.1:4141</text>
-					<g fill="var(--text)" text-anchor="middle" font-size="12">
-						<text x="380" y="106">forwards every request</text><text x="380" y="124">unchanged, streams the reply</text>
-						<text x="380" y="150">records model + tokens</text><text x="380" y="168">per harness and account</text>
-					</g>
-					<g stroke="var(--text-muted)" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
-						<path d="M160 37H290"/><path d="M160 83H290"/><path d="M160 129H290"/><path d="M160 175H290"/>
-						<path d="M470 37H600"/><path d="M470 83H600"/><path d="M470 129H600"/><path d="M470 175H600"/>
-					</g>
-					<g stroke="var(--text-muted)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"><path d="M340 192V230"/></g>
-					<rect x="240" y="230" width="140" height="50" rx="6" fill="var(--surface)" stroke="var(--border)"/>
-					<text x="310" y="251" text-anchor="middle" fill="var(--text)">usage.db</text>
-					<text x="310" y="268" text-anchor="middle" fill="var(--text-secondary)" font-size="11">and the dashboard</text>
-				</svg>
-				<figcaption>Every agent points at a local URL that names the tool and provider. Accounts are detected automatically. Nothing about the request or the reply is changed; Garcon only reads the usage block the provider already sends back.</figcaption>
-			</figure>
-			<p>Point Claude at <code>http://127.0.0.1:4141/claude</code>, Codex at <code>http://127.0.0.1:4141/codex/backend-api/codex</code>, and Hermes at <code>http://127.0.0.1:4141/hermes/&lt;provider&gt;</code> plus its API prefix. Accounts are detected from each request's credentials; API keys without identity information receive anonymous key labels. Account labels are not accepted in URLs or flags. Remove old labels from client configuration before connecting. Other harnesses use <code>/&lt;harness&gt;/&lt;provider&gt;</code>. Completion calls are appended to a local log with the model and token counts reported by the provider.</p>
-			<div class="scroll"><table>
-				<thead><tr><th>Segment</th><th>Upstream</th><th>Recorded calls</th></tr></thead>
-				<tbody>
-					<tr><td><code>anthropic</code></td><td>api.anthropic.com</td><td><code>/v1/messages</code></td></tr>
-					<tr><td><code>openai</code></td><td>api.openai.com</td><td><code>/v1/responses</code>, <code>/v1/chat/completions</code></td></tr>
-					<tr><td><code>openrouter</code></td><td>openrouter.ai</td><td><code>/api/v1/chat/completions</code></td></tr>
-					<tr><td><code>chatgpt</code></td><td>chatgpt.com</td><td><code>/backend-api/codex/responses</code> (ChatGPT-subscription Codex)</td></tr>
-				</tbody>
-			</table></div>
-			<p>Because it is a pure pass-through, it works with subscription logins too: Claude Code on a claude.ai plan and Codex on a ChatGPT plan keep authenticating exactly as before, and Garcon still sees the token counts those calls report. That is the case a gateway that re-issues requests under its own keys cannot cover.</p>
-		</section>
-
-		<section id="compare">
-			<h2>Compared with a gateway like LiteLLM</h2>
-			<p>Same idea, different scope. A gateway is a piece of infrastructure: it fronts many providers, translates between APIs, routes and retries, issues virtual keys, enforces budgets, and stores its telemetry in a database it runs. Garcon focuses on local Codex account routing and observability. It is one binary with an embedded SQLite database, and it keeps the data on the machine.</p>
-			<div class="scroll"><table class="compare">
-				<thead><tr><th></th><th>Garcon</th><th>LiteLLM-style gateway</th></tr></thead>
-				<tbody>
-					<tr><th>Observability across tools and accounts</th><td>Yes</td><td>Yes</td></tr>
-					<tr><th>Requests and replies</th><td>Forwarded byte for byte; the provider's own auth, streaming and errors pass straight through</td><td>Normalised to one API, re-issued with the gateway's keys</td></tr>
-					<tr><th>Subscription logins (claude.ai, ChatGPT plans)</th><td>Work unchanged; usage is still recorded</td><td>Generally not; the gateway needs API keys</td></tr>
-					<tr><th>Routing, retries, fallbacks, budgets, virtual keys</th><td>None, by design</td><td>Yes, that is the product</td></tr>
-					<tr><th>Where the data lives</th><td>A JSONL file in your home directory</td><td>The gateway's Postgres, or a hosted logging service</td></tr>
-					<tr><th>Footprint</th><td>Embedded SQLite; one binary with the dashboard inside it, listening on loopback by default</td><td>A Python service plus its database, usually a container or a hosted deployment</td></tr>
-					<tr><th>Setup</th><td>Install from npm, run <code>garcon setup</code>, then connect each harness</td><td>A config file of models and keys, a deployment, then a base URL per client</td></tr>
-					<tr><th>Multiple people or teams</th><td>No; one person per installation</td><td>Yes</td></tr>
-				</tbody>
-			</table></div>
-			<p>If you need a control plane for a team, run a gateway. If you want to know what your own agents are doing, with nothing to operate and local usage reporting, that is Garcon.</p>
-		</section>
-
-		<section id="get">
-			<h2>What you get</h2>
-			<ul>
-				<li><strong>One picture of everything</strong>: requests, tokens and their composition by harness, account and model, over any time range, with period-over-period deltas.</li>
-				<li><strong>Cost you can reason about</strong>: estimated spend at published list prices (never a bill; subscriptions bill differently), cache savings, blended price per million tokens, run rate. Prices track OpenRouter's public model catalogue, so nothing has to be typed in.</li>
-				<li><strong>Sessions</strong>: calls grouped into coding sessions per account and tool, with context growth, peak context, busy time and cost per session.</li>
-				<li><strong>Performance</strong>: generation speed and time to first byte by model, latency against output size, and the proxy's own overhead measured separately so it is never confused with the model's time.</li>
-				<li><strong>Every request</strong>: a sortable, filterable log with CSV export, and a JSON endpoint for anything else.</li>
-			</ul>
-			<figure class="shot"><img src="images/sessions.png" width="1440" height="960" alt="The Sessions view: a per-account timeline of coding sessions and a table with duration, requests, models, tokens, peak context and estimated cost per session." loading="lazy"><figcaption>Sessions: a burst of calls from one account and tool becomes one row, with its models, peak context and estimated cost.</figcaption></figure>
-		</section>
-
-		<section id="records">
-			<h2>What it records, and what it never touches</h2>
-			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. Automatic Claude OAuth attribution looks up the requesting token's profile directly with Anthropic, caching only a token digest and account label in memory for up to an hour. Failed lookups retry after a minute and use an anonymous credential label meanwhile. Garcon also fetches OpenRouter's public model price list when the dashboard is opened, at most once a day; that call carries nothing about you or your usage.</p>
-		</section>
-
-		<section id="start">
-			<h2>Quick start</h2>
-			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npm install -g ai-garcon@latest
+<section id="start">
+<p>Garcon connects your coding tools to their providers. It assigns Codex conversations to accounts you choose and shows requests, usage, and errors in one place.</p>
+<div class="block"><div class="label"><span>Get started</span><button class="copy" type="button">Copy</button></div><pre><code>npm install -g ai-garcon@latest
 garcon setup</code></pre></div>
-			<p>macOS and Linux, x64 and arm64. Node 18+ runs the npm command. Setup starts Garcon at login, checks its version, and prints the dashboard link. Usage is recorded locally.</p>
-			<ol class="steps">
-				<li><strong><a href="install.html">Install and start</a></strong>run the commands above as your normal user. For a foreground trial or source build, see the install guide.</li>
-				<li><strong><a href="connect.html">Connect your first harness</a></strong>open Settings, choose your tool, and copy its configuration. Restart the tool, make one short request, and check Logs for the new row.</li>
-				<li><strong>Add your other machines:</strong> repeat installation and harness setup there. Each dashboard displays that machine’s local usage.</li>
-			</ol>
-			<p>Later, run <code>garcon update</code> to update an npm installation and refresh its service. Run <code>garcon doctor</code> to check reachability, versions, first-request progress. See <a href="install.html#update">updating</a> and <a href="install.html#troubleshooting">troubleshooting</a>.</p>
-		</section>
+<p>Open <a href="http://127.0.0.1:4141">localhost:4141</a>. Add accounts under <strong>Providers</strong>, enable the Codex accounts you want in the pool, then copy your tool's connection settings. <a href="install.html">Installation help</a>.</p>
+</section>
+<section id="routing"><h2>Your tools, your accounts</h2>
+<p>Codex uses enrolled Codex accounts only. Pi can use that pool or OpenRouter. Claude Code uses its selected Claude profile. Other compatible clients keep their configured provider.</p>
+<p>New Codex conversations choose an eligible account by priority and remaining quota relative to reset time. Existing conversations stay on their account. If it becomes unavailable, the request fails; Garcon doesn't silently switch providers or replay it elsewhere. <a href="codex-routing.md">Routing details</a>.</p>
+</section>
+<section id="dashboard"><h2>Find the work behind a request</h2>
+<p><strong>Sessions</strong> shows Codex task names, projects, routed accounts, and in-flight model requests. Search by title or ID, then open the task's request history. The ticker and request inspector show task names too.</p>
+<p><strong>Analytics</strong> shows tokens and estimated API-equivalent costs. <strong>Logs</strong> includes failures and interrupted streams. A separate <a href="http://127.0.0.1:4141/usage-widget/">usage widget</a> shows subscription allowances and reset times.</p>
+<p>Garcon records model traffic. A task with no request in flight might still be running tools or waiting for you.</p>
+</section>
+<section id="privacy"><h2>Local by default</h2>
+<p>The dashboard and proxy share one Go process, with SQLite for local history. Prompts, replies, and OAuth tokens aren't saved in the ledger. Provider CLIs keep their logins; OpenRouter keys are stored separately. There is no cross-device sync.</p>
+<p>These docs follow the current source. Your installed release may not yet include unmerged changes.</p>
+</section>
 
 		<nav class="pager" aria-label="Pages"><span></span><a class="next" href="install.html"><small>Next</small>Install</a></nav>
 	</main>
