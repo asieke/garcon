@@ -1,219 +1,88 @@
 # Garcon
 
-Your local routing desk for Codex. One web app and proxy API, one SQLite database,
-and one stable endpoint at **127.0.0.1:4141**. Discover local Codex OAuth accounts,
-set priority groups, and route new sessions by remaining quota per hour until reset.
-Track real session assignments, watch live requests, inspect logs, and explore
-usage, models, and API-equivalent cost. The dashboard is embedded in one Go binary;
-SQLite runs inside that process. OAuth credentials stay in Codex's login files.
+See which account is doing the work.
 
-**Docs:** https://asieke.github.io/garcon/
+Garcon connects your coding tools to their providers. It assigns Codex conversations to accounts you choose and shows requests, usage, and errors in one place.
 
-## The routing desk
+Open the app at **http://127.0.0.1:4141**. It has four sections: **Providers, Sessions, Analytics, and Logs**.
 
-- **Accounts:** one expandable Codex pool, individual enrollment, reorderable priority groups, and live usage/reset scores.
-- **Sessions:** real session-to-account assignments preserved across restarts.
-- **Live ticker:** requests and their selected accounts, including in-flight streams.
-- **Logs:** searchable, paginated metadata with error and interruption states.
-- **Analytics:** tokens, model mix, cache usage, and estimated API-equivalent cost.
+[Documentation](https://asieke.github.io/garcon/) · [Connect your tools](docs/connect.html) · [Routing details](docs/codex-routing.md)
 
-Existing local JSON/JSONL data is imported once into SQLite. Original files are
-preserved. See [routing and storage details](docs/codex-routing.md).
+These docs describe the current source. An installed npm release may lag behind unmerged changes.
 
-## How it works
-
-Point Claude at `http://127.0.0.1:4141/claude`, Codex at
-`http://127.0.0.1:4141/codex/backend-api/codex`, and Hermes at
-`http://127.0.0.1:4141/hermes/<provider>` plus its API prefix. Requests are
-forwarded and replies streamed back; request metadata is saved in
-`~/.local/share/garcon/usage.db` with model, status, latency and the provider's token
-counts (uncached input, cache read, cache write, output). Subscription logins keep working.
-
-| provider | upstream | recorded |
-| --- | --- | --- |
-| `anthropic` | api.anthropic.com | `/v1/messages` |
-| `openai` | api.openai.com | `/v1/responses`, `/v1/chat/completions` |
-| `openrouter` | openrouter.ai | `/api/v1/chat/completions` |
-| `chatgpt` | chatgpt.com | `/backend-api/codex/responses` |
-
-Accounts for Claude, Codex and Hermes are detected from each request's credentials.
-With optional [Codex account routing](docs/codex-routing.md) enabled, Garcon instead
-chooses an enrolled local Codex OAuth account for each new conversation, based on
-available usage and model access, and keeps that conversation on its account.
-Enable it in **Accounts → Codex**. Other harnesses remain pass-through.
-Codex uses the selected ChatGPT account and token claims. Claude OAuth uses a cached
-Anthropic profile lookup. API keys without identity information get an anonymous,
-provider-specific key fingerprint; separate keys remain separate, and rotating a key
-creates a new label. Missing credentials show as `<provider>:unknown`.
-
-All harnesses use account-free URLs and automatic detection. Account flags and URL
-labels are not supported. When upgrading, remove the account segment from existing
-harness configuration and restart existing sessions. Other harnesses use
-`/<harness>/<provider>/` plus the SDK's API prefix.
-See [account detection](docs/account-detection.md) for details and failure behavior.
-
-## Install and set up this machine
+## Get started
 
 ```sh
 npm install -g ai-garcon@latest
 garcon setup
 ```
 
-macOS and Linux, x64 and arm64; Node 18+ is needed to run the npm command.
-`setup` starts Garcon at login and verifies http://127.0.0.1:4141. Open the printed
-Settings link, choose your harness, and copy its configuration.
-Restart the harness, send one short request, and check Logs. Existing usage is preserved when setup is rerun.
+Requires macOS or Linux, x64 or arm64, and Node 18+ for the npm command. Run setup as your normal user. It installs a background service and keeps your existing usage history.
 
-To try it without a global install: `npx ai-garcon@latest` runs in the foreground.
-For containers or Linux without a systemd user session, run `garcon` in one terminal
-and `garcon setup --no-service` in another. A custom foreground address works with
-`garcon -listen 127.0.0.1:4242` and `garcon setup --no-service --url http://127.0.0.1:4242`.
-Garcon has no authentication, so it listens on loopback addresses only and answers only
-requests addressed to `127.0.0.1`, `localhost` or `[::1]`; `-allow-remote` lifts both, and
-opens the dashboard, the settings and the relay to that network.
+1. Open **Providers → Add account**. Sign in with ChatGPT or Claude, or add an OpenRouter key. Browser sign-in needs the corresponding CLI installed.
+2. Enable the Codex accounts you want in the routing pool. A connected account isn't automatically enrolled.
+3. Use **Connect Codex**, **Connect Pi**, or **Connect Claude Code** to configure your tool. Restart it, send a request, and check **Logs**.
 
-If installation fails with EACCES, use a Node version manager or a user-owned npm
-prefix ([npm's instructions](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/)).
-Run setup as your normal user. If `garcon` is not found, ensure `$(npm prefix -g)/bin`
-is on PATH and restart your shell. `type -a garcon` finds competing source/npm installs.
+Browser sign-in creates a separate profile. It doesn't change your client configuration or switch Claude Code's selected profile. If blocked, choose **Open sign-in page**.
 
-## Update
+## Who handles a request?
+
+| Tool | Route |
+| --- | --- |
+| Codex | Your enrolled Codex accounts; no OpenRouter fallback |
+| Pi | The Codex pool or OpenRouter, selected in Pi |
+| Claude Code | The Claude profile used by `garcon claude` |
+| Other compatible clients | Their configured provider and credentials |
+
+For a new Codex conversation, Garcon checks login health, quota, and model access. Lower priority numbers win; within a group, it chooses the highest **remaining percentage ÷ hours until reset**. This compares percentages, not absolute token allowances.
+
+Once assigned, a conversation stays on that account, even after a restart. If the account becomes unavailable, Garcon returns an error. Start a new conversation to choose another account. It never replays a failed request on a different account or redeems reset credits. With routing disabled, the client's own credentials pass through.
+
+## Find the task behind a session
+
+**Sessions** matches a session ID to its local Codex task title and project. Search by title, project, account, model, or ID. Click the title for its request history; use the copy button for the full ID.
+
+In-flight sessions appear first, with elapsed time. Background reviews have their own activity label and don't replace the conversation model. Missing task metadata falls back to the ID.
+
+**No model request** means just that. The task might still be running tools or waiting for you. Garcon doesn't track every action inside Codex.
+
+The ticker and request inspector also show task names. **Analytics** shows tokens, cache use, and estimated API-equivalent cost—not your subscription bill. **Logs** includes failures and interrupted streams.
+
+## Limits and local data
+
+Open [the compact widget](http://127.0.0.1:4141/usage-widget/) for Codex and Claude allowances, reset times, and Codex reset credits. Press **R** to refresh. Provider limits include work done outside Garcon; missing data isn't counted as unused quota.
+
+Garcon stores request metadata, account assignments, preferences, and snapshots in `~/.local/share/garcon/usage.db`. It doesn't save prompts, response bodies, or OAuth tokens in the ledger. Provider CLIs own their logins. A saved OpenRouter key lives in a separate owner-only file.
+
+Task titles and paths are read from Codex's local index without changing it. Data stays on this machine; there is no cross-device sync. Garcon has no app login, so keep its default loopback binding. `-allow-remote` exposes the dashboard and relay to the network.
+
+## Update or troubleshoot
 
 ```sh
-garcon update
-```
-
-This updates the owning global npm installation, refreshes an installed service,
-and waits for its new version to answer. Without a service, it tells you how to start
-one or restart your foreground process. Local usage is kept.
-Updating briefly restarts the proxy; finish active agent requests first.
-For an older Garcon without `update`, use:
-
-```sh
-npm install -g ai-garcon@latest
-garcon service restart
+garcon update                    # npm installations
 garcon doctor --wait 10s
-```
-
-The service uses its own executable at `~/.local/share/garcon/bin/garcon`, so changing
-Node versions or clearing an npx cache cannot remove it. After changing Node versions,
-reinstall the npm command in the new environment and run `garcon setup`.
-
-## Check or remove an installation
-
-```sh
-garcon doctor                     # reachability, versions, first request
 garcon service status
-garcon service uninstall          # stop autostart; keep usage and settings
-npm uninstall -g ai-garcon
 ```
 
-Restore each harness's original base URL/provider before removing the proxy, so your
-tools can keep connecting. Linux service logs: `journalctl --user -u garcon`.
-macOS logs: `~/Library/Logs/garcon.log`.
+Finish active requests before updating: the service restarts. Source installs use `scripts/install.sh --service`; `--update` pulls and rebuilds.
 
-From source (Go 1.27+, Node 22+; `mise install` provides both):
-`scripts/install.sh --service` builds and installs; `--update` pulls and rebuilds.
+Logs: `~/Library/Logs/garcon.log` on macOS; `journalctl --user -u garcon` on Linux. See [installation help](docs/install.html) for missing commands or permission errors.
 
-## Connect a harness
+To remove it, restore your tools' original provider URLs first, then run `garcon service uninstall` and `npm uninstall -g ai-garcon`. Usage and settings remain.
 
-Settings → Connect a harness generates these for any harness and provider, with automatic account detection for every tool.
+## Work on Garcon
+
+Source builds need Go 1.27+ and Node 22+; versions are in `.mise.toml`.
 
 ```sh
-# Claude Code, with Remote Control (the session shows in the claude.ai app)
-garcon claude            # arguments after -- go to claude
-
-# Claude Code, environment only (no Remote Control)
-ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude \
-_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude
-
-# Codex: ~/.codex/config.toml (a custom provider is required under a ChatGPT login)
-model_provider = "garcon"
-[model_providers.garcon]
-name = "OpenAI"
-base_url = "http://127.0.0.1:4141/codex/backend-api/codex"
-wire_api = "responses"
-requires_openai_auth = true
+bash scripts/dev.sh              # build and run on 4242
+cd web && npm run dev:frontend    # hot reload; API comes from 4141
 ```
 
-OpenClaw: set `baseUrl` per provider in `~/.openclaw/openclaw.json` (`…/openclaw/anthropic`,
-`…/openai/v1`, `…/openrouter/api/v1`, `…/chatgpt/backend-api` for `openai-codex`). Hermes: set
-`base_url` per provider in `~/.hermes/config.yaml` (`…/hermes/anthropic`, `…/openai/v1`,
-`…/openrouter/api/v1`). Anything else: the base URL plus the SDK's prefix; OpenAI-compatible
-clients need `stream_options: {"include_usage": true}` for token counts. Verify with one short
-call and a new row in Logs. For Hermes with ChatGPT, use
-`HERMES_CODEX_BASE_URL=http://127.0.0.1:4141/hermes/chatgpt/backend-api/codex hermes chat --provider openai-codex`.
+Production stays on **4141**; development uses **4242**. Keep your tools pointed at 4141. Both development modes use real local data, so dashboard edits affect your settings. Set `GARCON_BACKEND_URL` to choose a different backend for frontend work.
 
-## Dashboard
+Run `go test ./...` and, from `web/`, `npm run check && npm test && npm run build`. Rebuild and install explicitly to update production; a frontend dev server doesn't update the installed binary.
 
-http://127.0.0.1:4141. Overview, Limits, Usage, Cost (estimated at list prices fetched from OpenRouter's
-public model catalogue), Models, Accounts,
-Sessions (per account and harness), Activity, Performance, Latency (proxy overhead vs
-upstream), Logs (CSV export), Settings (instance, providers, models, harnesses, prices).
-Raw rows: `/api/usage`.
+Source: `web/` (UI), `internal/` (backend), `docs/` (documentation).
 
-**Limits** shows current Codex and Claude subscription allowances for locally signed-in
-accounts, including named profiles and Hermes Codex logins. Each meter compares the
-provider's percentage used with elapsed time in its reset period. Accounts are grouped
-by provider, person, and workspace, so multiple harnesses or profiles using the same
-subscription share one card. Claude's five-hour, weekly, and named limits (including
-Fable) appear when the provider reports them. Overview includes a weekly summary.
-Codex accounts also show remaining reset credits and each credit's expiration date;
-this is read-only and never redeems credits. Reset credits are a Codex-only feature.
-
-Garcon checks limits at startup and every five minutes, reading existing login files
-and Claude's profile-specific macOS Keychain entries. Once a minute, it also checks
-Claude logins and starts an isolated, empty-input Claude CLI when a token is within
-five minutes of expiry. Claude renews its own credentials without a model request.
-Only the latest snapshot is cached locally; no credentials or quota history are stored
-or synced by Garcon. Revoked or missing logins still require signing in through the CLI. See
-[subscription limits](docs/subscription-limits.md) for discovery, endpoint, and failure details.
-Sidebar group headings collapse independently and remember your choice in this browser.
-
-Open `/usage-widget` for a standalone, responsive view of the same account limits.
-It groups rows by email, follows the system light/dark theme, and supports **R** to
-refresh. The elapsed-period line is an even-use reference, not a usage forecast.
-A fixed footer scrolls only newly recorded local requests as account, provider,
-and token-count chips, checking every two seconds. Existing history is skipped
-and the scrolling lane stays empty when its queue drains. A fixed chip on the right
-shows the total recorded requests on this machine.
-
-## Local data
-
-Each installation records and displays its own usage. Cross-device syncing has been removed.
-Legacy sync settings and remote caches are ignored; local usage history is preserved.
-
-
-## Development
-
-```
-cmd/garcon/          entry point: flags, subcommands, HTTP wiring
-internal/proxy/      routing and the pass-through proxy
-internal/usage/      the Record type and usage-block parsing
-internal/store/      SQLite request ledger, sessions, logs, and analytics
-internal/database/   schema and transactional legacy migration
-internal/service/    systemd and launchd management
-internal/dashboard/  embedded build output of web/
-web/                 SvelteKit dashboard          docs/       GitHub Pages site
-scripts/             install.sh (source builds), release.sh
-npm/ai-garcon/       the npm package (shim, README, built binaries)
-.claude/             agent skills
-```
-
-Run `bash scripts/dev.sh` from the repository root, or `npm run dev` from `web/`.
-This builds the dashboard and Go binary, then runs one Garcon process serving the
-dashboard, `/api`, and harness proxy at http://127.0.0.1:4141. Dev and installed
-Garcon use the same address, so coding harness configuration stays unchanged.
-Stop the running Garcon before switching modes; an occupied port fails instead of
-selecting a different one. Restart the dev command after source edits to rebuild;
-there is no separate frontend server or hot reload. `npm run preview` uses the same flow.
-
-Checks: `go test ./...`; `cd web && npm run check && npm test`.
-Release: every merge into `main` publishes a new patch version of `ai-garcon` to npm
-(`.github/workflows/release.yml`; `[minor]` or `[major]` in the PR title bumps that part).
-Pull requests run the same build without publishing (`.github/workflows/ci.yml`). The release
-builds and packs in a job with a read-only token, and a separate job publishes that tarball
-with provenance.
-The version lives in the git tag and on npm, not in the repository; `scripts/release.sh
-X.Y.Z --dry-run` runs the same build locally.
-Agent skills in `.claude/skills/`: `install-garcon`, `update-garcon`, `add-provider`, `commit-garcon`.
+Merges to `main` trigger an npm patch release. `[minor]` or `[major]` in the merge message changes the bump. PRs build and test without publishing.

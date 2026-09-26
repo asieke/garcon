@@ -1,140 +1,50 @@
 # Subscription limits
 
-Open **Limits** for current Codex and Claude subscription allowances. Overview shows
-each account's weekly allowance, or its first available limit. These snapshots come
-from providers and include usage outside Garcon; token counts and estimated API costs
-cannot be converted to a subscription percentage.
+Codex's routing card shows available quota and reset times. Open **http://127.0.0.1:4141/usage-widget/** for the compact Codex and Claude allowance view.
 
-The filled bar is allowance consumed on a fixed 0–100% scale. The vertical marker is
-elapsed time in that limit's reset period: an even-use reference, not a forecast.
-Each account follows its own reset time, rather than a calendar week. Reset dates use
-the browser's time zone. Fable uses its own reported percentage, not a multiplier
-applied to overall Claude usage. Missing windows are not interpreted as zero usage.
+These percentages come from the providers and include work done outside Garcon. They aren't calculated from Garcon's token counts or estimated API costs.
 
-## Compact widget
+## Read the meters
 
-Open `/usage-widget` (or follow **Compact widget** on Limits) for a standalone view
-without dashboard navigation or filters. Colored edge stripes group the provider
-rows; the account color key at the bottom identifies each email and shows its Codex
-reset credits. Codex and Claude still retain separate allowances. Rows share the
-available viewport height: compact laptop windows fit all six accounts, taller
-windows use more generous spacing, and smaller windows scroll once rows reach
-their readable minimum. The widget also adapts to phone widths and follows the
-system light/dark color scheme.
-Click an email in the account key to give it a nickname. Nicknames are saved only
-in this browser's local storage for the current site, with no cloud sync. Save a
-blank nickname to restore the email; hovering a nickname still shows the email.
-Press **R** or the refresh button to request a refresh. It reads the same cached
-snapshots as Limits, so opening another widget does not add provider polling.
+A filled bar means allowance used. The vertical marker shows how much of that reset period has elapsed—an even-use reference, not a forecast. Each account follows its own reset time. Dates use your browser's time zone.
 
-The fixed footer starts with an empty lane and scrolls only new LLM completion rows
-recorded locally after the widget opens. Each chip shows account, provider, and
-total tokens. Existing history is skipped, including when reloading the widget.
-It checks for arrivals every two seconds.
-Token totals include input, cache-read, cache-write, and output tokens;
-they appear once a request finishes. Requests scroll in arrival order, once each.
-New chips enter from the right and scroll across the full lane. When the queue drains,
-the footer remains visible with an empty lane. The fixed **Total requests** chip on
-the right counts all locally recorded requests, including historical rows.
-Hovering does not interrupt scrolling. Reduced-motion mode
-uses a manually scrollable strip whose new chips clear after twelve seconds.
+Missing data stays unknown. Snapshots older than ten minutes become stale; past reset deadlines are marked expired until the provider confirms a new window. Garcon never assumes a reset means zero usage. Named Claude limits use their own reported percentages.
 
-## Reset credits
+## Use the widget
 
-Limits, Overview, and the widget display remaining Codex reset credits and their
-individual expiration dates. Collection uses a read-only GET to
-`https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` with the same account
-token and workspace header, once per account per refresh. This is separate from
-purchased usage balances. Garcon never redeems or purchases credits.
+The widget groups rows by email, keeping providers separate. Press **R** to refresh. Extra widgets don't add provider polling.
 
-Dates use the browser's local time zone; hover an expiration for its exact time.
-Known expired credits stop counting as available, and the snapshot is marked stale
-until refreshed. Unknown counts and expirations are labeled unavailable, never zero.
-A failed credit lookup retains its last snapshot without hiding current quota meters.
-Reset credits are a Codex-only feature; Claude accounts have no reset-credit UI.
+Click an account email to give it a nickname. Nicknames are stored in local SQLite; older browser nicknames migrate on first use. Save a blank name to restore the email.
 
-## Automatic discovery
+The footer shows newly completed requests, checking every two seconds. Reloading skips history; the total counter includes older records.
 
-The service reads these local sources at startup and every five minutes:
+Codex reset credits appear with their expiration dates. Unknown counts aren't shown as zero, and expired credits stop counting as available. Garcon only reads credits; it never buys or redeems them. A failed credit lookup can retain older credit data while quota updates continue.
 
-- Codex: `~/.codex/auth.json` and `~/.codex-*/auth.json` containing ChatGPT logins.
-- Claude: `~/.claude` and `~/.claude-*`; `.credentials.json` when present, otherwise
-  the directory-specific macOS Keychain entry. The default directory uses
-  `Claude Code-credentials`; named directories use that name plus the first eight
-  hexadecimal characters of the SHA-256 of their absolute directory path. A named
-  profile never borrows the default profile's login.
-- Hermes: `~/.hermes/auth.json` and `~/.hermes-*/auth.json`, including the
-  `providers.openai-codex.tokens` login and `credential_pool.openai-codex` entries.
+## Where accounts come from
 
-The service's `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `HERMES_HOME`, when set, add
-custom directories. Environment variables set only in an unrelated shell are not
-visible to an already running service. Discovery does not recursively search the
-filesystem. Codex logins stored only in its OS keyring are not read in this version;
-the file-backed profiles configured on this machine are supported.
+Garcon scans at startup and every five minutes:
 
-The quota key combines provider, person, and workspace/organization identifiers;
-email is the display label. Duplicate profiles and harnesses are deduplicated before
-usage polling. Distinct subscriptions under the same email remain separate and show
-their workspace as a subtitle. API-key accounts do not have subscription meters.
+| Provider | Local sources |
+| --- | --- |
+| Codex | `~/.codex/auth.json`, `~/.codex-*/auth.json` |
+| Claude | `~/.claude`, `~/.claude-*`; credential files or profile-specific macOS Keychain entries |
+| Hermes | `~/.hermes/auth.json`, `~/.hermes-*/auth.json`; Codex provider and pool entries |
 
-## Refresh and privacy
+The service's `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `HERMES_HOME` add custom directories. Variables set in another shell don't change an already-running service. Discovery doesn't search recursively. Codex keyring-only logins and API keys don't supply subscription meters.
 
-Codex snapshots use `https://chatgpt.com/backend-api/wham/usage`, with the selected
-ChatGPT workspace header. Claude identity uses `/api/oauth/profile` and allowances
-use `/api/oauth/usage` on `https://api.anthropic.com`, with the OAuth beta header.
-Claude's named `limits` entries take precedence over matching legacy windows.
-These provider endpoints can change; parsing and network failures retain the last
-good values with a stale status. They are isolated from completion proxying.
+Duplicate profiles for the same provider, person, and workspace share a snapshot. Distinct subscriptions remain separate, even with the same email. Quota discovery is broader than the [Codex routing pool](codex-routing.md); finding an account doesn't enroll it.
 
-Garcon checks Claude logins at startup and once a minute, even with the dashboard
-closed. Within five minutes of access-token expiry (or after waking with an expired
-token), it invokes the installed Claude CLI with empty input. Claude owns token
-rotation, its cross-process auth lock, and profile-specific credential storage.
-Garcon re-reads the saved login to confirm renewal and refreshes limits after a
-success. It never exchanges refresh tokens or writes, copies, or synchronizes
-provider credentials itself. Codex credential renewal remains owned by Codex.
+## Refresh and recovery
 
-The renewal child runs in an empty temporary directory with hooks, MCP servers,
-project/user settings and tools disabled. It receives no prompt, ignores inherited
-auth overrides, and points its model API at a loopback endpoint with no upstream.
-No model request or reset credit is used. A per-profile lock prevents overlapping
-Garcon renewal children; failed attempts back off from two to 32 minutes, and a
-changed login bypasses that delay. Each child has a 45-second timeout.
+Codex quota comes from `/backend-api/wham/usage` on `chatgpt.com`; credits use `/backend-api/wham/rate-limit-reset-credits`. Claude uses `/api/oauth/profile` and `/api/oauth/usage` on `api.anthropic.com`.
 
-Claude must be installed on PATH or at `~/.local/bin/claude`. This behavior was
-verified with Claude Code 2.1.277: startup renews credentials before rejecting empty
-input. Future CLI changes may require adapting this mechanism. Missing or revoked
-refresh tokens cannot be repaired silently; sign in again using that profile's CLI.
-A successful process exit alone is never treated as proof of renewal.
+Garcon sends tokens only to the fixed provider endpoints, with timeouts, response-size limits, and rate-limit backoff. SQLite stores the latest normalized snapshots, not tokens or quota history. A failed refresh preserves the previous values and their original timestamp.
 
-For quota collection, Garcon reads access tokens and sends them only to fixed
-provider HTTPS endpoints. Requests have
-timeouts and response-size limits, refuse redirects, and honor rate-limit backoff.
-Only credential digests and resolved identities are cached between refreshes.
+Once a minute, Garcon checks idle Claude logins. Near expiry, an isolated Claude process renews its own credentials; empty input and a loopback relay block model traffic. Attempts have a 45-second timeout and back off after failure. This relies on Claude CLI behavior and may need adjustment after upgrades. Missing or revoked grants require signing in again. Codex pool renewal is described in the routing guide.
 
-The `limits` state in the local `usage.db` SQLite database contains only the latest normalized snapshots
-and is written atomically with owner-only permissions. There is no quota history. A failed refresh preserves the previous update time and values.
-Snapshots older than ten minutes are marked stale. Once a reset deadline passes,
-the previous usage is shown as expired until the provider confirms a new window;
-Garcon never assumes it has reset to zero. Missing or revoked logins require opening
-the appropriate CLI to sign in, after which collection recovers automatically.
-An idle Claude access token is renewed automatically while its saved refresh grant
-remains valid; failures retain the previous snapshot and its stale/login warning.
+## API
 
-## Local API
+- `GET /api/limits` returns cached snapshots immediately, plus `refreshing`, `updated_at`, and any error. Each window has `id`, `label`, nullable `used_percent`, `window_seconds`, `resets_at`, and `expired`.
+- `POST /api/limits/refresh` requests a background refresh and returns 202. Refreshes coalesce, with a 30-second minimum interval and provider backoff. Requires local Host and matching Origin.
 
-- `GET /api/limits`: cached account snapshots plus collection status; never blocks
-  on provider calls. Windows include `id`, `label`, nullable `used_percent`,
-  `window_seconds`, `resets_at` (Unix milliseconds, zero if unknown), and `expired`.
-- `POST /api/limits/refresh`: requests a background refresh and returns HTTP 202
-  with the current snapshot. Concurrent requests coalesce, manual refreshes have a
-  30-second minimum interval, and provider backoff still applies. Requires a local
-  Host and rejects a different Origin.
-
-Responses and caches contain no access tokens, refresh tokens, or login file paths.
-Codex accounts also include `reset_credits`: nullable `available_count`, a list of
-available credit `expires_at` timestamps (Unix milliseconds; zero if not reported),
-and independent `status`, `fetched_at`, and optional `error` fields. Claude accounts
-omit this field. Credit identifiers and redemption endpoints are not exposed.
-Limits and the Overview summary are independent of request-history, harness, and
-account filters, and work even when Garcon has not recorded a completion.
+Timestamps are Unix milliseconds; zero means unknown where supported. Codex `reset_credits` has an independent status and fetch time, a nullable count, and expiration dates. Responses contain neither credentials nor redemption controls.

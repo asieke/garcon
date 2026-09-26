@@ -1,73 +1,31 @@
-# Automatic account detection
+# Which account made a request?
 
-The behavior below is the default pass-through mode. Optional
-[Codex account routing](codex-routing.md) explicitly enrolls local OAuth accounts
-and selects the outbound account for new Codex conversations. In that mode,
-usage attribution follows the selected outbound credentials.
+Garcon labels requests from the credentials sent upstream. With Codex routing enabled, that's the selected pool account. In pass-through mode, it's the client's account.
 
-Use these base URLs without an account label:
+## Routes
 
-| Tool | Base URL |
+URLs name the tool and provider, never the account:
+
+| Tool | Base URL on `http://127.0.0.1:4141` |
 | --- | --- |
-| Claude Code | `http://127.0.0.1:4141/claude` |
-| Codex | `http://127.0.0.1:4141/codex/backend-api/codex` |
-| Hermes / Anthropic | `http://127.0.0.1:4141/hermes/anthropic` |
-| Hermes / OpenAI | `http://127.0.0.1:4141/hermes/openai/v1` |
-| Hermes / OpenRouter | `http://127.0.0.1:4141/hermes/openrouter/api/v1` |
-| Hermes / ChatGPT | `http://127.0.0.1:4141/hermes/chatgpt/backend-api/codex` |
+| Codex | `/codex/backend-api/codex` |
+| Claude Code | `/claude` |
+| Pi with Codex | `/pi/chatgpt/backend-api/codex` |
+| Pi with OpenRouter | `/pi/openrouter/api/v1` |
+| Hermes with ChatGPT | `/hermes/chatgpt/backend-api/codex` |
+| Other clients | `/<harness>/<provider>` plus the API prefix |
 
-`garcon claude` always detects accounts. Its login maintenance invokes Claude with empty input and does not generate completion requests.
-There is no account flag or account field in the connection settings.
+See [connection examples](connect.html). Remove account labels from older URLs and restart the client; the old account flag is unsupported.
 
-For Hermes with a ChatGPT login, use
-`HERMES_CODEX_BASE_URL=http://127.0.0.1:4141/hermes/chatgpt/backend-api/codex hermes chat --provider openai-codex`.
+## Labels you may see
 
-Detection runs on the credentials attached to each completion request, independent
-of the tool that sent it. Switching logins or running multiple sessions does not
-require changing the base URL. Garcon never consults a shared “current account”
-file or reads a prompt to determine identity.
+- **ChatGPT:** the selected account header and token claims identify the account. An available email becomes its label; a different selected workspace may appear by ID. The upstream still authenticates the request.
+- **Claude OAuth:** Garcon asks Anthropic's profile endpoint for the account email or UUID. Failed lookups get a credential fingerprint instead of borrowing another account's identity.
+- **API keys:** a provider-specific fingerprint identifies the key, not a person. Separate keys stay separate; rotating a key creates a new label. An Anthropic API-key header takes precedence over OAuth attribution.
+- **No credentials:** the label is `<provider>:unknown`.
 
-This describes completion attribution. The separate [Limits collector](subscription-limits.md)
-reads local login profiles to fetch account-wide subscription snapshots even while those
-accounts are idle. Those reads do not override requests in pass-through mode;
-the optional Codex router consumes these snapshots to select an enrolled account.
+A saved OpenRouter key replaces the client's bearer token, so attribution follows that saved key. Without one, Garcon accepts the client's own key; the `garcon-local` placeholder isn't a credential.
 
-- **ChatGPT:** use `ChatGPT-Account-Id` and the access token's account/profile claims.
-  Display an available email as the account name without a workspace suffix.
-  Usage with the same email is grouped into one account. A selected account that differs from the token's default wins and is
-  displayed by ID. These are attribution hints, not locally verified authentication;
-  the upstream remains responsible for authentication.
-- **Anthropic OAuth:** tokens beginning with `sk-ant-oat` are resolved through
-  `https://api.anthropic.com/api/oauth/profile`. Use the returned account email,
-  or account UUID if email is absent. The lookup goes only to Anthropic, refuses
-  redirects, times out after two seconds, and reads at most 64 KiB. It happens
-  after the completion response has been received, before the usage row is saved;
-  lookup time is excluded from the recorded model latency. A first lookup may
-  delay closing the response by up to two seconds.
-- **API keys:** use a provider-scoped SHA-256 fingerprint truncated to 96 bits,
-  displayed as `<provider>:key:<digest>`. This identifies a key, not a person or
-  billing account. Different keys cannot automatically be grouped into one account;
-  key rotation creates a new label. Anthropic's `x-api-key` takes precedence over
-  OAuth attribution when both headers are supplied.
-- **Failed OAuth lookup:** use `<provider>:credential:<digest>`; no stale account
-  is borrowed from another token. Without credentials, use `<provider>:unknown`.
+Memory caches hold labels and credential digests. The cache holds up to 1,024 entries: successes for an hour, failures for a minute. It clears at restart. Identity lookup failure doesn't change pass-through request contents. The profile endpoint is private and may change.
 
-Only digests and resolved labels are cached in memory, never raw credentials.
-The cache holds at most 1,024 entries, coalesces concurrent lookups of the same
-token, retains successes for an hour and failures for a minute, and is discarded
-at restart. A refreshed token is looked up independently and resolves to the same
-account when the provider returns the same identity. Requests and responses are
-forwarded unchanged, including when identity lookup fails. Existing usage and
-legacy remote caches are not rewritten.
-
-All harnesses use account-free routes: `/claude/…`, `/codex/…`, or
-`/<harness>/<provider>/…`. Account-labeled routes and the old account flag are
-rejected. To upgrade, remove the account segment from each client's base URL and
-restart existing sessions so they reload their configuration. Keep any SDK path
-suffix, such as `/backend-api/codex`, `/v1`, or `/api/v1`. Historical usage files are not rewritten. The dashboard normalizes previously
-generated email-plus-workspace labels to the email so their usage is grouped together.
-
-Provider integration references: [Hermes authentication](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/auth_codex.py)
-and [Codex authentication](https://developers.openai.com/codex/auth).
-Anthropic's OAuth profile endpoint is an internal Claude endpoint and may change;
-failed or changed responses use the fallback described above.
+[Subscription limits](subscription-limits.md) are a separate account-wide snapshot. They include work outside Garcon and don't override pass-through credentials. Old usage records remain intact; display labels may be normalized for grouping.

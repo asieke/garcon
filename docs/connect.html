@@ -3,8 +3,8 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Connect a harness · Garcon</title>
-	<meta name="description" content="Point Claude Code, Codex, OpenClaw, Hermes or any compatible client at the proxy.">
+	<title>Connect your tools · Garcon</title>
+	<meta name="description" content="Add an account, then tell your tool to use Garcon.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,66 +14,52 @@
 		<h2>Start</h2>
 		<a class="nav" href="index.html">Overview</a>
 		<a class="nav" href="install.html">Install</a>
-		<a class="nav" href="connect.html" aria-current="page">Connect a harness</a>
+		<a class="nav" href="connect.html" aria-current="page">Connect your tools</a>
 		<a class="nav" href="dashboard.html">Dashboard</a>
 		<h2>Reference</h2>
 		<a class="nav" href="api.html">HTTP API</a>
-		<a class="nav" href="files.html">Files and skills</a>
+		<a class="nav" href="files.html">Local files</a>
 		<p class="repo"><a href="https://github.com/asieke/garcon">github.com/asieke/garcon</a></p>
 	</nav>
 
 	<main id="top">
-		<h1>Connect a harness</h1>
-		<p class="lede">Point Claude Code, Codex, OpenClaw, Hermes or any compatible client at the proxy.</p>
+		<h1>Connect your tools</h1>
+		<p class="lede">Add an account, then tell your tool to use Garcon.</p>
 
-		<section id="connect">
-			<p>First complete <a href="install.html">installation and <code>garcon setup</code></a> on this machine. Setup starts the proxy; the configuration below connects your harness to it. Repeat this connection step on each machine you use.</p>
-			<p>The Settings view generates these snippets for a chosen harness and provider. All harnesses detect accounts automatically from each request. API keys without identity information get anonymous key labels. Account flags and labeled URLs are not supported. When upgrading, remove the account segment from existing URLs and restart your sessions.</p>
-			<h3>Claude Code</h3>
-			<div class="block"><div class="label"><span>with Remote Control</span><button class="copy" type="button">Copy</button></div><pre><code>garcon claude</code></pre></div>
-			<p>Runs <code>claude</code> through a private socket, so the session can still be picked up from the claude.ai app (Remote Control). Put <code>--</code> before any arguments meant for <code>claude</code>. The login stays in Claude Code's own credential store. Garcon uses it for the session and renewal; automatic attribution makes a cached profile lookup directly to Anthropic with the token on each request. Lookup failure falls back to an anonymous credential label without blocking model access.</p>
-			<div class="block"><div class="label"><span>environment only</span><button class="copy" type="button">Copy</button></div><pre><code>ANTHROPIC_BASE_URL=http://127.0.0.1:4141/claude \
-_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1 claude</code></pre></div>
-			<p>Claude Code appends <code>/v1/messages</code> itself. The second variable keeps subscription (claude.ai) login working through a non-Anthropic host, but Remote Control refuses to start with a base URL set.</p>
-			<h3>Codex</h3>
-			<div class="block"><div class="label"><span>~/.codex/config.toml</span><button class="copy" type="button">Copy</button></div><pre><code>model_provider = "garcon"
+<section id="accounts"><h2>Add accounts</h2>
+<p>Choose <strong>Providers → Add account</strong>. ChatGPT and Claude sign-in open in your browser and need the corresponding CLI installed. Garcon creates a separate profile and confirms the account before adding it. If the popup is blocked, choose <strong>Open sign-in page</strong>.</p>
+<p>Sign-in expires after five minutes and can be cancelled. A dashboard reload in the same tab can resume it while the server runs. Connecting a login doesn't configure your tool or enroll a Codex account automatically.</p>
+<p>For OpenRouter, paste a key and save it. Saving doesn't verify the key or make a paid request. A saved key supplies OpenRouter requests; without one, clients can send their own key.</p>
+</section>
+<section id="codex"><h2>Codex</h2>
+<p>Enable the accounts you want under <strong>Providers → Codex</strong>. Merge this into your user configuration, then restart Codex Desktop or start a fresh CLI process:</p>
+<div class="block"><div class="label"><span>~/.codex/config.toml</span><button class="copy" type="button">Copy</button></div><pre><code>model_provider = "garcon"
 
 [model_providers.garcon]
-name = "OpenAI"
+name = "Garcon"
 base_url = "http://127.0.0.1:4141/codex/backend-api/codex"
 wire_api = "responses"
-requires_openai_auth = true</code></pre></div>
-			<p>Codex needs its own provider entry because the built-in one ignores base URL overrides under a ChatGPT login; a custom provider also uses plain HTTP instead of websockets, which is what lets the proxy read usage. Only model calls are routed; plugin, app and usage-limit traffic goes to chatgpt.com directly.</p>
-			<h3>OpenClaw</h3>
-			<div class="block"><div class="label"><span>~/.openclaw/openclaw.json</span><button class="copy" type="button">Copy</button></div><pre><code>{
-  models: {
-    mode: "merge",
-    providers: {
-      anthropic:  { baseUrl: "http://127.0.0.1:4141/openclaw/anthropic" },
-      openai:     { baseUrl: "http://127.0.0.1:4141/openclaw/openai/v1" },
-      openrouter: { baseUrl: "http://127.0.0.1:4141/openclaw/openrouter/api/v1" },
-    },
-  },
-}</code></pre></div>
-			<p>Each adapter appends its own endpoint path. The <code>openai-codex</code> (ChatGPT OAuth) provider uses <code>…/openclaw/chatgpt/backend-api</code>. Keys stay in OpenClaw; the proxy forwards <code>Authorization</code> and <code>x-api-key</code> untouched.</p>
-			<h3>Hermes</h3>
-			<div class="block"><div class="label"><span>~/.hermes/config.yaml</span><button class="copy" type="button">Copy</button></div><pre><code>providers:
-  openrouter:
-    base_url: http://127.0.0.1:4141/hermes/openrouter/api/v1
-  anthropic:
-    base_url: http://127.0.0.1:4141/hermes/anthropic
-  openai:
-    base_url: http://127.0.0.1:4141/hermes/openai/v1</code></pre></div>
-			<p>Hermes appends <code>/chat/completions</code> or <code>/v1/messages</code> itself and asks for <code>stream_options.include_usage</code>, which is what lets the proxy see token counts.</p>
-			<p>For Hermes with a ChatGPT login:</p>
-			<div class="block"><div class="label"><span>ChatGPT / Codex</span><button class="copy" type="button">Copy</button></div><pre><code>HERMES_CODEX_BASE_URL=http://127.0.0.1:4141/hermes/chatgpt/backend-api/codex hermes chat --provider openai-codex</code></pre></div>
-			<h3>Anything else</h3>
-			<p>Use <code>http://127.0.0.1:4141/&lt;name&gt;/&lt;provider&gt;</code> plus whatever path prefix the client's SDK expects (<code>/v1</code> for OpenAI SDKs, <code>/api/v1</code> for OpenRouter). Rows are tagged with that name and the dashboard lists it alongside the known harnesses. OpenAI-compatible clients only report tokens on streamed replies when they send <code>stream_options: {"include_usage": true}</code>.</p>
-			<h3 id="verify">Verify your first request</h3>
-			<p>Keep a copy of your original configuration so you can restore it before <a href="install.html#uninstall">uninstalling Garcon</a>. Restart the harness after applying its generated configuration.</p>
-			<p>Verify any of these with one short call (<code>claude -p hi</code>, <code>codex exec hi</code>) and a new row in the Logs view or at <code>/api/usage</code>.</p>
-			<p>If no row appears, run <code>garcon doctor</code>, confirm that the harness is using the local URL, and check Logs with all filters cleared. Doctor checks the proxy and reports whether any local requests have been recorded; it does not change harness configuration. See <a href="install.html#troubleshooting">installation troubleshooting</a>.</p>
-		</section>
+requires_openai_auth = true
+supports_websockets = false</code></pre></div>
+<p>Keep one provider setting and one Garcon table. Codex uses Codex accounts only, with no fallback to OpenRouter or Claude. The model stays as selected in Codex. <a href="codex-routing.md">How account selection works</a>.</p>
+</section>
+<section id="pi"><h2>Pi</h2>
+<p>Choose <strong>Connect Pi</strong> and merge the generated providers into Pi's <code>models.json</code>. Log into Codex in Pi for its native Codex adapter. Use <code>/model</code> to choose a provider and model.</p>
+<ul><li>Codex: <code>http://127.0.0.1:4141/pi/chatgpt/backend-api/codex</code></li><li>OpenRouter: <code>http://127.0.0.1:4141/pi/openrouter/api/v1</code></li></ul>
+<p>Pi's Codex route shares Garcon's enrolled pool when routing is enabled. OpenRouter needs an explicit model list. The generated <code>garcon-local</code> value is a placeholder for a key saved in Garcon, not a real credential. Pi chooses the provider; Garcon doesn't switch it automatically.</p>
+</section>
+<section id="claude"><h2>Claude Code</h2>
+<div class="block"><div class="label"><span>Launch through Garcon</span><button class="copy" type="button">Copy</button></div><pre><code>garcon claude
+# Pass Claude arguments after --</code></pre></div>
+<p>This preserves Remote Control and forwards the selected Claude profile. To use a separate profile, pass <code>--config-dir /absolute/profile/path</code>. Adding a Claude account in the dashboard doesn't switch the launcher's selected profile. Claude doesn't use the Codex pool or OpenRouter.</p>
+</section>
+<section id="other"><h2>Other clients</h2>
+<p>Use <code>http://127.0.0.1:4141/&lt;harness&gt;/&lt;provider&gt;</code> plus the client's API prefix: <code>/v1</code> for OpenAI, <code>/api/v1</code> for OpenRouter. Supported providers are <code>anthropic</code>, <code>openai</code>, <code>openrouter</code>, and <code>chatgpt</code>.</p>
+<p>Hermes with ChatGPT can use:</p>
+<div class="block"><div class="label"><span>Hermes</span><button class="copy" type="button">Copy</button></div><pre><code>HERMES_CODEX_BASE_URL=http://127.0.0.1:4141/hermes/chatgpt/backend-api/codex hermes chat --provider openai-codex</code></pre></div>
+<p>URLs never include account labels. OpenAI-compatible streaming clients need <code>stream_options: {"include_usage": true}</code> for token counts. <a href="account-detection.md">Account attribution</a>.</p>
+</section>
+<section id="verify"><h2>Check the first request</h2><p>Send a short request, then find it in <strong>Logs</strong>. Check its account, model, and status. A saved setting alone doesn't prove the connection works.</p></section>
 
 		<nav class="pager" aria-label="Pages"><a href="install.html"><small>Previous</small>Install</a><a class="next" href="dashboard.html"><small>Next</small>Dashboard</a></nav>
 	</main>
