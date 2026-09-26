@@ -28,16 +28,14 @@ Press **R** or the refresh button to request a refresh. It reads the same cached
 snapshots as Limits, so opening another widget does not add provider polling.
 
 The fixed footer starts with an empty lane and scrolls only new LLM completion rows
-recorded locally or received through sync after the widget opens. Each chip shows
-account, provider, total tokens, and machine name. Existing history is skipped,
-including when reloading the widget. It checks for arrivals every two seconds;
-remote requests appear after sync delivers them, in arrival order even if their
-original request timestamp is older. Repeated sync rows are deduplicated.
+recorded locally after the widget opens. Each chip shows account, provider, and
+total tokens. Existing history is skipped, including when reloading the widget.
+It checks for arrivals every two seconds.
 Token totals include input, cache-read, cache-write, and output tokens;
 they appear once a request finishes. Requests scroll in arrival order, once each.
 New chips enter from the right and scroll across the full lane. When the queue drains,
 the footer remains visible with an empty lane. The fixed **Total requests** chip on
-the right counts all recorded local and synced requests, including historical rows.
+the right counts all locally recorded requests, including historical rows.
 Hovering does not interrupt scrolling. Reduced-motion mode
 uses a manually scrollable strip whose new chips clear after twelve seconds.
 
@@ -114,9 +112,8 @@ provider HTTPS endpoints. Requests have
 timeouts and response-size limits, refuse redirects, and honor rate-limit backoff.
 Only credential digests and resolved identities are cached between refreshes.
 
-`limits.json`, beside `usage.jsonl`, contains only the latest normalized snapshots
-and is written atomically with owner-only permissions. There is no history or
-Supabase quota table. A failed refresh preserves the previous update time and values.
+The `limits` state in the local `usage.db` SQLite database contains only the latest normalized snapshots
+and is written atomically with owner-only permissions. There is no quota history. A failed refresh preserves the previous update time and values.
 Snapshots older than ten minutes are marked stale. Once a reset deadline passes,
 the previous usage is shown as expired until the provider confirms a new window;
 Garcon never assumes it has reset to zero. Missing or revoked logins require opening
@@ -140,4 +137,4 @@ available credit `expires_at` timestamps (Unix milliseconds; zero if not reporte
 and independent `status`, `fetched_at`, and optional `error` fields. Claude accounts
 omit this field. Credit identifiers and redemption endpoints are not exposed.
 Limits and the Overview summary are independent of request-history, harness, and
-device filters, and work even when Garcon has not recorded a completion.
+account filters, and work even when Garcon has not recorded a completion.

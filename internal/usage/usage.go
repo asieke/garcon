@@ -10,9 +10,17 @@ import (
 
 // Record is one completion call, as stored one per line in usage.jsonl.
 type Record struct {
-	Time    int64  `json:"time"` // unix milliseconds
-	Harness string `json:"harness"`
-	Account string `json:"account"`
+	RequestID string `json:"request_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	AccountID string `json:"account_id,omitempty"`
+	Method    string `json:"method,omitempty"`
+	Path      string `json:"path,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	State     string `json:"state,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Time      int64  `json:"time"` // unix milliseconds
+	Harness   string `json:"harness"`
+	Account   string `json:"account"`
 	// Provider is omitted on rows recorded before harnesses other than Claude Code
 	// and Codex were supported; those imply anthropic and chatgpt respectively.
 	Provider string `json:"provider,omitempty"`
@@ -49,12 +57,6 @@ type Record struct {
 	CacheRead  int64 `json:"cache_read"`
 	CacheWrite int64 `json:"cache_write"`
 	Output     int64 `json:"output"`
-
-	// Sync fields. Never written to usage.jsonl: Device is set in memory on local
-	// rows, and all three are on disk only for rows pulled from other devices.
-	ID       string `json:"id,omitempty"`
-	DeviceID string `json:"device_id,omitempty"`
-	Device   string `json:"device,omitempty"`
 }
 
 // block matches the Anthropic Messages, OpenAI Responses and OpenAI chat

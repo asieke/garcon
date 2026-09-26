@@ -1,8 +1,8 @@
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
 	plugins: [
 		sveltekit({
 			compilerOptions: { runes: true },
@@ -25,18 +25,5 @@ export default defineConfig(({ mode }) => ({
 				}
 			}
 		})
-	],
-	// `npm run dev` serves the UI on 4242 while a garcon from npm keeps running on 4141; the
-	// proxy hands /api to it (GARCON_URL points it at a garcon built from source on another port).
-	// strictPort so a stale server fails loudly instead of drifting to 4243.
-	server: {
-		host: '127.0.0.1', port: 4242, strictPort: true,
-		proxy: {
-			'/api': {
-				target: loadEnv(mode, '.', 'GARCON_').GARCON_URL || 'http://127.0.0.1:4141',
-				// Keep the browser's Host aligned with Origin for guarded local POSTs.
-				changeOrigin: false
-			}
-		}
-	}
-}));
+	]
+});

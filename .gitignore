@@ -3,5 +3,4 @@
 /internal/dashboard/build/*
 !/internal/dashboard/build/.gitkeep
 /npm/platforms/
-/supabase/.temp/
 /npm/ai-garcon/*.tgz

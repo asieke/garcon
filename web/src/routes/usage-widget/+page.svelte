@@ -12,8 +12,9 @@
 	const groups = $derived(widgetGroups(snapshot?.accounts ?? []));
 	const busy = $derived(requesting || snapshot?.refreshing);
 	const groupColors = ['#22b66b', '#3c82eb', '#db4b9e', '#a67add', '#d99b30', '#21a2b5'];
-	const syncedAt = $derived(Math.min(...(snapshot?.accounts.filter(a => a.fetched_at > 0).map(a => a.fetched_at) ?? [])));
-	const stale = $derived(Boolean(error || snapshot?.error || snapshot?.accounts.some(a => accountStatus(a, now) !== 'Up to date')));
+	const checkedAt = $derived(snapshot?.updated_at ?? 0);
+	const staleAccounts = $derived(snapshot?.accounts.filter(a => accountStatus(a, now) !== 'Up to date').length ?? 0);
+	const stale = $derived(Boolean(error || snapshot?.error || staleAccounts || (checkedAt > 0 && now - checkedAt > 600_000)));
 
 	async function load() {
 		try {
@@ -54,7 +55,7 @@
 	<section class="widget" aria-label="Account usage widget">
 		<header>
 			<h1><a href="/?view=limits" title="Open the full Limits dashboard">Usage</a></h1>
-			<div class="summary"><span>{snapshot?.accounts.length ?? 0} profiles</span><span class:stale title={Number.isFinite(syncedAt) ? new Date(syncedAt).toLocaleString() : undefined}>{busy ? 'refreshing…' : !snapshot ? 'connecting…' : Number.isFinite(syncedAt) ? `${stale ? 'last update' : 'synced'} ${new Date(syncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}</span><button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button></div>
+			<div class="summary"><span>{snapshot?.accounts.length ?? 0} profiles</span><span class:stale title={checkedAt > 0 ? `Last provider check: ${new Date(checkedAt).toLocaleString()}` : undefined}>{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}</span>{#if staleAccounts}<span class="stale">{staleAccounts} {staleAccounts === 1 ? 'profile needs' : 'profiles need'} attention</span>{/if}<button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button></div>
 		</header>
 		{#if error || snapshot?.error}<p class="notice" role="status">{error || snapshot?.error}</p>{/if}
 		<div class="columns" aria-hidden="true"><span>Tool</span><span>Window</span><span>Used</span><span>Resets in</span></div>
@@ -76,7 +77,7 @@
 							<span class="reset" title={reset.description} aria-label={reset.description}>{reset.text}</span>
 						</div>
 					{/each}
-					{#if status !== 'Up to date'}<p class="account-status" role="status">{account.provider === 'codex' ? 'Codex' : 'Claude'}: {status}{account.error && account.error !== status ? ` · ${account.error}` : ''}</p>{/if}
+					{#if status !== 'Up to date'}<p class="account-status" role="status">{account.provider === 'codex' ? 'Codex' : 'Claude'}: {status}{account.error && account.error !== status ? ` · ${account.error}` : ''}{account.fetched_at > 0 ? ` · last success ${new Date(account.fetched_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}</p>{/if}
 				{/each}
 			</section>
 		{:else}

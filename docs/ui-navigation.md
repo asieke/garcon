@@ -1,69 +1,56 @@
-# Dashboard navigation and skin
+# The local routing desk
 
-Garcon uses a persistent desktop sidebar with four task groups:
+Garcon has four primary destinations. The main navigation is a left rail on
+larger windows and an icon rail with accessible labels on smaller windows.
+`?view=accounts|sessions|analytics|logs` links directly to a destination. Previous
+`usage`, `cost`, and `models` links open the corresponding Analytics tab.
 
-| Group | Views | Scope |
-| --- | --- | --- |
-| Analytics | Overview, Usage, Cost | Volume and estimated spend |
-| Explore | Models, Accounts, Sessions, Activity | Usage dimensions and work patterns |
-| Diagnostics | Performance, Latency, Logs | Request behavior and investigation |
-| Administration | Settings | Instance connections and browser preferences |
+## Accounts
 
-Settings is separated at the foot of navigation and has no usage filter bar. It
-continues to use all recorded accounts and harnesses, regardless of the selected
-analytics filters, and remains accessible when usage loading fails. Returning to
-analytics preserves the current filters during client navigation.
+The home view contains one expandable Codex provider row. It shows discovered
+local OAuth profiles, subscription plans, remaining quota, reset countdowns,
+routing scores, and eligibility. Duplicated profiles for the same account appear
+once. Each account can be enrolled or removed individually.
 
-## First use
+Lower priority numbers are considered first. The arrows reorder whole groups;
+the account's P1/P2/etc. selector moves it between groups. Within a group, the
+highest remaining-percentage / hours-to-reset score wins. The lowest score among
+an account's general quota windows is used. Existing sessions keep their account.
 
-After `garcon setup` starts and verifies the proxy, an empty dashboard points the
-user to Settings → Connect a harness. It explains how to copy the configuration,
-restart the tool, and send a first request. A separate note points users with an
-existing Supabase project to Settings → Sync; sync remains optional. Once usage
-arrives, the normal analytics view replaces this guidance automatically.
+Add account opens a keyboard-accessible dialog with a named Codex profile and a
+copyable login command. Refresh discovers completed logins and updates quota.
+Connect Codex provides the stable loopback endpoint and configuration snippet.
 
-An empty filtered result continues to offer “Show all usage”; it must not be
-mistaken for a new installation. Settings stays accessible before any usage exists
-and includes a distinct-device-name reminder when joining an existing project.
+## Sessions
 
-## Design rationale
+This table uses persisted assignments, not an inactivity-based guess. It shows
+the session identifier, account, model, request count, active requests, and last
+activity. Search filters by session, account, or model. A row opens its requests
+in Logs. Older hashed-only assignments are marked as legacy; readable IDs and
+activity become available when those sessions resume.
 
-- [Carbon's left-panel guidance](https://carbondesignsystem.com/components/UI-shell-left-panel/usage/)
-  recommends side navigation for larger sets of frequently switched destinations.
-  Grouped, labeled links grow vertically without wrapping into rows of tabs.
-- [NN/g's Tabs, Used Right](https://www.nngroup.com/articles/tabs-used-right/)
-  describes tabs as alternate views in a shared context. Administration is a
-  different task context from usage analysis, so it receives its own group.
-- [Carbon's global-header pattern](https://v10.carbondesignsystem.com/patterns/global-header/)
-  separates product navigation from system functions and includes a skip link.
-  Garcon adopts consistent navigation, location cues, and keyboard access.
+## Logs
 
-The content hierarchy is page title and purpose, shared filters, then metrics and
-charts. Existing analytics retain their calculations and chart colors. Shared
-surface, text, focus, and navigation tokens provide light and dark skins without
-external fonts or UI dependencies. Harnesses, accounts and devices use multi-select
-listboxes (nothing selected means all; fully keyboard-operable) so new values
-cannot expand the toolbar indefinitely. A Device select joins them only
-once sync has pulled in rows from a second machine; a single-device install never
-shows it. The Logs table adds a Device column whenever sync is enabled, and the
-sidebar brand shows the running version (the npm package version for npm installs).
+Requests are searchable and paginated. Every proxy request is recorded, including
+metadata calls, routing failures, upstream errors, and interrupted responses.
+The request inspector exposes identity, model, timing, token counts, and a
+copyable metadata record. Prompt and response content and credentials are never
+persisted. System diagnostics have their own paginated tab.
 
-At widths of 760px and below, a disclosure menu replaces the persistent sidebar.
-It stays in document flow, closes on navigation or Escape, and supports normal
-keyboard traversal without a modal focus trap. Desktop navigation scrolls
-independently when the viewport is short. The horizontal header stays pinned as
-main content scrolls beneath it. Opening the mobile menu after scrolling returns
-to the top so its navigation links remain visible.
+## Analytics
 
-## Extending and checking
+Usage, Cost, and Models are tabs in one section. Period filters apply to SQLite
+aggregates. Cost is an API-equivalent estimate, with missing prices disclosed;
+it does not represent a ChatGPT subscription bill. Charts, model rankings, and
+account token shares all use observed requests, without fabricated demo values.
 
-`web/src/lib/navigation/views.ts` owns groups, labels, descriptions, and valid view
-identifiers. Add navigation entries there and a corresponding section renderer
-in `+page.svelte`. Views use `?view=cost` style URLs for bookmarks and browser
-Back/Forward; missing or unknown view values fall back to Overview. Filters are
-session state and are not included in shared URLs.
+## Live activity
 
-Run `npm run check` and `npm run build` in `web`. Browser checks should cover all
-views at 1440, 768, 390, and 320px; navigation history; direct view URLs; retained
-filters across Settings; menu keyboard behavior; light/dark mode; empty usage;
-and an unavailable usage API. Use synthetic records for shareable screenshots.
+The fixed bottom ticker displays model → account and in-flight/completed status.
+It can be paused, pauses on hover or keyboard focus, and respects reduced motion.
+Selecting an item opens the request inspector. HTTP polling reconnects without
+resetting the selected view or current filters.
+
+All persistent application data is local in SQLite. The existing compact usage
+widget remains available at `/usage-widget/`; its nicknames migrate from browser
+storage into the database on first use.

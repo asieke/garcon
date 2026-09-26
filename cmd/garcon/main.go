@@ -3,8 +3,7 @@
 // Point a harness at http://127.0.0.1:4141/<harness>/<provider>/ and
 // every request is forwarded verbatim to that provider. Completion calls are
 // recorded with the model and tokens the provider reports. The dashboard is
-// served at /, and Settings can sync the log with other machines through a
-// Supabase project the user owns.
+// served at / and shows this machine's locally recorded usage.
 //
 // There is no authentication. What keeps all of this private is that the server
 // listens on loopback and answers only requests addressed to this machine, so
@@ -16,13 +15,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"garcon/internal/claude"
+	"garcon/internal/codexrouting"
 	"garcon/internal/dashboard"
 	"garcon/internal/limits"
 	"garcon/internal/local"
@@ -30,9 +32,7 @@ import (
 	"garcon/internal/prices"
 	"garcon/internal/proxy"
 	"garcon/internal/service"
-	"garcon/internal/setup"
 	"garcon/internal/store"
-	"garcon/internal/syncer"
 )
 
 // version is stamped at build time: go build -ldflags "-X main.version=1.2.3".
@@ -54,7 +54,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon connect-supabase --create-project | --project-ref REF [--skip-schema]\n       garcon connect-supabase --project-url URL --key-stdin [--name LABEL]\n       garcon connect-supabase --print-sql\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)
@@ -64,9 +64,6 @@ func main() {
 			os.Exit(1)
 		case "service":
 			service.Main(os.Args[2:])
-			return
-		case "connect-supabase":
-			setup.Main(os.Args[2:])
 			return
 		case "claude":
 			claude.Main(os.Args[2:])
@@ -79,8 +76,7 @@ func main() {
 	home, _ := os.UserHomeDir()
 	listen := flag.String("listen", "127.0.0.1:4141", "address to listen on")
 	allowRemote := flag.Bool("allow-remote", false, "serve on a non-loopback -listen address; there is no authentication, so the dashboard, the settings and the relay are then open to that network")
-	data := flag.String("data", filepath.Join(home, ".local/share/garcon/usage.jsonl"), "usage log")
-	configPath := flag.String("config", filepath.Join(home, ".config/garcon/config.json"), "settings file")
+	data := flag.String("data", filepath.Join(home, ".local/share/garcon/usage.db"), "local SQLite database (legacy .jsonl paths are migrated)")
 	flag.Parse()
 	if flag.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "unknown command %q; run garcon --help\n", flag.Arg(0))
@@ -91,16 +87,23 @@ func main() {
 		os.Exit(2)
 	}
 
+	listener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer listener.Close()
 	st, err := store.Open(*data)
 	if err != nil {
 		log.Fatal(err)
 	}
-	sy := syncer.New(st, *configPath)
-	go sy.Run()
-	li := limits.New(st.Dir())
+	defer st.Close()
+	log.SetOutput(io.MultiWriter(os.Stderr, st.DB))
+	li := limits.New(st.Dir(), st.DB)
 	go li.Run(context.Background())
 	started := time.Now()
-	px := &proxy.Proxy{Save: st.Save}
+	routing := codexrouting.New(st.Dir(), li.Snapshot, st.DB)
+	go routing.Run(context.Background())
+	px := &proxy.Proxy{Save: st.Save, Start: st.Save, Codex: routing}
 	static := own(dashboard.Handler(), false)
 
 	mux := http.NewServeMux()
@@ -117,36 +120,40 @@ func main() {
 	mux.Handle("/api/usage/recent", readOnly(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(st.RequestFeed())
 	}))
-	mux.Handle("/api/settings", own(sy, true))
+	for _, path := range []string{"/api/sessions", "/api/logs", "/api/events", "/api/analytics"} {
+		mux.Handle(path, own(st, true))
+	}
+	mux.Handle("/api/nickname", own(http.HandlerFunc(st.Nickname), true))
 	mux.Handle("/api/limits", own(li, true))
 	mux.Handle("/api/limits/refresh", own(li, true))
+	mux.Handle("/api/routing/codex", own(routing, true))
 	// Model list prices for the cost estimates, from OpenRouter's public catalogue; fetched when
 	// the dashboard first asks and at most daily after that, cached next to the usage log.
-	mux.Handle("/api/prices", own(prices.New(st.Dir()), true))
+	mux.Handle("/api/prices", own(prices.New(st.Dir(), st.DB), true))
 	mux.Handle("/api/config", readOnly(func(w http.ResponseWriter, r *http.Request) {
 		hosts := map[string]string{}
 		for name, u := range proxy.Providers {
 			hosts[name] = u.String()
 		}
 		var size int64
-		if fi, err := os.Stat(*data); err == nil {
+		if fi, err := os.Stat(st.Path()); err == nil {
 			size = fi.Size()
 		}
-		json.NewEncoder(w).Encode(config{Listen: *listen, Data: *data, Rows: st.Len(), Bytes: size, Started: started.UnixMilli(),
+		json.NewEncoder(w).Encode(config{Listen: *listen, Data: st.Path(), Rows: st.Len(), Bytes: size, Started: started.UnixMilli(),
 			Version: version, Providers: hosts, Implicit: proxy.ImplicitProvider})
 	}))
 
 	if *allowRemote {
-		log.Printf("WARNING: -allow-remote: anyone who can reach %s can read the usage log, change the sync settings and relay through this proxy", *listen)
+		log.Printf("WARNING: -allow-remote: anyone who can reach %s can read the usage log, refresh subscription limits and relay through this proxy", *listen)
 	}
-	log.Printf("garcon %s listening on http://%s, logging to %s", version, *listen, *data)
+	log.Printf("garcon %s listening on http://%s, logging to %s", version, *listen, st.Path())
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           local.Guard(mux, !*allowRemote),
 		ReadHeaderTimeout: 10 * time.Second, // completions stream for minutes, so no write or whole-request timeout
 		IdleTimeout:       2 * time.Minute,
 	}
-	log.Fatal(srv.ListenAndServe())
+	log.Fatal(srv.Serve(listener))
 }
 
 // own marks a response as Garcon's own (the dashboard or the API) rather than a

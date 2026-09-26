@@ -137,7 +137,7 @@ func Main(command string, args []string, version string) {
 		err = Doctor(base, version, os.Stdout)
 	}
 	if err == nil && command == "setup" {
-		fmt.Printf("\nNext: open %s/?view=settings\n1. In Connect a harness, choose your tool, then copy its configuration. For Claude Code with Remote Control: garcon claude.\n2. Restart that tool and make one short request. Check Logs for the new row.\n3. Optional: Settings > Sync connects your Supabase project. On another machine, reuse that project and choose a different device name.\n\nRun garcon doctor whenever you need to check this installation.\n", base)
+		fmt.Printf("\nNext: open %s/?view=settings\n1. In Connect a harness, choose your tool, then copy its configuration. For Claude Code with Remote Control: garcon claude.\n2. Restart that tool and make one short request. Check Logs for the new row.\n\nRun garcon doctor whenever you need to check this installation.\n", base)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -153,30 +153,6 @@ func Doctor(base, version string, out io.Writer) error {
 	fmt.Fprintf(out, "Dashboard: %s\nVersion: installed %s, running %s\nLocal usage: %d rows (%s)\n", base, version, c.Version, c.Rows, c.Data)
 	if c.Version != version {
 		return errors.New("version mismatch; run garcon service install to refresh the service, or restart your foreground process")
-	}
-	var s struct {
-		Settings struct {
-			Device  string `json:"device_name"`
-			Enabled bool   `json:"sync_enabled"`
-		} `json:"settings"`
-		Status struct {
-			Pending   int    `json:"pending"`
-			Remote    int    `json:"remote_rows"`
-			PushError string `json:"last_push_error"`
-			PullError string `json:"last_pull_error"`
-		} `json:"status"`
-	}
-	if err := Read(base, "/api/settings", &s); err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "Device: %s\n", s.Settings.Device)
-	if !s.Settings.Enabled {
-		fmt.Fprintln(out, "Sync: off (optional; local recording is ready)")
-	} else {
-		fmt.Fprintf(out, "Sync: on; %d pending local rows, %d remote rows\n", s.Status.Pending, s.Status.Remote)
-		if s.Status.PushError != "" || s.Status.PullError != "" {
-			return fmt.Errorf("sync needs attention: %s %s; open Settings > Sync", s.Status.PushError, s.Status.PullError)
-		}
 	}
 	if c.Rows == 0 {
 		fmt.Fprintln(out, "First request: still waiting. Configure a harness in Settings, then send one request.")

@@ -23,8 +23,7 @@ func TestAllGroupsExistingAccountLabelsWithoutRewritingLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.logFile.Close()
-	defer s.remoteFile.Close()
+	defer s.Close()
 	s.Save(usage.Record{Account: "a@example.com", Input: 5})
 	all := s.All()
 	var total int64
@@ -34,11 +33,13 @@ func TestAllGroupsExistingAccountLabelsWithoutRewritingLogs(t *testing.T) {
 		}
 		total += r.Input
 	}
-	if len(all) != 3 || total != 12 {
+	if len(all) != 2 || total != 8 {
 		t.Fatalf("lost usage: rows=%d, input=%d", len(all), total)
 	}
-	if s.Batch(0, 1)[0].Account != "a@example.com [chatgpt:workspace-a]" || s.Remote()[0].Account != "a@example.com [chatgpt:workspace-b]" {
-		t.Fatal("changed underlying sync records")
+	var original string
+	s.DB.QueryRow("SELECT json_extract(record, '$.account') FROM requests ORDER BY sequence LIMIT 1").Scan(&original)
+	if original != "a@example.com [chatgpt:workspace-a]" {
+		t.Fatal("changed underlying local records")
 	}
 	got, err := os.ReadFile(remotePath)
 	if err != nil || string(got) != string(remote) {
@@ -51,8 +52,7 @@ func TestRecentIsBoundedAndKeepsIdenticalCompletions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.logFile.Close()
-	defer s.remoteFile.Close()
+	defer s.Close()
 	if got := s.Recent(); got == nil || len(got) != 0 {
 		t.Fatalf("empty response: %#v", got)
 	}
@@ -69,16 +69,17 @@ func TestRecentIsBoundedAndKeepsIdenticalCompletions(t *testing.T) {
 		}
 	}
 	rows[0].Account = "changed"
-	if s.Recent()[0].Account != "a@example.com" || s.Batch(0, 1)[0].Account != "a@example.com [chatgpt:workspace]" {
+	if s.Recent()[0].Account != "a@example.com" {
 		t.Fatal("recent snapshot changed the underlying log")
 	}
 }
 
-func TestRecentIncludesNewSyncArrivalsWithoutHistoryOrDuplicates(t *testing.T) {
+func TestRecentExcludesHistoryAndLegacyRemoteCache(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "usage.jsonl")
-	if err := os.WriteFile(path, []byte("{\"time\":1,\"account\":\"old-local\"}\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("{\"time\":1}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// A cache left by an earlier version must not affect local totals or arrivals.
 	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "remote.jsonl"), []byte("{\"id\":\"old-remote\",\"time\":1}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -86,37 +87,57 @@ func TestRecentIncludesNewSyncArrivalsWithoutHistoryOrDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.logFile.Close()
-	defer s.remoteFile.Close()
-	if len(s.Recent()) != 0 {
-		t.Fatal("loaded history entered the ticker")
+	defer s.Close()
+	if len(s.Recent()) != 0 || s.RequestFeed().TotalRequests != 1 {
+		t.Fatal("history entered arrivals or remote cache entered total")
 	}
-	if s.RequestFeed().TotalRequests != 2 {
-		t.Fatal("all-machine total omitted stored history")
-	}
-	s.SetDevice("Laptop")
-	s.Save(usage.Record{Time: 100, Account: "local"})
-	remote := usage.Record{ID: "new-remote", DeviceID: "desktop-id", Device: "Desktop", Time: 10, Account: "remote"}
-	if !s.AddRemote(remote) || s.AddRemote(remote) || s.AddRemote(usage.Record{ID: "old-remote"}) {
-		t.Fatal("sync deduplication failed")
-	}
-	s.Save(usage.Record{Time: 200, Account: "local-again"})
+	s.Save(usage.Record{Time: 100})
+	s.Save(usage.Record{Time: 200})
 	rows := s.Recent()
-	if len(rows) != 3 || rows[0].Sequence != 3 || rows[1].Sequence != 4 || rows[2].Sequence != 5 || !rows[1].Remote || rows[0].Remote || rows[1].Device != "Desktop" {
-		t.Fatalf("wrong arrival order or device: %#v", rows)
+	if len(rows) != 2 || rows[0].Sequence != 2 || rows[1].Sequence != 3 || s.RequestFeed().TotalRequests != 3 {
+		t.Fatalf("wrong local arrivals: %#v", rows)
 	}
-	if s.RequestFeed().TotalRequests != 5 {
-		t.Fatal("all-machine total lost arrivals or counted duplicate sync rows")
+}
+
+func TestOpenDoesNotCreateRemoteCache(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	s.SetDevice("Renamed laptop")
-	if s.Recent()[0].Device != "Renamed laptop" || s.Recent()[1].Device != "Desktop" {
-		t.Fatal("device labels mixed across machines")
+	defer s.Close()
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "remote.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("remote cache created: %v", err)
 	}
-	s.ClearRemote()
-	if s.RequestFeed().TotalRequests != 3 {
-		t.Fatal("cleared remote history remained in total")
+}
+
+func TestSQLiteLifecycleAndRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if rows := s.Recent(); len(rows) != 2 || rows[1].Sequence != 5 {
-		t.Fatal("clearing remote rows broke the arrival sequence")
+	rec := usage.Record{RequestID: "request-1", SessionID: "session", AccountID: "account", Time: 100, State: "streaming"}
+	if err = s.SaveRecord(rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.State = "complete"
+	rec.Status = 200
+	rec.Input = 7
+	s.Save(rec)
+	if s.Len() != 1 || len(s.Recent()) != 1 || s.Recent()[0].Input != 7 {
+		t.Fatal("request lifecycle created duplicate usage")
+	}
+	s.Save(usage.Record{RequestID: "interrupted", Time: 101, State: "streaming"})
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var state string
+	s.DB.QueryRow("SELECT state FROM requests WHERE request_id='interrupted'").Scan(&state)
+	if state != "interrupted" || len(s.All()) != 2 {
+		t.Fatalf("restart recovery: %s / %d", state, len(s.All()))
 	}
 }

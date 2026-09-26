@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Garcon documentation</title>
-	<meta name="description" content="Garcon puts one tiny local proxy in front of every coding agent you run, records what each call cost in tokens, and shows it all in one dashboard, across accounts, tools and machines.">
+	<meta name="description" content="Garcon puts one tiny local proxy in front of every coding agent you run, records what each call cost in tokens, and shows it all in one dashboard, across accounts and tools.">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,14 +16,6 @@
 		<a class="nav" href="install.html">Install</a>
 		<a class="nav" href="connect.html">Connect a harness</a>
 		<a class="nav" href="dashboard.html">Dashboard</a>
-		<h2>Sync</h2>
-		<a class="nav" href="sync.html">Sync across devices</a>
-		<a class="nav sub" href="sync.html#sync-first" data-target="sync-first">First machine</a>
-		<a class="nav sub" href="sync.html#sync-table" data-target="sync-table">The table</a>
-		<a class="nav sub" href="sync.html#sync-others" data-target="sync-others">Other machines</a>
-		<a class="nav sub" href="sync.html#sync-security" data-target="sync-security">Security and privacy</a>
-		<a class="nav sub" href="sync.html#sync-how" data-target="sync-how">How it works</a>
-		<a class="nav sub" href="sync.html#sync-troubleshooting" data-target="sync-troubleshooting">Troubleshooting</a>
 		<h2>Reference</h2>
 		<a class="nav" href="api.html">HTTP API</a>
 		<a class="nav" href="files.html">Files and skills</a>
@@ -32,7 +24,7 @@
 
 	<main id="top">
 		<h1>Garcon</h1>
-		<p class="lede">Observability for coding agents. One tiny local proxy sits in front of Claude Code, Codex, OpenClaw, Hermes or anything else you run, records what every call cost in tokens, and shows it all in one dashboard, across accounts, tools and, with sync on, every machine you work from.</p>
+		<p class="lede">Observability for coding agents. One tiny local proxy sits in front of Claude Code, Codex, OpenClaw, Hermes or anything else you run, records what every call cost in tokens, and shows it all in one dashboard, across accounts and tools on this machine.</p>
 		<figure class="shot"><img src="images/overview.png" width="1440" height="960" alt="The Garcon dashboard's Overview: request, token, cache-hit, error-rate and latency tiles with deltas against the prior period, and a requests-by-harness chart over seven days." loading="eager"><figcaption>The Overview, on synthetic data: two accounts, three tools, seven days.</figcaption></figure>
 
 		<section id="problem">
@@ -45,7 +37,7 @@
 			<h2>What Garcon does</h2>
 			<figure class="diagram">
 				<svg viewBox="0 0 760 300" role="img" aria-labelledby="diagram-title" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">
-					<title id="diagram-title">Harnesses send requests through Garcon to providers; Garcon records usage locally, serves a dashboard, and optionally syncs with other machines through a Supabase project.</title>
+					<title id="diagram-title">Harnesses send requests through Garcon to providers; Garcon records usage locally, serves a dashboard.</title>
 					<defs>
 						<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--text-muted)"/></marker>
 					</defs>
@@ -68,13 +60,10 @@
 						<path d="M160 37H290"/><path d="M160 83H290"/><path d="M160 129H290"/><path d="M160 175H290"/>
 						<path d="M470 37H600"/><path d="M470 83H600"/><path d="M470 129H600"/><path d="M470 175H600"/>
 					</g>
-					<g stroke="var(--text-muted)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"><path d="M340 192V230"/><path d="M420 192V230"/></g>
+					<g stroke="var(--text-muted)" stroke-width="1.5" fill="none" marker-end="url(#arrow)"><path d="M340 192V230"/></g>
 					<rect x="240" y="230" width="140" height="50" rx="6" fill="var(--surface)" stroke="var(--border)"/>
-					<text x="310" y="251" text-anchor="middle" fill="var(--text)">usage.jsonl</text>
+					<text x="310" y="251" text-anchor="middle" fill="var(--text)">usage.db</text>
 					<text x="310" y="268" text-anchor="middle" fill="var(--text-secondary)" font-size="11">and the dashboard</text>
-					<rect x="400" y="230" width="140" height="50" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-dasharray="4 3"/>
-					<text x="470" y="251" text-anchor="middle" fill="var(--text)">your Supabase</text>
-					<text x="470" y="268" text-anchor="middle" fill="var(--text-secondary)" font-size="11">optional: other machines</text>
 				</svg>
 				<figcaption>Every agent points at a local URL that names the tool and provider. Accounts are detected automatically. Nothing about the request or the reply is changed; Garcon only reads the usage block the provider already sends back.</figcaption>
 			</figure>
@@ -93,52 +82,51 @@
 
 		<section id="compare">
 			<h2>Compared with a gateway like LiteLLM</h2>
-			<p>Same idea, different scope. A gateway is a piece of infrastructure: it fronts many providers, translates between APIs, routes and retries, issues virtual keys, enforces budgets, and stores its telemetry in a database it runs. Garcon deliberately does none of that. It is one binary that does one job for one person, and it keeps the data on the machine unless you say otherwise.</p>
+			<p>Same idea, different scope. A gateway is a piece of infrastructure: it fronts many providers, translates between APIs, routes and retries, issues virtual keys, enforces budgets, and stores its telemetry in a database it runs. Garcon focuses on local Codex account routing and observability. It is one binary with an embedded SQLite database, and it keeps the data on the machine.</p>
 			<div class="scroll"><table class="compare">
 				<thead><tr><th></th><th>Garcon</th><th>LiteLLM-style gateway</th></tr></thead>
 				<tbody>
-					<tr><th>Observability across tools, accounts and machines</th><td>Yes</td><td>Yes</td></tr>
+					<tr><th>Observability across tools and accounts</th><td>Yes</td><td>Yes</td></tr>
 					<tr><th>Requests and replies</th><td>Forwarded byte for byte; the provider's own auth, streaming and errors pass straight through</td><td>Normalised to one API, re-issued with the gateway's keys</td></tr>
 					<tr><th>Subscription logins (claude.ai, ChatGPT plans)</th><td>Work unchanged; usage is still recorded</td><td>Generally not; the gateway needs API keys</td></tr>
 					<tr><th>Routing, retries, fallbacks, budgets, virtual keys</th><td>None, by design</td><td>Yes, that is the product</td></tr>
-					<tr><th>Where the data lives</th><td>A JSONL file in your home directory; optionally a table in a Supabase project you own</td><td>The gateway's Postgres, or a hosted logging service</td></tr>
-					<tr><th>Footprint</th><td>No Go dependencies; one binary with the dashboard inside it, listening on loopback by default</td><td>A Python service plus its database, usually a container or a hosted deployment</td></tr>
+					<tr><th>Where the data lives</th><td>A JSONL file in your home directory</td><td>The gateway's Postgres, or a hosted logging service</td></tr>
+					<tr><th>Footprint</th><td>Embedded SQLite; one binary with the dashboard inside it, listening on loopback by default</td><td>A Python service plus its database, usually a container or a hosted deployment</td></tr>
 					<tr><th>Setup</th><td>Install from npm, run <code>garcon setup</code>, then connect each harness</td><td>A config file of models and keys, a deployment, then a base URL per client</td></tr>
-					<tr><th>Multiple people or teams</th><td>No; one person, any number of machines</td><td>Yes</td></tr>
+					<tr><th>Multiple people or teams</th><td>No; one person per installation</td><td>Yes</td></tr>
 				</tbody>
 			</table></div>
-			<p>If you need a control plane for a team, run a gateway. If you want to know what your own agents are doing, with nothing to operate and nothing leaving your machine unless you choose, that is Garcon.</p>
+			<p>If you need a control plane for a team, run a gateway. If you want to know what your own agents are doing, with nothing to operate and local usage reporting, that is Garcon.</p>
 		</section>
 
 		<section id="get">
 			<h2>What you get</h2>
 			<ul>
-				<li><strong>One picture of everything</strong>: requests, tokens and their composition by harness, account, model and device, over any time range, with period-over-period deltas.</li>
+				<li><strong>One picture of everything</strong>: requests, tokens and their composition by harness, account and model, over any time range, with period-over-period deltas.</li>
 				<li><strong>Cost you can reason about</strong>: estimated spend at published list prices (never a bill; subscriptions bill differently), cache savings, blended price per million tokens, run rate. Prices track OpenRouter's public model catalogue, so nothing has to be typed in.</li>
-				<li><strong>Sessions</strong>: calls grouped into coding sessions per account, tool and machine, with context growth, peak context, busy time and cost per session.</li>
+				<li><strong>Sessions</strong>: calls grouped into coding sessions per account and tool, with context growth, peak context, busy time and cost per session.</li>
 				<li><strong>Performance</strong>: generation speed and time to first byte by model, latency against output size, and the proxy's own overhead measured separately so it is never confused with the model's time.</li>
 				<li><strong>Every request</strong>: a sortable, filterable log with CSV export, and a JSON endpoint for anything else.</li>
-				<li><strong>Every machine</strong>: switch on <a href="sync.html">sync</a> and each dashboard shows the union of all your devices, pulled from a table in your own Supabase project.</li>
 			</ul>
 			<figure class="shot"><img src="images/sessions.png" width="1440" height="960" alt="The Sessions view: a per-account timeline of coding sessions and a table with duration, requests, models, tokens, peak context and estimated cost per session." loading="lazy"><figcaption>Sessions: a burst of calls from one account and tool becomes one row, with its models, peak context and estimated cost.</figcaption></figure>
 		</section>
 
 		<section id="records">
 			<h2>What it records, and what it never touches</h2>
-			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. If you enable sync, the Supabase secret key is saved in an owner-only settings file; see <a href="sync.html#sync-security">sync security</a>. Automatic Claude OAuth attribution looks up the requesting token's profile directly with Anthropic, caching only a token digest and account label in memory for up to an hour. Failed lookups retry after a minute and use an anonymous credential label meanwhile. Garcon also fetches OpenRouter's public model price list when the dashboard is opened, at most once a day; that call carries nothing about you or your usage.</p>
+			<p>Per completion call: time, harness, account, provider, model, HTTP status, duration, connection timings, and the four token counts. That is the whole row. Prompts, replies, tool calls, file contents, API keys and session ids are never read into the log; the proxy forwards them and forgets them. The dashboard listens on loopback by default. Provider credentials are forwarded but never stored. Automatic Claude OAuth attribution looks up the requesting token's profile directly with Anthropic, caching only a token digest and account label in memory for up to an hour. Failed lookups retry after a minute and use an anonymous credential label meanwhile. Garcon also fetches OpenRouter's public model price list when the dashboard is opened, at most once a day; that call carries nothing about you or your usage.</p>
 		</section>
 
 		<section id="start">
 			<h2>Quick start</h2>
 			<div class="block"><div class="label"><span>shell</span><button class="copy" type="button">Copy</button></div><pre><code>npm install -g ai-garcon@latest
 garcon setup</code></pre></div>
-			<p>macOS and Linux, x64 and arm64. Node 18+ runs the npm command. Setup starts Garcon at login, checks its version, and prints the dashboard link. No Supabase account is needed for local recording.</p>
+			<p>macOS and Linux, x64 and arm64. Node 18+ runs the npm command. Setup starts Garcon at login, checks its version, and prints the dashboard link. Usage is recorded locally.</p>
 			<ol class="steps">
 				<li><strong><a href="install.html">Install and start</a></strong>run the commands above as your normal user. For a foreground trial or source build, see the install guide.</li>
 				<li><strong><a href="connect.html">Connect your first harness</a></strong>open Settings, choose your tool, and copy its configuration. Restart the tool, make one short request, and check Logs for the new row.</li>
-				<li><strong><a href="sync.html#sync-others">Add your other machines</a></strong>repeat installation and harness setup there. For a combined dashboard, create or choose one Supabase project, then reuse its URL and key with a distinct device name on each machine.</li>
+				<li><strong>Add your other machines:</strong> repeat installation and harness setup there. Each dashboard displays that machine’s local usage.</li>
 			</ol>
-			<p>Later, run <code>garcon update</code> to update an npm installation and refresh its service. Run <code>garcon doctor</code> to check reachability, versions, first-request progress and sync errors. See <a href="install.html#update">updating</a> and <a href="install.html#troubleshooting">troubleshooting</a>.</p>
+			<p>Later, run <code>garcon update</code> to update an npm installation and refresh its service. Run <code>garcon doctor</code> to check reachability, versions, first-request progress. See <a href="install.html#update">updating</a> and <a href="install.html#troubleshooting">troubleshooting</a>.</p>
 		</section>
 
 		<nav class="pager" aria-label="Pages"><span></span><a class="next" href="install.html"><small>Next</small>Install</a></nav>

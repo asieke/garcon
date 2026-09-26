@@ -1,5 +1,10 @@
 # Automatic account detection
 
+The behavior below is the default pass-through mode. Optional
+[Codex account routing](codex-routing.md) explicitly enrolls local OAuth accounts
+and selects the outbound account for new Codex conversations. In that mode,
+usage attribution follows the selected outbound credentials.
+
 Use these base URLs without an account label:
 
 | Tool | Base URL |
@@ -24,7 +29,8 @@ file or reads a prompt to determine identity.
 
 This describes completion attribution. The separate [Limits collector](subscription-limits.md)
 reads local login profiles to fetch account-wide subscription snapshots even while those
-accounts are idle. Those reads never select or override a completion request's account.
+accounts are idle. Those reads do not override requests in pass-through mode;
+the optional Codex router consumes these snapshots to select an enrolled account.
 
 - **ChatGPT:** use `ChatGPT-Account-Id` and the access token's account/profile claims.
   Display an available email as the account name without a workspace suffix.
@@ -52,7 +58,7 @@ token, retains successes for an hour and failures for a minute, and is discarded
 at restart. A refreshed token is looked up independently and resolves to the same
 account when the provider returns the same identity. Requests and responses are
 forwarded unchanged, including when identity lookup fails. Existing usage and
-sync data are not rewritten.
+legacy remote caches are not rewritten.
 
 All harnesses use account-free routes: `/claude/…`, `/codex/…`, or
 `/<harness>/<provider>/…`. Account-labeled routes and the old account flag are

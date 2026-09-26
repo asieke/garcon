@@ -3,7 +3,9 @@
 package proxy
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"net/http/httptrace"
 	"net/http/httputil"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"garcon/internal/accounts"
+	"garcon/internal/codexrouting"
 	"garcon/internal/usage"
 )
 
@@ -80,13 +83,52 @@ func IsCompletion(rest string) bool {
 // Proxy forwards routed requests and hands each completion's Record to Save.
 type Proxy struct {
 	Save     func(usage.Record)
+	Start    func(usage.Record)
 	Accounts accounts.Resolver
+	Codex    *codexrouting.Router
 }
 
 // Serve proxies one routed request.
 func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
-	completion := IsCompletion(rt.Rest)
 	start := time.Now()
+	rec := usage.Record{RequestID: fmt.Sprintf("%x", randomID()), Time: start.UnixMilli(), Harness: rt.Harness, Provider: rt.Provider, Method: r.Method, Path: r.URL.Path, Kind: "request", State: "streaming"}
+	if IsCompletion(rt.Rest) {
+		rec.Kind = "completion"
+	}
+	capture := func() {
+		d := codexrouting.Details(r)
+		rec.SessionID = d.Session
+		rec.Model = d.Model
+		rec.AccountID = d.AccountID
+		rec.Account = d.Account
+		if rec.Account == "" {
+			rec.Account = p.Accounts.Resolve(rt.Provider, r.Header)
+		}
+	}
+	routed := p.Codex != nil && rt.Harness == "codex" && rt.Provider == "chatgpt" && p.Codex.Enabled()
+	if routed {
+		// Clone before replacing identity so callers and other middleware keep
+		// their original request. The actual upstream identity drives attribution.
+		r = r.Clone(r.Context())
+		release, err := p.Codex.Prepare(r)
+		if err != nil {
+			capture()
+			rec.Status = codexrouting.ErrorStatus(err)
+			rec.State = "failed"
+			rec.Error = err.Error()
+			rec.Ms = time.Since(start).Milliseconds()
+			if p.Save != nil {
+				p.Save(rec)
+			}
+			codexrouting.WriteError(w, err)
+			return
+		}
+		defer release()
+	}
+	capture()
+	if p.Start != nil {
+		p.Start(rec)
+	}
 
 	var tGetConn, tGotConn, tDNSStart, tDNSDone, tTCPStart, tTCPDone, tTLSStart, tTLSDone, tFirstByte time.Time
 	var reused bool
@@ -108,7 +150,27 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 		ms := b.Sub(a).Milliseconds()
 		return &ms
 	}
+	finished := false
+	defer func() {
+		if !finished && p.Save != nil {
+			rec.State = "interrupted"
+			rec.Error = "Request ended before the response completed"
+			rec.Ms = time.Since(start).Milliseconds()
+			p.Save(rec)
+		}
+	}()
 	(&httputil.ReverseProxy{
+		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
+			rec.Status = 502
+			rec.State = "failed"
+			rec.Error = "Upstream connection failed"
+			rec.Ms = time.Since(start).Milliseconds()
+			finished = true
+			if p.Save != nil {
+				p.Save(rec)
+			}
+			http.Error(w, rec.Error, 502)
+		},
 		FlushInterval: -1,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Path, pr.Out.URL.RawPath = "/"+rt.Rest, ""
@@ -117,12 +179,25 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 			pr.Out = pr.Out.WithContext(httptrace.WithClientTrace(pr.Out.Context(), trace))
 		},
 		ModifyResponse: func(res *http.Response) error {
-			if !completion {
-				return nil
+			if routed {
+				id := r.Header.Get("ChatGPT-Account-Id")
+				p.Codex.Observe(id, res)
+				res.Header.Set("X-Garcon-Account-Id", id)
 			}
-			res.Body = &tap{ReadCloser: res.Body, done: func(b []byte) {
-				rec := usage.Record{Time: start.UnixMilli(), Harness: rt.Harness, Provider: rt.Provider,
-					Status: res.StatusCode, Ms: time.Since(start).Milliseconds()}
+
+			res.Body = &tap{ReadCloser: res.Body, done: func(measured usage.Record, failure string, streamError error) {
+				rec.Status = res.StatusCode
+				rec.Ms = time.Since(start).Milliseconds()
+				rec.State = "complete"
+				if res.StatusCode >= 400 {
+					rec.State = "failed"
+					rec.Error = http.StatusText(res.StatusCode)
+				}
+				if r.Context().Err() != nil {
+					rec.State = "interrupted"
+					rec.Error = "Client disconnected or canceled the request"
+				}
+				finished = true
 				if !tGetConn.IsZero() {
 					us := tGetConn.Sub(start).Microseconds()
 					rec.QueueUs = &us
@@ -132,11 +207,36 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 				}
 				rec.DnsMs, rec.TcpMs, rec.TlsMs = span(tDNSStart, tDNSDone), span(tTCPStart, tTCPDone), span(tTLSStart, tTLSDone)
 				rec.FirstByteMs = span(start, tFirstByte)
-				usage.Fold(b, &rec)
-				rec.Account = p.Accounts.Resolve(rt.Provider, r.Header)
-				p.Save(rec)
+				if IsCompletion(rt.Rest) {
+					if measured.Model != "" {
+						rec.Model = measured.Model
+					}
+					rec.Input, rec.CacheRead, rec.CacheWrite, rec.Output = measured.Input, measured.CacheRead, measured.CacheWrite, measured.Output
+					if failure != "" {
+						rec.State = "failed"
+						rec.Error = failure
+					}
+				}
+				if streamError != nil {
+					rec.State = "interrupted"
+					rec.Error = "Upstream response stream ended unexpectedly"
+				}
+				if rec.Account == "" {
+					rec.Account = p.Accounts.Resolve(rt.Provider, r.Header)
+				}
+				if p.Save != nil {
+					p.Save(rec)
+				}
 			}}
 			return nil
 		},
 	}).ServeHTTP(w, r)
+}
+
+func randomID() []byte {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return b
 }
