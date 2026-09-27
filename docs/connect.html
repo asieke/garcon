@@ -50,8 +50,13 @@ supports_websockets = false</code></pre></div>
 </section>
 <section id="claude"><h2>Claude Code</h2>
 <div class="block"><div class="label"><span>Launch through Garcon</span><button class="copy" type="button">Copy</button></div><pre><code>garcon claude
+# Explicitly start a Remote Control session with the default profile:
+garcon claude rc
+# Or select another profile:
+garcon claude rc --config-dir ~/.claude-personal
 # Pass Claude arguments after --</code></pre></div>
-<p>This preserves Remote Control and forwards the selected Claude profile. To use a separate profile, pass <code>--config-dir /absolute/profile/path</code>. Adding a Claude account in the dashboard doesn't switch the launcher's selected profile. Claude doesn't use the Codex pool or OpenRouter.</p>
+<p>Both commands use <code>$CLAUDE_CONFIG_DIR</code> when set, otherwise <code>~/.claude</code>. An explicit <code>--config-dir</code> overrides that selection. The <code>rc</code> command enables Remote Control for that session; keep <code>remoteControlAtStartup: false</code> in user settings to avoid automatic remote sessions. Each profile keeps its own login. Adding an account in Garcon does not switch the selected profile.</p>
+<p>Terminal launchers do not configure Claude Desktop. For ordinary local Desktop Code sessions, use the dashboard's Claude setup prompt to configure the default profile's HTTP gateway, then start a new session and verify its request in Logs. The explicit Remote Control command attempts to use the socket, but Claude Code 2.1.283 rejects RC through a custom gateway/socket; it does not silently bypass Garcon. Claude does not use the Codex pool or OpenRouter.</p>
 </section>
 <section id="other"><h2>Other clients</h2>
 <p>Use <code>http://127.0.0.1:4141/&lt;harness&gt;/&lt;provider&gt;</code> plus the client's API prefix: <code>/v1</code> for OpenAI, <code>/api/v1</code> for OpenRouter. Supported providers are <code>anthropic</code>, <code>openai</code>, <code>openrouter</code>, and <code>chatgpt</code>.</p>

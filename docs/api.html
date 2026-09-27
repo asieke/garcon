@@ -29,6 +29,7 @@
 <section id="api"><p>Base URL: <code>http://127.0.0.1:4141</code>. Garcon defaults to loopback access and has no app login. Read endpoints generally accept GET and HEAD; individual mutation routes enforce local Host, client, and Origin checks. Don't expose this API as a public service.</p>
 <h2>Requests and sessions</h2>
 <dl>
+<dt>GET /api/connections</dt><dd>Saved harness connection status. Codex returns <code>connected: true</code> when the selected provider in its user configuration points to this Garcon endpoint, <code>false</code> when it does not, or <code>null</code> if the configuration cannot be read. This checks saved defaults, not per-launch overrides or current request activity.</dd>
 <dt>GET /api/sessions</dt><dd>Up to 1,000 saved assignments, in-flight first, then most recently used. Includes <code>session_id</code>, account, model, counts, timestamps, <code>active_reviews</code>, <code>active_since</code>, and last request state/status/error. Local clients may receive <code>task</code> with title, cwd, and archived. Missing task metadata is omitted.</dd>
 <dt>GET /api/logs</dt><dd>Paginated request ledger: <code>requests</code>, <code>total</code>, <code>offset</code>, <code>limit</code>. Query with <code>q</code>, <code>errors=true</code>, <code>limit</code> (1–200; default 50), and <code>offset</code>. Search matches account, session, model, path, or request ID.</dd>
 <dt>GET /api/events</dt><dd>System diagnostics, with the same limit/offset pagination.</dd>
@@ -38,7 +39,7 @@
 </dl>
 <h2>Accounts and settings</h2>
 <dl>
-<dt>GET /api/routing/codex · PUT</dt><dd>Read routing status or change enrollment. PUT requires <code>enabled</code>; optional <code>accounts</code> selects IDs and <code>priorities</code> maps IDs to 1–99. <a href="codex-routing.md">Routing rules</a>.</dd>
+<dt>GET /api/routing/codex · PUT</dt><dd>Read routing status or change enrollment. PUT accepts <code>accounts</code> to select IDs; an empty array clears the pool. Routing is automatic. Legacy <code>enabled</code> and <code>priorities</code> are accepted but no longer affect selection. <a href="codex-routing.md">Routing rules</a>.</dd>
 <dt>GET /api/limits · POST /api/limits/refresh</dt><dd>Cached subscription snapshots; POST requests background collection and returns 202. <a href="subscription-limits.md">Fields and refresh behavior</a>.</dd>
 <dt>POST /api/accounts/login</dt><dd>Start browser sign-in with <code>{"provider":"codex"}</code> or <code>{"provider":"claude"}</code>. Poll <code>GET ?id=…</code>; cancel with DELETE and the same ID. Only one attempt runs at a time. States include starting, waiting, discovering, connected, error, and cancelled.</dd>
 <dt>GET /api/providers/openrouter · PUT · DELETE</dt><dd>Read <code>configured</code>, save <code>{"key":"…"}</code>, or remove the local key. Reads never return it. Saving doesn't validate it upstream.</dd>

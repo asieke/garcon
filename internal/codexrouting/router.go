@@ -110,6 +110,18 @@ func New(dir string, snapshot func() limits.Snapshot, databases ...*database.DB)
 	if r.pins == nil {
 		r.pins = map[string]string{}
 	}
+	// Routing is intrinsic to the harness. Preserve saved pool choices, and
+	// initialize a new pool once from the logins already on this machine.
+	r.config.Enabled = true
+	if r.config.Accounts == nil && r.problem == "" {
+		r.config.Accounts = []string{}
+		for _, c := range r.discover() {
+			r.config.Accounts = append(r.config.Accounts, c.id)
+		}
+		if err := r.persistConfig(r.config); err != nil {
+			r.problem = "Cannot save Codex account pool"
+		}
+	}
 	return r
 }
 
@@ -156,9 +168,10 @@ func (r *Router) ConfigurePriorities(enabled bool, selected []string, priorities
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	config := r.config
-	config.Enabled = enabled
+	// The legacy enabled field is accepted, but routing is always automatic.
+	config.Enabled = true
 	if enabled || selected != nil {
-		config.Accounts = nil
+		config.Accounts = []string{}
 		available := map[string]bool{}
 		for _, id := range r.config.Accounts {
 			available[id] = true
@@ -168,7 +181,7 @@ func (r *Router) ConfigurePriorities(enabled bool, selected []string, priorities
 			config.Accounts = append(config.Accounts, c.id)
 		}
 		if selected != nil {
-			config.Accounts = nil
+			config.Accounts = []string{}
 			for _, id := range selected {
 				if !available[id] {
 					return errors.New("account is missing or duplicated")
@@ -176,9 +189,6 @@ func (r *Router) ConfigurePriorities(enabled bool, selected []string, priorities
 				delete(available, id)
 				config.Accounts = append(config.Accounts, id)
 			}
-		}
-		if enabled && len(config.Accounts) == 0 {
-			return errors.New("no file-based Codex OAuth logins found")
 		}
 	}
 	if priorities != nil {
@@ -375,9 +385,6 @@ func (r *Router) Status() Status {
 	}
 	sort.Slice(s.Accounts, func(i, j int) bool {
 		a, b := s.Accounts[i], s.Accounts[j]
-		if a.Priority != b.Priority {
-			return a.Priority < b.Priority
-		}
 		if (a.Score == nil) != (b.Score == nil) {
 			return a.Score != nil
 		}
@@ -472,7 +479,6 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	}
 	var chosen credential
 	best := -1.0
-	bestPriority := 100
 	for _, c := range creds {
 		if pinned != "" && c.id != pinned {
 			continue
@@ -482,8 +488,9 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 			continue
 		}
 		score := *a.Score
-		if a.Priority < bestPriority || (a.Priority == bestPriority && score > best) {
-			bestPriority = a.Priority
+		// Legacy priorities remain readable for API compatibility. All eligible
+		// accounts now compete on quota per hour within one smart-routing pool.
+		if score > best {
 			chosen = c
 			best = score
 		}

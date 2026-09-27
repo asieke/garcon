@@ -143,6 +143,11 @@ func discover(ctx context.Context, home string) []source {
 		}
 		out = append(out, hermesSources(b)...)
 	}
+	return append(out, discoverClaude(ctx, home)...)
+}
+
+func discoverClaude(ctx context.Context, home string) []source {
+	out := []source{}
 	for _, dir := range roots(home, ".claude", os.Getenv("CLAUDE_CONFIG_DIR")) {
 		// Metadata is only a fallback for a login that cannot currently be read.
 		// With a usable token, /profile supplies the authoritative identity.

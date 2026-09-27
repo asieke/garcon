@@ -4,7 +4,7 @@ See which account is doing the work.
 
 Garcon connects your coding tools to their providers. It assigns Codex conversations to accounts you choose and shows requests, usage, and errors in one place.
 
-Open the app at **http://127.0.0.1:4141**. It has four sections: **Providers, Sessions, Analytics, and Logs**.
+Open the app at **http://127.0.0.1:4141**. It has four sections: **Accounts, Sessions, Analytics, and Logs**.
 
 [Documentation](https://asieke.github.io/garcon/) · [Connect your tools](docs/connect.html) · [Routing details](docs/codex-routing.md)
 
@@ -19,11 +19,11 @@ garcon setup
 
 Requires macOS or Linux, x64 or arm64, and Node 18+ for the npm command. Run setup as your normal user. It installs a background service and keeps your existing usage history.
 
-1. Open **Providers → Add account**. Sign in with ChatGPT or Claude, or add an OpenRouter key. Browser sign-in needs the corresponding CLI installed.
-2. Enable the Codex accounts you want in the routing pool. A connected account isn't automatically enrolled.
-3. Use **Connect Codex**, **Connect Pi**, or **Connect Claude Code** to configure your tool. Restart it, send a request, and check **Logs**.
+1. Open **Accounts → Add account**. Follow the terminal sign-in instructions for Codex or Claude Code using the corresponding CLI.
+2. Review the Codex account pool. Existing logins are selected on first setup; later logins can be added with **In pool**.
+3. Open the connection button on the Codex or Claude Code table and copy its setup prompt into a coding agent. Restart the client, send a request, and check **Logs**. See [connection recipes](docs/connect.html) for other clients.
 
-Browser sign-in creates a separate profile. It doesn't change your client configuration or switch Claude Code's selected profile. If blocked, choose **Open sign-in page**.
+The sign-in instructions create a separate profile. Adding a login doesn't change your client configuration or switch Claude Code's selected profile.
 
 ## Who handles a request?
 
@@ -34,13 +34,13 @@ Browser sign-in creates a separate profile. It doesn't change your client config
 | Claude Code | The Claude profile used by `garcon claude` |
 | Other compatible clients | Their configured provider and credentials |
 
-For a new Codex conversation, Garcon checks login health, quota, and model access. Lower priority numbers win; within a group, it chooses the highest **remaining percentage ÷ hours until reset**. This compares percentages, not absolute token allowances.
+For a new Codex conversation, Garcon checks login health, quota, and model access. It automatically chooses the highest **remaining percentage ÷ hours until reset**. This compares percentages, not absolute token allowances.
 
-Once assigned, a conversation stays on that account, even after a restart. If the account becomes unavailable, Garcon returns an error. Start a new conversation to choose another account. It never replays a failed request on a different account or redeems reset credits. With routing disabled, the client's own credentials pass through.
+Once assigned, a conversation stays on that account, even after a restart. If the account becomes unavailable, Garcon returns an error. Start a new conversation to choose another account. It never replays a failed request on a different account or redeems reset credits. An empty pool returns an error.
 
 ## Find the task behind a session
 
-**Sessions** matches a session ID to its local Codex task title and project. Search by title, project, account, model, or ID. Click the title for its request history; use the copy button for the full ID.
+**Sessions** tracks Codex, Claude Code, and other clients separately, with client logos and local Codex task titles when available. Search by client, title, project, account, model, or ID. Click a session for that client's request history; identical IDs from different clients stay separate.
 
 In-flight sessions appear first, with elapsed time. Background reviews have their own activity label and don't replace the conversation model. Missing task metadata falls back to the ID.
 

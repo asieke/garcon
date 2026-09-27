@@ -42,7 +42,9 @@ func handler(garcon *url.URL, token func() string) http.Handler {
 			// its loopback guard. A Director-style proxy would keep the inbound Host and be refused.
 			pr.SetURL(garcon)
 			if pr.Out.Header.Get("Authorization") == "" {
-				pr.Out.Header.Set("Authorization", "Bearer "+token())
+				if credential := token(); credential != "" {
+					pr.Out.Header.Set("Authorization", "Bearer "+credential)
+				}
 			}
 		},
 	}

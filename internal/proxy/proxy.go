@@ -80,6 +80,21 @@ func IsCompletion(rest string) bool {
 	return strings.HasSuffix(rest, "/messages") || strings.HasSuffix(rest, "/responses") || strings.HasSuffix(rest, "/chat/completions")
 }
 
+// Codex creates voice calls through its model provider, but may join the call's
+// sideband directly with its own login. Never pool either half of that session:
+// changing the call owner makes the sideband handshake fail with a 404.
+func isCodexRealtime(rt Route) bool {
+	if rt.Harness != "codex" || rt.Provider != "chatgpt" {
+		return false
+	}
+	for _, root := range []string{"backend-api/codex/realtime", "v1/realtime", "v1/live"} {
+		if rt.Rest == root || strings.HasPrefix(rt.Rest, root+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // Proxy forwards routed requests and hands each completion's Record to Save.
 type Proxy struct {
 	Save     func(usage.Record)
@@ -97,15 +112,19 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 	}
 	capture := func() {
 		d := codexrouting.Details(r)
-		rec.SessionID = d.Session
-		rec.Model = d.Model
+		if d.Session != "" {
+			rec.SessionID = d.Session
+		}
+		if d.Model != "" {
+			rec.Model = d.Model
+		}
 		rec.AccountID = d.AccountID
 		rec.Account = d.Account
 		if rec.Account == "" {
 			rec.Account = p.Accounts.Resolve(rt.Provider, r.Header)
 		}
 	}
-	routed := p.Codex != nil && rt.Harness == "codex" && rt.Provider == "chatgpt" && p.Codex.Enabled()
+	routed := p.Codex != nil && rt.Harness == "codex" && rt.Provider == "chatgpt" && p.Codex.Enabled() && !isCodexRealtime(rt)
 	if routed {
 		// Clone before replacing identity so callers and other middleware keep
 		// their original request. The actual upstream identity drives attribution.
@@ -124,8 +143,13 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 			return
 		}
 		defer release()
+	} else {
+		rec.SessionID, rec.Model = requestMetadata(r, rt.Harness)
 	}
 	capture()
+	if !routed && rt.Provider == "chatgpt" {
+		rec.AccountID = metadataID(r.Header.Get("ChatGPT-Account-Id"))
+	}
 	if p.Start != nil {
 		p.Start(rec)
 	}
@@ -151,7 +175,11 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 		return &ms
 	}
 	finished := false
+	var upgradeDone func()
 	defer func() {
+		if !finished && upgradeDone != nil {
+			upgradeDone()
+		}
 		if !finished && p.Save != nil {
 			rec.State = "interrupted"
 			rec.Error = "Request ended before the response completed"
@@ -185,7 +213,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 				res.Header.Set("X-Garcon-Account-Id", id)
 			}
 
-			res.Body = &tap{ReadCloser: res.Body, done: func(measured usage.Record, failure string, streamError error) {
+			done := func(measured usage.Record, failure string, streamError error) {
 				rec.Status = res.StatusCode
 				rec.Ms = time.Since(start).Milliseconds()
 				rec.State = "complete"
@@ -227,7 +255,15 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 				if p.Save != nil {
 					p.Save(rec)
 				}
-			}}
+			}
+			if res.StatusCode == http.StatusSwitchingProtocols {
+				// ReverseProxy needs the original bidirectional stream for Upgrade.
+				// An SSE tap drops Write and would break an accepted WebSocket.
+				// Record its lifecycle only; never inspect audio or control frames.
+				upgradeDone = func() { done(usage.Record{}, "", nil) }
+			} else {
+				res.Body = &tap{ReadCloser: res.Body, done: done}
+			}
 			return nil
 		},
 	}).ServeHTTP(w, r)

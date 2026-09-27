@@ -28,13 +28,13 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil && s.Tasks != nil && local.Host(r.RemoteAddr) && local.Host(r.Host) {
 			ids := []string{}
 			for _, session := range sessions {
-				if id := session["session_id"].(string); id != "" {
+				if id := session["session_id"].(string); id != "" && session["harness"] == "codex" {
 					ids = append(ids, id)
 				}
 			}
 			tasks := s.Tasks.Lookup(r.Context(), ids)
 			for _, session := range sessions {
-				if task, ok := tasks[session["session_id"].(string)]; ok {
+				if task, ok := tasks[session["session_id"].(string)]; ok && session["harness"] == "codex" {
 					session["task"] = task
 				}
 			}
@@ -56,39 +56,6 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(result)
 }
-func (s *Store) sessions() ([]map[string]any, error) {
-	rows, err := s.DB.Query(`SELECT s.key,s.session_id,s.account_id,s.account,s.model,s.created_at,s.last_seen,
- (SELECT count(*) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!=''),
- (SELECT count(*) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.state='streaming') AS active,
- (SELECT count(*) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.state='streaming' AND r.model='codex-auto-review'),
- coalesce((SELECT min(time) FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.state='streaming'),0),
- coalesce((SELECT record FROM requests r WHERE r.session_id=s.session_id AND s.session_id!='' AND r.kind='completion' AND r.model!='codex-auto-review' ORDER BY time DESC,sequence DESC LIMIT 1),'{}')
- FROM sessions s ORDER BY (active>0) DESC,s.last_seen DESC LIMIT 1000`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []map[string]any{}
-	for rows.Next() {
-		var key, id, aid, account, model, latestJSON string
-		var created, last, activeSince int64
-		var n, active, reviews int
-		if err = rows.Scan(&key, &id, &aid, &account, &model, &created, &last, &n, &active, &reviews, &activeSince, &latestJSON); err != nil {
-			return nil, err
-		}
-		var latest usage.Record
-		if err = json.Unmarshal([]byte(latestJSON), &latest); err != nil {
-			return nil, err
-		}
-		if latest.Model != "" {
-			model = latest.Model
-		} else if model == "codex-auto-review" {
-			model = ""
-		}
-		out = append(out, map[string]any{"key": key, "session_id": id, "account_id": aid, "account": account, "model": model, "created_at": created, "last_seen": last, "requests": n, "active": active, "active_reviews": reviews, "active_since": activeSince, "last_state": latest.State, "last_status": latest.Status, "last_error": latest.Error})
-	}
-	return out, rows.Err()
-}
 func page(r *http.Request) (int, int) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit < 1 || limit > 200 {
@@ -102,10 +69,18 @@ func (s *Store) logs(r *http.Request) (any, error) {
 	where := "1=1"
 	args := []any{}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		where += ` AND (model LIKE ? OR account_id LIKE ? OR session_id LIKE ? OR json_extract(record,'$.account') LIKE ? OR json_extract(record,'$.path') LIKE ? OR request_id LIKE ?)`
-		for i := 0; i < 6; i++ {
+		where += ` AND (model LIKE ? OR account_id LIKE ? OR session_id LIKE ? OR json_extract(record,'$.account') LIKE ? OR json_extract(record,'$.path') LIKE ? OR request_id LIKE ? OR json_extract(record,'$.harness') LIKE ? OR json_extract(record,'$.provider') LIKE ?)`
+		for i := 0; i < 8; i++ {
 			args = append(args, "%"+q+"%")
 		}
+	}
+	if value := r.URL.Query().Get("harness"); r.URL.Query().Has("harness") {
+		where += ` AND coalesce(nullif(json_extract(record,'$.harness'),''),CASE WHEN EXISTS (SELECT 1 FROM sessions s WHERE s.session_id=requests.session_id AND s.session_id!='') THEN 'codex' ELSE '' END)=?`
+		args = append(args, value)
+	}
+	if value := r.URL.Query().Get("session_id"); value != "" {
+		where += " AND session_id=?"
+		args = append(args, value)
 	}
 	if r.URL.Query().Get("errors") == "true" {
 		where += " AND (status>=400 OR state IN ('failed','interrupted'))"
