@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Icon from "$lib/console/Icon.svelte";
+  import LiveTicker from "$lib/console/LiveTicker.svelte";
   import AccountTable from "$lib/console/AccountTable.svelte";
   import claudeLogo from "$lib/assets/providers/claude-app.png";
   import { claudeRows } from "$lib/console/claude";
@@ -34,11 +35,12 @@
   let limitsAvailable = $state(false);
   let claudeExpanded = $state(true);
   let routing = $state<Routing>({ enabled: false, accounts: [] });
+  let claudeRouting = $state<Routing | null>(null);
   let connections = $state<{ client: string; connected: boolean | null; mode?: string; profiles?: number; remote_control_at_startup?: boolean }[]>([]);
   let connectionsAvailable = $state(false);
   let sessions = $state<Session[]>([]),
     aggregates = $state<Aggregate[]>([]),
-    feed = $state<RequestRow[]>([]);
+    feed = $state<RequestRow[] | null>(null);
   let logs = $state<LogPage>({ requests: [], total: 0, offset: 0, limit: 50 });
   let eventOffset = $state(0),
     eventTotal = $state(0);
@@ -65,13 +67,13 @@
     sessionQuery = $state(""),
     logSession = $state<{ id: string; harness: string } | null>(null),
     errorsOnly = $state(false),
+    hideZeroTokens = $state(true),
     logMode = $state<"requests" | "system">("requests"),
     offset = $state(0),
     range = $state("7"),
     metric = $state<"usage" | "cost" | "models">("usage");
   let selected = $state<RequestRow | null>(null),
-    activeOnly = $state(false),
-    tickerPaused = $state(false);
+    activeOnly = $state(false);
   let logGeneration = 0,
     analyticsGeneration = 0,
     alive = true;
@@ -97,7 +99,8 @@
       description: "Search requests and service logs.",
     },
   ];
-  const claudeAccounts = $derived(claudeRows(limits.accounts, now));
+  const claudeAccounts = $derived(claudeRouting?.accounts ?? claudeRows(limits.accounts, now));
+  const claudeNext = $derived(claudeAccounts.find((a) => a.enrolled && a.status === "Ready"));
   const title = $derived(views.find((v) => v.id === view)!);
   const enrolled = $derived(routing.accounts.filter((a) => a.enrolled));
   const active = $derived(
@@ -209,7 +212,7 @@
     const generation = ++logGeneration;
     try {
       const result = await api(
-        `/api/logs?limit=50&offset=${offset}&q=${encodeURIComponent(query)}&errors=${errorsOnly}${logSession ? `&session_id=${encodeURIComponent(logSession.id)}&harness=${encodeURIComponent(logSession.harness)}` : ""}`,
+        `/api/logs?limit=50&offset=${offset}&q=${encodeURIComponent(query)}&errors=${errorsOnly}&hide_zero_tokens=${hideZeroTokens}${logSession ? `&session_id=${encodeURIComponent(logSession.id)}&harness=${encodeURIComponent(logSession.harness)}` : ""}`,
       );
       if (alive && generation === logGeneration) logs = result;
     } catch (e) {
@@ -231,6 +234,9 @@
     const limitsPoll = api("/api/limits").then((result) => {
       if (alive) { limits = result; limitsAvailable = true; }
     }).catch(() => { if (alive) limitsAvailable = false; });
+    const claudeRoutingPoll = api("/api/routing/claude").then((result) => {
+      if (alive) claudeRouting = result;
+    }).catch(() => { if (alive) claudeRouting = null; });
     const connectionPoll = api("/api/connections").then((result) => {
       if (alive) { connections = result; connectionsAvailable = true; }
     }).catch(() => { if (alive) connectionsAvailable = false; });
@@ -244,7 +250,7 @@
       if (!busy) routing = r;
       // Older installed services expose Codex assignments without a harness field.
       sessions = s.map((session: Session) => ({ ...session, harness: session.harness ?? "codex" }));
-      feed = [...f.requests].reverse();
+      feed = f.requests;
       connected = true;
       loaded = true;
       now = Date.now();
@@ -256,7 +262,7 @@
         loaded = true;
       }
     }
-    await Promise.all([connectionPoll, limitsPoll]);
+    await Promise.all([connectionPoll, limitsPoll, claudeRoutingPoll]);
   }
   onMount(() => {
     alive = true;
@@ -294,6 +300,7 @@
     query;
     logSession;
     errorsOnly;
+    hideZeroTokens;
     offset;
     const timer = setTimeout(() => {
       if (loaded) void loadLogs();
@@ -515,8 +522,8 @@
             >{/if}
         </div>
       </div>
-      {#if error || routing.error}<div class="alert" role="alert">
-          <Icon name="pulse" />{error || routing.error}<button
+      {#if error || routing.error || claudeRouting?.error}<div class="alert" role="alert">
+          <Icon name="pulse" />{error || routing.error || claudeRouting?.error}<button
             onclick={() => (error = "")}
             aria-label="Dismiss error"><Icon name="close" size={16} /></button
           >
@@ -598,7 +605,7 @@
               <span class="provider-chevron" class:open={claudeExpanded}><Icon name="chevron" size={16} /></span>
             </button>
             <div class="provider-actions">
-              <span class="provider-summary">{claudeAccounts.length} accounts <span>·</span> Local profiles</span>
+              <span class="provider-summary">{claudeAccounts.length} accounts <span>·</span> {claudeRouting?.enabled ? "Session pinned" : "Local profiles"}</span>
               <ProviderConnection launchBased provider="Claude Code" connection={connections.find((c) => c.client === "claude")} available={connected && connectionsAvailable} onclick={() => (modal = "claude")} />
             </div>
           </div>
@@ -609,8 +616,8 @@
               <h3>No accounts found</h3><p>Sign in to Claude Code with a local profile. Garcon will discover it automatically.</p>
               <button class="button primary" onclick={() => (modal = "claude-account")}>Add a Claude account <Icon name="arrow" size={16} /></button>
             </div>{/if}
-            <AccountTable accounts={claudeAccounts} provider="Claude Code" poolSupported={false} />
-            <p class="provider-explanation">Launch your Claude profile through Garcon to keep Remote Control available. Each profile uses its own login; account pooling is currently available for Codex.</p>
+            <AccountTable accounts={claudeAccounts} provider="Claude Code" poolSupported={!!claudeRouting?.enabled} poolEditable={false} nextId={claudeNext?.id} />
+            <p class="provider-explanation">{#if claudeRouting?.enabled}New gateway sessions use the eligible account with the highest quota-per-hour score. Each session keeps its account across restarts. Model-specific limits can change which account is next.{:else}Profile launchers use their selected login. Configure the optional Desktop gateway to enable automatic account selection and session pinning.{/if}</p>
             <button class="add-inline" onclick={() => (modal = "claude-account")}><Icon name="plus" size={16} /> Add another Claude account<span>Separate login. Same endpoint.</span></button>
           </div>{/if}
         </section>
@@ -768,10 +775,19 @@
               ><button
                 class="filter-button"
                 class:selected={errorsOnly}
+                aria-pressed={errorsOnly}
                 onclick={() => {
                   errorsOnly = !errorsOnly;
                   offset = 0;
                 }}>Errors only</button
+              ><button
+                class="filter-button"
+                class:selected={hideZeroTokens}
+                aria-pressed={hideZeroTokens}
+                onclick={() => {
+                  hideZeroTokens = !hideZeroTokens;
+                  offset = 0;
+                }}>Hide 0 tokens</button
               >{:else}<button class="button secondary" onclick={systemLogs}
                 ><Icon name="refresh" size={15} />Refresh</button
               >{/if}
@@ -841,12 +857,12 @@
             {#if !logs.requests.length}<div class="empty-state">
                 <Icon name="logs" size={30} />
                 <h3>
-                  {query || logSession || errorsOnly
+                  {query || logSession || errorsOnly || hideZeroTokens
                     ? "No matching requests."
                     : "No requests yet"}
                 </h3>
                 <p>
-                  {query || logSession || errorsOnly
+                  {query || logSession || errorsOnly || hideZeroTokens
                     ? "Adjust your search or filters."
                     : "Requests will appear here as they pass through Garcon."}
                 </p>
@@ -1088,55 +1104,7 @@
       </div>
     </main>
   </div>
-  <footer class="ticker" aria-label="Live request activity">
-    <div class="ticker-brand">
-      <span class="status-dot" class:offline={!connected}></span>LIVE ROUTES
-    </div>
-    <div class="ticker-window">
-      <div class="ticker-track" class:paused={tickerPaused}>
-        {#if feed.length}{#each [0, 1] as duplicate}<div
-              class="ticker-copy"
-              aria-hidden={duplicate === 1}
-            >
-              {#each feed.slice(0, 12) as r}<button
-                  class="ticker-item"
-                  title={taskName(r.session_id, r.harness)}
-                  tabindex={duplicate === 1 ? -1 : 0}
-                  onclick={() => (selected = r)}
-                  ><span
-                    class="ticker-status"
-                    class:bad={r.status >= 400 ||
-                      r.state === "interrupted" ||
-                      r.state === "failed"}
-                    >{r.state === "streaming"
-                      ? "●"
-                      : r.status >= 400 ||
-                          r.state === "interrupted" ||
-                          r.state === "failed"
-                        ? "↘"
-                        : "↗"}</span
-                  ><HarnessLogo harness={r.harness} size={18} />{#if r.session_id}<span class="ticker-task">{taskName(r.session_id, r.harness)}</span>{/if}<strong>{r.model || `${harnessName(r.harness)} request`}</strong><Icon
-                    name="arrow"
-                    size={12}
-                  /><span>{r.account || "Unassigned"}</span><small
-                    >{r.state === "streaming"
-                      ? "IN FLIGHT"
-                      : `${(r.ms / 1000).toFixed(1)}s`}</small
-                  ><span class="ticker-divider">/</span></button
-                >{/each}
-            </div>{/each}{:else}<div class="ticker-waiting">
-            Listening for requests <span>·</span> Your clients → Garcon → your accounts
-          </div>{/if}
-      </div>
-    </div>
-    <button
-      class="ticker-pause"
-      aria-label={tickerPaused ? "Resume ticker" : "Pause ticker"}
-      onclick={() => (tickerPaused = !tickerPaused)}
-      >{tickerPaused ? "▶" : "Ⅱ"}</button
-    >
-    <div class="ticker-count">{active}<span>IN FLIGHT</span></div>
-  </footer>
+  <LiveTicker rows={feed} {connected} {active} {hideZeroTokens} {taskName} onselect={(row) => (selected = row)} />
 </div>
 {#if notice}<div class="toast" role="status">
     <Icon name="check" size={16} />{notice}

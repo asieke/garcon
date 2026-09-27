@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"garcon/internal/accounts"
+	"garcon/internal/claude"
 	"garcon/internal/codexrouting"
 	"garcon/internal/usage"
 )
@@ -147,6 +148,9 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 		rec.SessionID, rec.Model = requestMetadata(r, rt.Harness)
 	}
 	capture()
+	if d := claude.Details(r); d.AccountID != "" {
+		rec.AccountID, rec.Account, rec.SessionID, rec.Model = d.AccountID, d.Account, d.Session, d.Model
+	}
 	if !routed && rt.Provider == "chatgpt" {
 		rec.AccountID = metadataID(r.Header.Get("ChatGPT-Account-Id"))
 	}
@@ -207,23 +211,25 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 			pr.Out = pr.Out.WithContext(httptrace.WithClientTrace(pr.Out.Context(), trace))
 		},
 		ModifyResponse: func(res *http.Response) error {
+			if d := claude.Details(r); d.AccountID != "" {
+				res.Header.Set("X-Garcon-Account-Id", d.AccountID)
+				if d.Observe != nil {
+					d.Observe(res)
+				}
+			}
 			if routed {
 				id := r.Header.Get("ChatGPT-Account-Id")
 				p.Codex.Observe(id, res)
 				res.Header.Set("X-Garcon-Account-Id", id)
 			}
 
-			done := func(measured usage.Record, failure string, streamError error) {
+			done := func(measured usage.Record, failure string, completed bool, streamError error) {
 				rec.Status = res.StatusCode
 				rec.Ms = time.Since(start).Milliseconds()
 				rec.State = "complete"
 				if res.StatusCode >= 400 {
 					rec.State = "failed"
 					rec.Error = http.StatusText(res.StatusCode)
-				}
-				if r.Context().Err() != nil {
-					rec.State = "interrupted"
-					rec.Error = "Client disconnected or canceled the request"
 				}
 				finished = true
 				if !tGetConn.IsZero() {
@@ -245,9 +251,16 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 						rec.Error = failure
 					}
 				}
-				if streamError != nil {
-					rec.State = "interrupted"
-					rec.Error = "Upstream response stream ended unexpectedly"
+				// Provider failures take precedence. Once a completion event has
+				// arrived, connection teardown does not undo that response.
+				if rec.State != "failed" && !(IsCompletion(rt.Rest) && completed) {
+					if r.Context().Err() != nil {
+						rec.State = "interrupted"
+						rec.Error = "Client disconnected or canceled the request"
+					} else if streamError != nil {
+						rec.State = "interrupted"
+						rec.Error = "Upstream response stream ended unexpectedly"
+					}
 				}
 				if rec.Account == "" {
 					rec.Account = p.Accounts.Resolve(rt.Provider, r.Header)
@@ -260,7 +273,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 				// ReverseProxy needs the original bidirectional stream for Upgrade.
 				// An SSE tap drops Write and would break an accepted WebSocket.
 				// Record its lifecycle only; never inspect audio or control frames.
-				upgradeDone = func() { done(usage.Record{}, "", nil) }
+				upgradeDone = func() { done(usage.Record{}, "", false, nil) }
 			} else {
 				res.Body = &tap{ReadCloser: res.Body, done: done}
 			}

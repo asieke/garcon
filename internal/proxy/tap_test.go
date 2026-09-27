@@ -12,7 +12,7 @@ func TestTapFoldsIncrementallyAndReportsStreamFailure(t *testing.T) {
 	var got usage.Record
 	var failure string
 	calls := 0
-	tap := &tap{ReadCloser: io.NopCloser(strings.NewReader(body)), done: func(r usage.Record, f string, e error) { got = r; failure = f; calls++ }}
+	tap := &tap{ReadCloser: io.NopCloser(strings.NewReader(body)), done: func(r usage.Record, f string, completed bool, e error) { got = r; failure = f; calls++ }}
 	if _, err := io.Copy(io.Discard, tap); err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestTapFoldsIncrementallyAndReportsStreamFailure(t *testing.T) {
 
 func TestTapDoesNotTreatGeneratedTextAsAnError(t *testing.T) {
 	var failure string
-	tap := &tap{ReadCloser: io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"response.failed\"}\n")), done: func(r usage.Record, f string, e error) { failure = f }}
+	tap := &tap{ReadCloser: io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"response.failed\"}\n")), done: func(r usage.Record, f string, completed bool, e error) { failure = f }}
 	io.Copy(io.Discard, tap)
 	tap.Close()
 	if failure != "" {

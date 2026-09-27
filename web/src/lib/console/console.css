@@ -649,25 +649,17 @@ body {
   min-width: 0;
   overflow: hidden;
 }
-.ticker-track,
-.ticker-copy {
+.ticker-track {
   display: flex;
   align-items: center;
   width: max-content;
 }
 .ticker-track {
-  animation: route-scroll 75s linear infinite;
-}
-.ticker-track.paused,
-.ticker-track:hover,
-.ticker-track:focus-within {
-  animation-play-state: paused;
-}
-.ticker-track:has(.ticker-waiting) {
-  animation: none;
+  will-change: transform;
 }
 .ticker-item {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
   border: 0;
@@ -712,11 +704,6 @@ body {
 .ticker-count span {
   font-size: 9px;
   color: var(--desk-muted);
-}
-@keyframes route-scroll {
-  to {
-    transform: translateX(-50%);
-  }
 }
 .summary-strip {
   display: grid;
@@ -1784,7 +1771,7 @@ td code,
 }
 @media (prefers-reduced-motion: reduce) {
   .ticker-track {
-    animation: none;
+    will-change: auto;
   }
   .ticker-window {
     overflow-x: auto;
