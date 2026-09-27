@@ -26,6 +26,7 @@ import (
 	"garcon/internal/claude"
 	"garcon/internal/codexmetadata"
 	"garcon/internal/codexrouting"
+	"garcon/internal/connections"
 	"garcon/internal/dashboard"
 	"garcon/internal/limits"
 	"garcon/internal/local"
@@ -55,7 +56,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)
@@ -122,6 +123,7 @@ func main() {
 	mux.Handle("/api/usage/recent", readOnly(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(st.RequestFeed())
 	}))
+	mux.Handle("/api/connections", own(connections.Handler("http://"+*listen), true))
 	for _, path := range []string{"/api/sessions", "/api/logs", "/api/events", "/api/analytics"} {
 		mux.Handle(path, own(st, true))
 	}

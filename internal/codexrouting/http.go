@@ -21,11 +21,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		d := json.NewDecoder(io.LimitReader(req.Body, 32<<10))
 		d.DisallowUnknownFields()
-		if d.Decode(&config) != nil || config.Enabled == nil {
-			WriteError(w, &routingError{400, "Expected an enabled boolean"})
+		if d.Decode(&config) != nil {
+			WriteError(w, &routingError{400, "Expected an account selection"})
 			return
 		}
-		if err := r.ConfigurePriorities(*config.Enabled, config.Accounts, config.Priorities); err != nil {
+		// Account-only updates preserve the pool when the field is omitted.
+		if err := r.ConfigurePriorities(false, config.Accounts, config.Priorities); err != nil {
 			WriteError(w, &routingError{400, "Could not save configuration: check account selection and priorities (1–99)"})
 			return
 		}

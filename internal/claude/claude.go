@@ -1,10 +1,6 @@
-// Package claude runs Claude Code through Garcon without giving up Remote Control.
-//
-// Claude Code refuses Remote Control (the session showing in the claude.ai app) when
-// ANTHROPIC_BASE_URL names any host but api.anthropic.com, which Garcon's proxy route does. Its
-// unix-socket transport (ANTHROPIC_UNIX_SOCKET) is exempt from that check, so this subcommand serves a
-// private socket for one session, relays it to Garcon's ordinary /claude route, and hands the
-// session its stored claude.ai login. Usage is recorded exactly as with the environment snippet.
+// Package claude launches Claude Code with the selected profile. Ordinary launches
+// relay a private per-session socket to Garcon's /claude route. Current Claude Code
+// versions reject Remote Control with either a custom gateway or this socket.
 package claude
 
 import (
@@ -21,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"garcon/internal/connections"
 	"garcon/internal/onboarding"
 )
 
@@ -34,11 +31,16 @@ func Main(args []string) {
 }
 
 func run(args []string) (int, error) {
+	remote := len(args) > 0 && args[0] == "rc"
+	if remote {
+		args = args[1:]
+	}
 	fs := flag.NewFlagSet("garcon claude", flag.ContinueOnError)
-	dir := fs.String("config-dir", "", "Claude Code configuration directory (default $CLAUDE_CONFIG_DIR or ~/.claude)")
+	dir := fs.String("config-dir", "", "Claude profile (default $CLAUDE_CONFIG_DIR or ~/.claude)")
 	garcon := fs.String("url", onboarding.DefaultURL, "the running garcon")
+	register := fs.String("register-launcher", "", "register an already configured profile launcher for dashboard status; does not start Claude")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "usage: garcon claude [--config-dir DIR] [--url URL] [-- claude arguments]\n\nRuns claude through Garcon with Remote Control available. Accounts are detected automatically. Put -- before any claude flag.\n\n")
+		fmt.Fprint(os.Stderr, "usage: garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n\nRuns Claude through Garcon. Use rc to explicitly start one Remote Control session. Put -- before any Claude flag.\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -47,19 +49,25 @@ func run(args []string) (int, error) {
 		}
 		return 2, nil
 	}
-	if *dir == "" {
-		*dir = os.Getenv("CLAUDE_CONFIG_DIR")
+	profile, err := profileDir(*dir)
+	if err != nil {
+		return 1, err
 	}
-	if *dir == "" {
+	*dir = profile
+	base, err := onboarding.LocalURL(*garcon)
+	if err != nil {
+		return 1, err
+	}
+	if *register != "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return 1, err
 		}
-		*dir = filepath.Join(home, ".claude")
-	}
-	base, err := onboarding.LocalURL(*garcon)
-	if err != nil {
-		return 1, err
+		if err := connections.RegisterClaudeLauncher(home, *register, *dir, base); err != nil {
+			return 1, err
+		}
+		fmt.Println("Claude profile launcher registered. This confirms configuration, not a live Remote Control connection.")
+		return 0, nil
 	}
 	exe, err := exec.LookPath("claude")
 	if err != nil {
@@ -68,12 +76,33 @@ func run(args []string) (int, error) {
 	s := session{claude: exe, dir: *dir, base: base}
 	creds, err := Load(s.dir)
 	if err != nil {
-		return 1, fmt.Errorf("%w; run claude once without garcon to log in, then retry", err)
+		return 1, fmt.Errorf("%w (profile %s); log in with CLAUDE_CONFIG_DIR=%q claude auth login, then retry", err, s.dir, s.dir)
 	}
 	if _, err := onboarding.Health(base); err != nil {
 		return 1, fmt.Errorf("%w; run garcon service status", err)
 	}
-	return s.serve(creds, fs.Args())
+	return s.serve(creds, launchArgs(remote, fs.Args()))
+}
+
+func profileDir(explicit string) (string, error) {
+	if explicit == "" {
+		explicit = os.Getenv("CLAUDE_CONFIG_DIR")
+	}
+	if explicit == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		explicit = filepath.Join(home, ".claude")
+	}
+	return filepath.Abs(explicit)
+}
+
+func launchArgs(remote bool, args []string) []string {
+	if remote {
+		return append([]string{"--remote-control"}, args...)
+	}
+	return args
 }
 
 // serve binds the socket, starts Claude Code with it, keeps the login fresh and cleans up after.

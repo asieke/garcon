@@ -1,6 +1,6 @@
 # Codex account routing
 
-Enable routing in **Providers → Codex**. Enrolled ChatGPT accounts form the pool and can receive routed conversations. Adding a login doesn't enroll it.
+Codex account selection runs automatically. Existing local logins form the initial pool; use **In pool** to change that selection. Later logins require enrollment. An empty pool returns an error.
 
 ## Connect Codex
 
@@ -21,9 +21,15 @@ Start a fresh CLI process or restart Codex Desktop. Garcon replaces the outbound
 
 This routes local model traffic, not cloud jobs or every account-bound Desktop feature. Codex never falls back to OpenRouter or Claude. Pi's Codex route shares the same pool; other routes use their configured provider.
 
+### Desktop voice
+
+Realtime voice calls (including `gpt-live-1-codex`) retain the caller's OAuth login instead of selecting a pooled account. Codex can create the call through Garcon and then join its control WebSocket directly with its own login; both connections must use the same account. Pooling call creation can produce a successful HTTP 201 followed by a WebSocket 404.
+
+Garcon passes realtime WebSocket upgrades through bidirectionally when the client routes them through the proxy. It records connection metadata, without parsing or storing audio/control frames or estimating their token usage. Keep `supports_websockets = false` for pooled coding requests; this Responses API setting is separate from voice transport.
+
 ## How an account is chosen
 
-An account needs a usable login, fresh quota, and access to the requested model. Garcon considers the lowest-numbered eligible priority group first. Within that group:
+An account needs a usable login, fresh quota, and access to the requested model. Garcon selects across the enrolled eligible accounts using:
 
 ```text
 score = remaining quota percentage / hours until reset
@@ -51,8 +57,8 @@ Garcon checks authentication and model availability every minute; quota collecti
 
 Sessions shows task titles, projects, account assignments, and model traffic. Task titles, paths, and archive flags come from Codex's `state_*.sqlite` files, read without modification. Missing or incompatible indexes fall back to IDs. Task metadata stays local and isn't saved in Garcon's database.
 
-`GET /api/routing/codex` returns account health, quota, scores, and assignment counts. `PUT` requires `enabled`; optional `accounts` selects enrolled IDs and `priorities` maps IDs to integers from 1–99. Enabling without `accounts` enrolls currently discovered logins. Disabling restores pass-through credentials.
+`GET /api/routing/codex` returns account health, quota, scores, and assignment counts. `PUT` accepts `accounts` to select enrolled IDs. Omit it to preserve the pool, or send an empty array to remove all accounts. Legacy `enabled` and `priorities` fields remain accepted for compatibility but do not disable routing or influence account selection.
 
-Routed calls and configuration changes require a local client and matching Origin when supplied. Successful upstream responses include `X-Garcon-Account-Id`. Routing supports HTTP streaming; WebSocket upgrades and bodies over 32 MiB are rejected.
+Routed calls and configuration changes require a local client and matching Origin when supplied. Successful pooled responses include `X-Garcon-Account-Id`. Pooled coding requests support HTTP streaming; their WebSocket upgrades and bodies over 32 MiB are rejected. Realtime voice bypasses the pool and retains the client's credentials as described above.
 
 See [the API reference](api.html) for Sessions, Logs, and Analytics endpoints, and [local files](files.html) for storage and migration.

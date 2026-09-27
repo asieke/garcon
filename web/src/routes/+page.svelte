@@ -1,7 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Icon from "$lib/console/Icon.svelte";
+  import AccountTable from "$lib/console/AccountTable.svelte";
+  import claudeLogo from "$lib/assets/providers/claude-app.png";
+  import { claudeRows } from "$lib/console/claude";
+  import { connectionPrompt } from "$lib/console/connection-prompts";
+  import type { LimitsSnapshot } from "$lib/limits";
+  import HarnessLogo from "$lib/console/HarnessLogo.svelte";
+  import { harnessName, sessionKey } from "$lib/console/harness";
   import CodexLogo from "$lib/console/CodexLogo.svelte";
+  import ProviderConnection from "$lib/console/ProviderConnection.svelte";
   import { parseCatalog, type Catalog } from "$lib/pricing";
   import {
     count,
@@ -9,7 +17,6 @@
     tokens,
     cost,
     ago,
-    duration,
     initials,
     tone,
     mergeGroups,
@@ -23,7 +30,12 @@
   import "$lib/console/console.css";
   type View = "accounts" | "sessions" | "analytics" | "logs";
   let view = $state<View>("accounts");
+  let limits = $state<LimitsSnapshot>({ accounts: [], refreshing: false, updated_at: 0 });
+  let limitsAvailable = $state(false);
+  let claudeExpanded = $state(true);
   let routing = $state<Routing>({ enabled: false, accounts: [] });
+  let connections = $state<{ client: string; connected: boolean | null; mode?: string; profiles?: number; remote_control_at_startup?: boolean }[]>([]);
+  let connectionsAvailable = $state(false);
   let sessions = $state<Session[]>([]),
     aggregates = $state<Aggregate[]>([]),
     feed = $state<RequestRow[]>([]);
@@ -46,11 +58,12 @@
   let error = $state(""),
     notice = $state(""),
     now = $state(Date.now());
-  let modal = $state<"account" | "connect" | null>(null),
+  let modal = $state<"account" | "connect" | "claude" | "claude-account" | "add" | null>(null),
     profile = $state("new-account"),
     copied = $state("");
   let query = $state(""),
     sessionQuery = $state(""),
+    logSession = $state<{ id: string; harness: string } | null>(null),
     errorsOnly = $state(false),
     logMode = $state<"requests" | "system">("requests"),
     offset = $state(0),
@@ -66,12 +79,12 @@
     {
       id: "accounts",
       label: "Accounts",
-      description: "Manage Codex accounts and routing priorities.",
+      description: "Manage the accounts available to Codex and Claude Code.",
     },
     {
       id: "sessions",
       label: "Sessions",
-      description: "Find your Codex tasks and see which account is serving them.",
+      description: "Sessions from Codex, Claude Code, and other clients, all in one place.",
     },
     {
       id: "analytics",
@@ -84,28 +97,26 @@
       description: "Search requests and service logs.",
     },
   ];
+  const claudeAccounts = $derived(claudeRows(limits.accounts, now));
   const title = $derived(views.find((v) => v.id === view)!);
   const enrolled = $derived(routing.accounts.filter((a) => a.enrolled));
   const active = $derived(
-    routing.accounts.reduce((n, a) => n + a.active_requests, 0),
+    sessions.reduce((n, s) => n + s.active, 0),
   );
   const ready = $derived(enrolled.filter((a) => a.status === "Ready"));
-  const next = $derived(routing.enabled ? ready[0] : undefined);
-  const groups = $derived(
-    [...new Set(routing.accounts.map((a) => a.priority))].sort((a, b) => a - b),
-  );
+  const next = $derived(ready[0]);
   const filteredSessions = $derived(
     sessions.filter(
       (s) =>
         (!activeOnly || s.active > 0) &&
-        `${s.task?.title ?? ""} ${s.task?.cwd ?? ""} ${s.session_id} ${s.account} ${s.model} ${s.account_id}`
+        `${harnessName(s.harness)} ${s.provider ?? ""} ${s.task?.title ?? ""} ${s.task?.cwd ?? ""} ${s.session_id} ${s.account} ${s.model} ${s.account_id}`
           .toLowerCase()
           .includes(sessionQuery.toLowerCase()),
     ),
   );
-  const sessionIndex = $derived(new Map(sessions.map((s) => [s.session_id, s])));
-  function taskName(id?: string) {
-    return id ? sessionIndex.get(id)?.task?.title || `Session ${id.slice(0, 8)}…${id.slice(-6)}` : "Unassigned session";
+  const sessionIndex = $derived(new Map(sessions.map((s) => [sessionKey(s.session_id, s.harness), s])));
+  function taskName(id?: string, harness?: string) {
+    return id ? sessionIndex.get(sessionKey(id, harness))?.task?.title || `Session ${id.slice(0, 8)}…${id.slice(-6)}` : "Unassigned session";
   }
   function projectName(s: Session) {
     return s.task?.cwd.split(/[\\/]/).filter(Boolean).at(-1) || "Project unavailable";
@@ -182,8 +193,12 @@
   const command = $derived(
     `CODEX_HOME="$HOME/.codex-${/^[a-z0-9][a-z0-9-]{0,31}$/.test(profile) ? profile : "personal"}" codex -c 'cli_auth_credentials_store="file"' login`,
   );
-  const connectConfig =
-    'model_provider = "garcon"\n\n[model_providers.garcon]\nname = "Garcon"\nbase_url = "http://127.0.0.1:4141/codex/backend-api/codex"\nwire_api = "responses"\nrequires_openai_auth = true\nsupports_websockets = false';
+  const addingClaude = $derived(modal === "claude-account");
+  const accountProvider = $derived(addingClaude ? "Claude Code" : "Codex");
+  const claudeCommand = $derived(`CLAUDE_CONFIG_DIR="$HOME/.claude-${/^[a-z0-9][a-z0-9-]{0,31}$/.test(profile) ? profile : "personal"}" claude`);
+  const claudeLaunchCommand = $derived(`garcon claude --config-dir "$HOME/.claude-${/^[a-z0-9][a-z0-9-]{0,31}$/.test(profile) ? profile : "personal"}"`);
+  const setupClient = $derived(modal === "claude" ? "claude" : "codex");
+  const setupPrompt = $derived(connectionPrompt(setupClient));
   async function api(path: string, options?: RequestInit) {
     const response = await fetch(path, options);
     if (!response.ok)
@@ -194,7 +209,7 @@
     const generation = ++logGeneration;
     try {
       const result = await api(
-        `/api/logs?limit=50&offset=${offset}&q=${encodeURIComponent(query)}&errors=${errorsOnly}`,
+        `/api/logs?limit=50&offset=${offset}&q=${encodeURIComponent(query)}&errors=${errorsOnly}${logSession ? `&session_id=${encodeURIComponent(logSession.id)}&harness=${encodeURIComponent(logSession.harness)}` : ""}`,
       );
       if (alive && generation === logGeneration) logs = result;
     } catch (e) {
@@ -212,6 +227,13 @@
     }
   }
   async function poll() {
+    // A missing status endpoint must not stop the rest of the dashboard polling.
+    const limitsPoll = api("/api/limits").then((result) => {
+      if (alive) { limits = result; limitsAvailable = true; }
+    }).catch(() => { if (alive) limitsAvailable = false; });
+    const connectionPoll = api("/api/connections").then((result) => {
+      if (alive) { connections = result; connectionsAvailable = true; }
+    }).catch(() => { if (alive) connectionsAvailable = false; });
     try {
       const [r, s, f] = await Promise.all([
         api("/api/routing/codex"),
@@ -220,7 +242,8 @@
       ]);
       if (!alive) return;
       if (!busy) routing = r;
-      sessions = s;
+      // Older installed services expose Codex assignments without a harness field.
+      sessions = s.map((session: Session) => ({ ...session, harness: session.harness ?? "codex" }));
       feed = [...f.requests].reverse();
       connected = true;
       loaded = true;
@@ -233,6 +256,7 @@
         loaded = true;
       }
     }
+    await Promise.all([connectionPoll, limitsPoll]);
   }
   onMount(() => {
     alive = true;
@@ -268,6 +292,7 @@
   });
   $effect(() => {
     query;
+    logSession;
     errorsOnly;
     offset;
     const timer = setTimeout(() => {
@@ -288,11 +313,7 @@
     if (v === "analytics") void loadAnalytics();
   }
   async function configure(
-    enabled: boolean,
     accounts = enrolled.map((a) => a.id),
-    priorities = Object.fromEntries(
-      routing.accounts.map((a) => [a.id, a.priority]),
-    ),
   ) {
     busy = true;
     error = "";
@@ -300,7 +321,10 @@
       routing = await api("/api/routing/codex", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, accounts, priorities }),
+        // Keep enrollment edits compatible with installed releases that still
+        // require enabled/priorities while the dashboard is being previewed.
+        body: JSON.stringify({ enabled: true, accounts,
+          priorities: Object.fromEntries(routing.accounts.map((a) => [a.id, 1])) }),
       });
       notice = "Routing preferences saved";
       setTimeout(() => (notice = ""), 2800);
@@ -310,41 +334,11 @@
       busy = false;
     }
   }
-  function priority(a: Account, value: number) {
-    const p = Object.fromEntries(
-      routing.accounts.map((a) => [a.id, a.priority]),
-    );
-    p[a.id] = value;
-    void configure(
-      routing.enabled,
-      enrolled.map((a) => a.id),
-      p,
-    );
-  }
-  function moveGroup(group: number, delta: number) {
-    const other = groups[groups.indexOf(group) + delta];
-    if (other === undefined) return;
-    const p = Object.fromEntries(
-      routing.accounts.map((a) => [
-        a.id,
-        a.priority === group
-          ? other
-          : a.priority === other
-            ? group
-            : a.priority,
-      ]),
-    );
-    void configure(
-      routing.enabled,
-      enrolled.map((a) => a.id),
-      p,
-    );
-  }
   function toggleAccount(a: Account) {
     const ids = a.enrolled
       ? enrolled.filter((x) => x.id !== a.id).map((x) => x.id)
       : [...enrolled.map((x) => x.id), a.id];
-    void configure(ids.length ? routing.enabled : false, ids);
+    void configure(ids);
   }
   async function refresh() {
     refreshing = true;
@@ -366,7 +360,7 @@
       copied = id;
       setTimeout(() => (copied = ""), 2000);
     } catch {
-      error = "Clipboard unavailable. Select and copy the command.";
+      error = "Clipboard unavailable. Select and copy the text.";
     }
   }
   async function systemLogs() {
@@ -380,7 +374,8 @@
     }
   }
   function sessionLogs(s: Session) {
-    query = s.session_id || s.account_id;
+    query = "";
+    logSession = { id: s.session_id, harness: s.harness };
     logMode = "requests";
     errorsOnly = false;
     offset = 0;
@@ -413,7 +408,7 @@
 <svelte:head
   ><title>Garcon</title><meta
     name="description"
-    content="One local home for Codex accounts, sessions, and usage."
+    content="One local home for AI accounts, sessions, and usage."
   /></svelte:head
 >
 <svelte:window
@@ -451,7 +446,7 @@
           aria-current={view === item.id ? "page" : undefined}
           ><Icon name={item.id} /><span>{item.label}</span
           >{#if item.id === "accounts"}<small
-              >{routing.accounts.length.toString().padStart(2, "0")}</small
+              >{(routing.accounts.length + claudeAccounts.length).toString().padStart(2, "0")}</small
             >{:else if item.id === "sessions" && active > 0}<small
               class="active-count">{active}</small
             >{/if}</button
@@ -505,7 +500,7 @@
               ><Icon name="refresh" size={16} />{refreshing
                 ? "Refreshing…"
                 : "Refresh"}</button
-            ><button class="button primary" onclick={() => (modal = "account")}
+            ><button class="button primary" onclick={() => (modal = "add")}
               ><Icon name="plus" size={17} />Add account</button
             >{:else if view === "analytics"}<label class="range-label"
               ><Icon name="clock" size={16} /><select
@@ -536,22 +531,15 @@
       {:else if view === "accounts"}
         <section class="routing-overview" aria-label="Routing overview">
           <div class="flow-intro">
-            <span class="mini-label"
-              ><span class="status-dot" class:offline={!routing.enabled}
-              ></span>{routing.enabled
-                ? "Automatic routing enabled"
-                : "Automatic routing disabled"}</span
-            >
             <span class="routing-next"
-              >Next account <strong>{next?.email ?? "None available"}</strong
+              >Next Codex account <strong>{next?.email ?? "None available"}</strong
               ></span
             >
           </div>
         </section>
         <div class="section-label">
-          <span>ACCOUNT POOL</span><span
-            >{enrolled.length} enrolled <span class="separator">/</span>
-            {routing.accounts.length} discovered</span
+          <span>ACCOUNTS</span><span
+            >{routing.accounts.length + claudeAccounts.length} discovered</span
           >
         </div>
         <section class="provider-card">
@@ -570,21 +558,13 @@
             <div class="provider-actions">
               <span class="provider-summary"
                 >{ready.length} ready <span>·</span> {active} in flight</span
-              ><span class="switch-label">Auto-route</span><button
-                class="switch"
-                class:on={routing.enabled}
-                role="switch"
-                aria-checked={routing.enabled}
-                aria-label="Automatic Codex account routing"
-                disabled={busy || !routing.accounts.length}
-                onclick={() =>
-                  configure(
-                    !routing.enabled,
-                    enrolled.length
-                      ? enrolled.map((a) => a.id)
-                      : routing.accounts.map((a) => a.id),
-                  )}><span></span></button
               >
+              <ProviderConnection
+                provider="Codex"
+                connection={connections.find((c) => c.client === "codex")}
+                available={connected && connectionsAvailable}
+                onclick={() => (modal = "connect")}
+              />
             </div>
           </div>
           {#if expanded}<div class="provider-body">
@@ -603,142 +583,45 @@
                     >Add a Codex account <Icon name="arrow" size={16} /></button
                   >
                 </div>{/if}
-              {#each groups as group, gi (group)}<div class="priority-group">
-                  <div class="group-heading">
-                    <div>
-                      <span class="group-index"
-                        >{String(gi + 1).padStart(2, "0")}</span
-                      ><strong>Priority {group}</strong><span
-                        class="group-description"
-                        >{gi === 0 ? "First choice" : "Fallback group"}</span
-                      >
-                    </div>
-                    <div class="group-controls">
-                      <span>Highest score wins</span><button
-                        aria-label={`Move priority ${group} up`}
-                        disabled={busy || gi === 0}
-                        onclick={() => moveGroup(group, -1)}
-                        ><Icon name="up" size={14} /></button
-                      ><button
-                        aria-label={`Move priority ${group} down`}
-                        disabled={busy || gi === groups.length - 1}
-                        onclick={() => moveGroup(group, 1)}
-                        ><Icon name="down" size={14} /></button
-                      >
-                    </div>
-                  </div>
-                  <div class="account-columns">
-                    <span>ACCOUNT</span><span>AVAILABLE USAGE</span><span
-                      >ROUTING SCORE</span
-                    ><span>PRIORITY</span><span>IN POOL</span>
-                  </div>
-                  {#each routing.accounts.filter((a) => a.priority === group) as a (a.id)}<div
-                      class="account-row"
-                      class:excluded={!a.enrolled}
-                    >
-                      <div class="account-identity">
-                        <span class="account-avatar tone-{tone(a.email)}"
-                          >{initials(a.email)}</span
-                        >
-                        <div>
-                          <div class="account-name">
-                            {a.email ||
-                              "Missing local login"}{#if next?.id === a.id}<span
-                                class="next-badge">UP NEXT</span
-                              >{/if}
-                          </div>
-                          <div class="account-sub">
-                            <span class="plan">{a.plan || "Codex"}</span><span
-                              >·</span
-                            ><span class:healthy={a.status === "Ready"}
-                              >{a.status === "Ready"
-                                ? "Ready to route"
-                                : a.status}</span
-                            >
-                          </div>
-                          <span class="profile-name"
-                            >{a.profile || "Profile unavailable"}</span
-                          >
-                        </div>
-                      </div>
-                      <div class="account-usage">
-                        {#if a.remaining_percent !== null}<div
-                            class="usage-top"
-                          >
-                            <strong
-                              >{a.remaining_percent.toFixed(0)}<small
-                                >% left</small
-                              ></strong
-                            ><span>{duration(a.hours_left)} to reset</span>
-                          </div>
-                          <div class="meter">
-                            <span
-                              class:low={a.remaining_percent < 15}
-                              style:width={`${a.remaining_percent}%`}
-                            ></span>
-                          </div>
-                          {#if a.windows.filter( (w) => w.id.startsWith("codex:") ).length > 1}<div
-                              class="quota-details"
-                            >
-                              {#each a.windows.filter( (w) => w.id.startsWith("codex:") ) as w}<span
-                                  title={`Resets ${new Date(w.resets_at).toLocaleString()}`}
-                                  >{w.label}: {w.used_percent === null
-                                    ? "—"
-                                    : (100 - w.used_percent).toFixed(0)}% left</span
-                                >{/each}
-                            </div>{/if}{:else}<span class="muted"
-                            >Usage unavailable</span
-                          >
-                          <div class="meter"></div>{/if}
-                      </div>
-                      <div class="score">
-                        <strong
-                          >{a.score === null ? "—" : a.score.toFixed(2)}</strong
-                        ><small>% / hour</small>
-                      </div>
-                      <div>
-                        <select
-                          class="priority-select"
-                          aria-label={`Priority for ${a.email}`}
-                          value={a.priority}
-                          disabled={busy}
-                          onchange={(e) =>
-                            priority(a, Number(e.currentTarget.value))}
-                          >{#each [...new Set( [...Array.from({ length: Math.max(3, routing.accounts.length + 1) }, (_, i) => i + 1), ...groups] )] as n}<option
-                              value={n}>P{n}</option
-                            >{/each}</select
-                        >
-                      </div>
-                      <div>
-                        <button
-                          class="pool-check"
-                          class:checked={a.enrolled}
-                          aria-label={`${a.enrolled ? "Remove" : "Enroll"} ${a.email}`}
-                          aria-pressed={a.enrolled}
-                          disabled={busy}
-                          onclick={() => toggleAccount(a)}
-                          >{#if a.enrolled}<Icon
-                              name="check"
-                              size={13}
-                            />{:else}<Icon name="plus" size={13} />{/if}</button
-                        >
-                      </div>
-                    </div>{/each}
-                </div>{/each}
+              <AccountTable accounts={routing.accounts} nextId={next?.id} {busy} ontoggle={toggleAccount} />
               <button class="add-inline" onclick={() => (modal = "account")}
                 ><Icon name="plus" size={16} /> Add another Codex account
                 <span>Separate login. Same endpoint.</span></button
               >
             </div>{/if}
         </section>
+        <section class="provider-card" aria-label="Claude Code accounts">
+          <div class="provider-header">
+            <button class="provider-title" onclick={() => (claudeExpanded = !claudeExpanded)} aria-expanded={claudeExpanded} aria-controls="claude-accounts">
+              <span class="provider-logo"><img src={claudeLogo} width="32" height="32" alt="" /></span>
+              <span><strong>Claude Code</strong><small>Anthropic OAuth accounts</small></span>
+              <span class="provider-chevron" class:open={claudeExpanded}><Icon name="chevron" size={16} /></span>
+            </button>
+            <div class="provider-actions">
+              <span class="provider-summary">{claudeAccounts.length} accounts <span>·</span> Local profiles</span>
+              <ProviderConnection launchBased provider="Claude Code" connection={connections.find((c) => c.client === "claude")} available={connected && connectionsAvailable} onclick={() => (modal = "claude")} />
+            </div>
+          </div>
+          {#if claudeExpanded}<div class="provider-body" id="claude-accounts">
+            {#if !limitsAvailable}<p class="provider-explanation" role="status">Claude account data is unavailable. Retrying automatically.</p>{/if}
+            {#if limitsAvailable && !claudeAccounts.length}<div class="empty-state">
+              <span class="empty-icon"><Icon name="accounts" size={28} /></span>
+              <h3>No accounts found</h3><p>Sign in to Claude Code with a local profile. Garcon will discover it automatically.</p>
+              <button class="button primary" onclick={() => (modal = "claude-account")}>Add a Claude account <Icon name="arrow" size={16} /></button>
+            </div>{/if}
+            <AccountTable accounts={claudeAccounts} provider="Claude Code" poolSupported={false} />
+            <p class="provider-explanation">Launch your Claude profile through Garcon to keep Remote Control available. Each profile uses its own login; account pooling is currently available for Codex.</p>
+            <button class="add-inline" onclick={() => (modal = "claude-account")}><Icon name="plus" size={16} /> Add another Claude account<span>Separate login. Same endpoint.</span></button>
+          </div>{/if}
+        </section>
         <div class="routing-notes">
           <div>
             <span class="note-icon"><Icon name="analytics" /></span>
             <div>
-              <h3>Routing order</h3>
+              <h3>Codex account selection</h3>
               <p>
-                Remaining quota ÷ hours until reset. Highest score wins within a
-                priority group; the most constrained window sets the score.
+                New Codex sessions use the eligible account with the highest remaining
+                quota ÷ hours until reset. The most constrained window sets the score.
               </p>
             </div>
           </div>
@@ -747,8 +630,8 @@
             <div>
               <h3>Session assignments</h3>
               <p>
-                Priority changes apply to new sessions. Existing sessions keep
-                their account, even after a restart.
+                Existing Codex sessions keep their assigned account, even after a restart.
+                Account selection applies to new sessions.
               </p>
             </div>
           </div>
@@ -766,13 +649,13 @@
           </div>
           <div>
             <span>ACCOUNTS IN USE</span><strong
-              >{new Set(sessions.map((s) => s.account_id)).size}</strong
+              >{new Set(sessions.filter((s) => s.account_id || s.account).map((s) => `${s.provider || s.harness}:${s.account_id || s.account}`)).size}</strong
             >
           </div>
           <div class="summary-explanation">
             <Icon name="link" />
             <p>
-              Matched to your local Codex tasks.<br />Active model requests appear first.
+              Codex, Claude Code, and other connected clients.<br />Active model requests appear first.
             </p>
           </div>
         </div>
@@ -780,7 +663,7 @@
           <div class="panel-toolbar">
             <label class="search-box"
               ><Icon name="search" size={17} /><input
-                placeholder="Find a task, project, account, or session ID…"
+                placeholder="Find a client, task, project, account, or session ID…"
                 aria-label="Search sessions"
                 bind:value={sessionQuery}
               /></label
@@ -795,7 +678,7 @@
             <table class="session-table">
               <thead
                 ><tr
-                  ><th>CODEX TASK</th><th>ACTIVITY</th><th>ROUTED ACCOUNT</th><th>MODEL</th><th
+                  ><th>SESSION</th><th>ACTIVITY</th><th>ACCOUNT</th><th>MODEL</th><th
                     >REQUESTS</th
                   ><th>LAST SEEN</th><th></th></tr
                 ></thead
@@ -803,19 +686,14 @@
                 >{#each filteredSessions as s (s.key)}<tr
                     ><td
                       ><div class="session-id">
-                        <span class="session-symbol" class:live={s.active > 0}
-                          ><Icon
-                            name={s.active > 0 ? "pulse" : "sessions"}
-                            size={16}
-                          /></span
-                        >
+                        <HarnessLogo harness={s.harness} size={28} />
                         <div>
                           <button class="task-title" title={s.task?.title || s.session_id || s.key}
                             disabled={!s.session_id} onclick={() => sessionLogs(s)}
-                            >{s.task?.title || (s.session_id ? taskName(s.session_id) : `Legacy session ${s.key.slice(0, 8)}`)}</button>
-                          <small title={s.task?.cwd}>{projectName(s)}{s.task?.archived ? " · Archived" : ""}</small>
+                            >{s.task?.title || (s.session_id ? taskName(s.session_id, s.harness) : `Legacy session ${s.key.slice(0, 8)}`)}</button>
+                          <small title={s.task?.cwd}>{harnessName(s.harness)}{s.task?.cwd ? ` · ${projectName(s)}` : ""}{s.task?.archived ? " · Archived" : ""}</small>
                           <small class="session-reference"><span title={s.session_id || s.key}>{s.session_id ? `${s.session_id.slice(0, 8)}…${s.session_id.slice(-6)}` : "ID available when resumed"}</span>
-                            {#if s.session_id}<button class="row-action" title="Copy full session ID" aria-label={copied === s.key ? "Session ID copied" : `Copy session ID for ${taskName(s.session_id)}`} onclick={() => copy(s.session_id, s.key)}><Icon name={copied === s.key ? "check" : "copy"} size={12}/></button>{/if}
+                            {#if s.session_id}<button class="row-action" title="Copy full session ID" aria-label={copied === s.key ? "Session ID copied" : `Copy session ID for ${taskName(s.session_id, s.harness)}`} onclick={() => copy(s.session_id, s.key)}><Icon name={copied === s.key ? "check" : "copy"} size={12}/></button>{/if}
                             {#if !s.task}<span> · Title unavailable</span>{/if}
                           </small>
                         </div>
@@ -855,7 +733,7 @@
               <p>
                 {sessionQuery
                   ? "Try another task title, project, account, or session identifier."
-                  : "Start a Codex session through Garcon to see its account assignment here."}
+                  : "Start a Codex or Claude Code session through Garcon to see its activity here."}
               </p>
             </div>{/if}
           <div class="panel-footer">
@@ -878,11 +756,12 @@
             </div>
             {#if logMode === "requests"}<label class="search-box log-search"
                 ><Icon name="search" size={17} /><input
-                  placeholder="Search account, model, session, path…"
+                  placeholder="Search client, account, model, session, path…"
                   aria-label="Search request logs"
                   value={query}
                   oninput={(e) => {
                     query = e.currentTarget.value;
+                    logSession = null;
                     offset = 0;
                   }}
                 /></label
@@ -897,11 +776,12 @@
                 ><Icon name="refresh" size={15} />Refresh</button
               >{/if}
           </div>
+          {#if logMode === "requests" && logSession}<div class="session-log-filter"><HarnessLogo harness={logSession.harness} size={18} /><span>{harnessName(logSession.harness)} · {taskName(logSession.id, logSession.harness)}</span><button class="filter-button" onclick={() => { logSession = null; offset = 0; }}>Clear session filter</button></div>{/if}
           {#if logMode === "requests"}<div class="table-scroll">
               <table class="log-table">
                 <thead
                   ><tr
-                    ><th>TIME</th><th>STATUS</th><th>MODEL / REQUEST</th><th
+                    ><th>TIME</th><th>CLIENT</th><th>STATUS</th><th>MODEL / REQUEST</th><th
                       >ACCOUNT</th
                     ><th>TOKENS</th><th>DURATION</th><th></th></tr
                   ></thead
@@ -914,6 +794,7 @@
                         ><span class="mono">{time(r.time)}</span><small
                           >{day(r.time)}</small
                         ></td
+                      ><td><HarnessLogo harness={r.harness} size={22} /><small>{harnessName(r.harness)}</small></td
                       ><td
                         ><span
                           class="status-label"
@@ -936,7 +817,7 @@
                           >{r.method || "POST"} · {r.kind === "request"
                             ? "Metadata request"
                             : r.session_id
-                              ? taskName(r.session_id)
+                              ? taskName(r.session_id, r.harness)
                               : "Completion"}</small
                         ></td
                       ><td class="log-account">{r.account || "Unassigned"}</td
@@ -960,12 +841,12 @@
             {#if !logs.requests.length}<div class="empty-state">
                 <Icon name="logs" size={30} />
                 <h3>
-                  {query || errorsOnly
+                  {query || logSession || errorsOnly
                     ? "No matching requests."
                     : "No requests yet"}
                 </h3>
                 <p>
-                  {query || errorsOnly
+                  {query || logSession || errorsOnly
                     ? "Adjust your search or filters."
                     : "Requests will appear here as they pass through Garcon."}
                 </p>
@@ -1219,7 +1100,7 @@
             >
               {#each feed.slice(0, 12) as r}<button
                   class="ticker-item"
-                  title={taskName(r.session_id)}
+                  title={taskName(r.session_id, r.harness)}
                   tabindex={duplicate === 1 ? -1 : 0}
                   onclick={() => (selected = r)}
                   ><span
@@ -1234,7 +1115,7 @@
                           r.state === "failed"
                         ? "↘"
                         : "↗"}</span
-                  >{#if r.session_id}<span class="ticker-task">{taskName(r.session_id)}</span>{/if}<strong>{r.model || "Codex request"}</strong><Icon
+                  ><HarnessLogo harness={r.harness} size={18} />{#if r.session_id}<span class="ticker-task">{taskName(r.session_id, r.harness)}</span>{/if}<strong>{r.model || `${harnessName(r.harness)} request`}</strong><Icon
                     name="arrow"
                     size={12}
                   /><span>{r.account || "Unassigned"}</span><small
@@ -1244,8 +1125,7 @@
                   ><span class="ticker-divider">/</span></button
                 >{/each}
             </div>{/each}{:else}<div class="ticker-waiting">
-            Listening for requests <span>·</span> Codex → Garcon → your best available
-            account
+            Listening for requests <span>·</span> Your clients → Garcon → your accounts
           </div>{/if}
       </div>
     </div>
@@ -1281,8 +1161,10 @@
       aria-modal="true"
       aria-label={selected
         ? "Request details"
-        : modal === "account"
-          ? "Add Codex account"
+        : modal === "add" ? "Add account"
+        : modal === "claude" ? "Connect Claude Code"
+        : modal === "account" || modal === "claude-account"
+          ? `Add ${accountProvider} account`
           : "Connect Codex"}
       tabindex="-1"
     >
@@ -1299,8 +1181,8 @@
         >
       </div>
       {#if selected}<h2>Request details</h2>
-        {#if selected.session_id}<p class="request-task-name">{taskName(selected.session_id)}</p>
-          {#if sessionIndex.get(selected.session_id)?.task?.cwd}<p class="drawer-fine">{sessionIndex.get(selected.session_id)?.task?.cwd}</p>{/if}
+        {#if selected.session_id}<p class="request-task-name">{taskName(selected.session_id, selected.harness)}</p>
+          {#if sessionIndex.get(sessionKey(selected.session_id, selected.harness))?.task?.cwd}<p class="drawer-fine">{sessionIndex.get(sessionKey(selected.session_id, selected.harness))?.task?.cwd}</p>{/if}
         {/if}
         <div class="detail-status">
           <span
@@ -1314,7 +1196,7 @@
         </div>
         {#if selected.error}<div class="alert">{selected.error}</div>{/if}
         <dl class="request-details">
-          {#each [["Model", selected.model || "Unknown"], ["Account", selected.account || "Unassigned"], ["Account ID", selected.account_id || "Not recorded"], ["Session", selected.session_id || "Not recorded"], ["Request ID", selected.request_id || `Legacy record ${selected.sequence}`], ["Endpoint", `${selected.method || "POST"} ${selected.path || "Not recorded"}`], ["Duration", `${(selected.ms / 1000).toFixed(3)}s`], ["First byte", selected.first_byte_ms === undefined ? "Not measured" : `${selected.first_byte_ms}ms`], ["Input tokens", count(selected.input)], ["Cached input", count(selected.cache_read)], ["Cache write", count(selected.cache_write)], ["Output tokens", count(selected.output)]] as [label, value]}<div
+          {#each [["Client", harnessName(selected.harness)], ["Provider", selected.provider || "Not recorded"], ["Model", selected.model || "Unknown"], ["Account", selected.account || "Unassigned"], ["Account ID", selected.account_id || "Not recorded"], ["Session", selected.session_id || "Not recorded"], ["Request ID", selected.request_id || `Legacy record ${selected.sequence}`], ["Endpoint", `${selected.method || "POST"} ${selected.path || "Not recorded"}`], ["Duration", `${(selected.ms / 1000).toFixed(3)}s`], ["First byte", selected.first_byte_ms === undefined ? "Not measured" : `${selected.first_byte_ms}ms`], ["Input tokens", count(selected.input)], ["Cached input", count(selected.cache_read)], ["Cache write", count(selected.cache_write)], ["Output tokens", count(selected.output)]] as [label, value]}<div
             >
               <dt>{label}</dt>
               <dd>{value}</dd>
@@ -1328,12 +1210,15 @@
             size={16}
           />{copied === "request" ? "Copied" : "Copy request metadata"}</button
         >
-      {:else if modal === "account"}<span class="drawer-art"
-          ><CodexLogo size={36} /><span>+</span></span
-        >
-        <h2>Add Codex account</h2>
+      {:else if modal === "add"}
+        <h2>Add account</h2><p class="drawer-description">Choose the provider for your new login.</p>
+        <button class="button secondary full" onclick={() => (modal = "account")}><CodexLogo size={24}/>Codex account</button>
+        <button class="button secondary full" onclick={() => (modal = "claude-account")}><img src={claudeLogo} width="24" height="24" alt=""/>Claude Code account</button>
+      {:else if modal === "account" || modal === "claude-account"}<span class="drawer-art">
+          {#if addingClaude}<img src={claudeLogo} width="36" height="36" alt=""/>{:else}<CodexLogo size={36} />{/if}<span>+</span></span>
+        <h2>Add {accountProvider} account</h2>
         <p class="drawer-description">
-          Each Codex profile holds its own OpenAI login. Garcon discovers
+          Each {accountProvider} profile holds its own login. Garcon discovers
           profiles on this computer automatically.
         </p>
         <div class="setup-step">
@@ -1342,8 +1227,8 @@
             <h3>Name your profile</h3>
             <p>Use a new name to keep your existing login intact.</p>
             <label class="profile-input"
-              ><span>~/.codex-</span><input
-                aria-label="Codex profile name"
+              ><span>~/.{addingClaude ? "claude" : "codex"}-</span><input
+                aria-label={`${accountProvider} profile name`}
                 bind:value={profile}
                 pattern={"[a-z0-9][a-z0-9-]{0,31}"}
                 placeholder="personal"
@@ -1359,12 +1244,12 @@
           <div>
             <h3>Sign in from your terminal</h3>
             <p>
-              Run this command, then choose the OpenAI account in the browser.
+              Run this command, then sign in to your {accountProvider} account.
             </p>
             <div class="code-box">
-              <code>{command}</code><button
+              <code>{addingClaude ? claudeCommand : command}</code><button
                 aria-label="Copy login command"
-                onclick={() => copy(command, "login")}
+                onclick={() => copy(addingClaude ? claudeCommand : command, "login")}
                 ><Icon
                   name={copied === "login" ? "check" : "copy"}
                   size={16}
@@ -1376,11 +1261,12 @@
         <div class="setup-step">
           <span>03</span>
           <div>
-            <h3>Add it to your pool</h3>
+            <h3>{addingClaude ? "Discover the account" : "Add it to your pool"}</h3>
             <p>
-              Refresh accounts, enable the new login, and choose its priority
-              group.
+              {#if addingClaude}Refresh accounts to show the new login and its quota. Use this launcher to keep Remote Control available, then enable “Remote Control for all sessions” in Claude’s /config.
+              {:else}Refresh accounts and add the new login to your pool. Garcon selects an eligible account automatically for each new session.{/if}
             </p>
+            {#if addingClaude}<div class="code-box"><code>{claudeLaunchCommand}</code><button aria-label="Copy Claude launch command" onclick={() => copy(claudeLaunchCommand, "claude-launch")}><Icon name={copied === "claude-launch" ? "check" : "copy"} size={16}/></button></div>{/if}
           </div>
         </div>
         <button
@@ -1393,26 +1279,25 @@
           ><Icon name="refresh" size={16} />I've signed in · discover accounts</button
         >
         <p class="drawer-fine">
-          Scans ~/.codex, ~/.codex-*, and CODEX_HOME. Duplicate logins appear
-          once. Credentials remain in Codex's own files.
+          {#if addingClaude}Scans ~/.claude, ~/.claude-*, and CLAUDE_CONFIG_DIR. Credentials remain in Claude Code's own files or Keychain.
+          {:else}Scans ~/.codex, ~/.codex-*, and CODEX_HOME. Duplicate logins appear once. Credentials remain in Codex's own files.{/if}
         </p>
-      {:else}<span class="drawer-art"><Icon name="link" size={36} /></span>
-        <h2>Connect Codex</h2>
+      {:else}
+        <span class="drawer-art">
+          {#if setupClient === "claude"}<img src={claudeLogo} width="36" height="36" alt="" />
+          {:else}<Icon name="link" size={36} />{/if}
+        </span>
+        <h2>Connect {setupClient === "claude" ? "Claude Code" : "Codex"}</h2>
         <p class="drawer-description">
-          Add this provider to <code>~/.codex/config.toml</code>. Keep your
-          existing model and other preferences. Restart Codex Desktop or start a
-          new CLI session.
+          {#if setupClient === "claude"}Make your profile launcher use Garcon with Remote Control on by default. Paste this prompt into a coding agent on this computer to set it up.
+          {:else}Paste this prompt into a coding agent on this computer. It will back up your config, update the connection settings, and verify the result.{/if}
         </p>
-        <div class="code-box block">
-          <pre>{connectConfig}</pre>
-          <button
-            aria-label="Copy Codex configuration"
-            onclick={() => copy(connectConfig, "config")}
-            ><Icon
-              name={copied === "config" ? "check" : "copy"}
-              size={16}
-            /></button
-          >
+        <button class="button primary full" onclick={() => copy(setupPrompt, `${setupClient}-prompt`)}>
+          <Icon name={copied === `${setupClient}-prompt` ? "check" : "copy"} size={16} />
+          <span aria-live="polite">{copied === `${setupClient}-prompt` ? "Prompt copied" : "Copy setup prompt"}</span>
+        </button>
+        <div class="code-box block setup-prompt">
+          <textarea readonly rows="14" aria-label="Coding agent setup prompt" value={setupPrompt}></textarea>
         </div>
         <div class="connection-note">
           <Icon name="shield" />
@@ -1422,8 +1307,9 @@
           </p>
         </div>
         <p class="drawer-fine">
-          Use one model_provider setting and one [model_providers.garcon] table.
-          If you already use Garcon, your endpoint stays the same.
+          Copying the prompt does not change your configuration.
+          {#if setupClient === "claude"}The launcher connects each session. Confirm Remote Control in Claude Code and model traffic in Garcon's Logs.
+          {:else}The connection indicator checks saved settings; confirm live traffic in Logs after restarting the client.{/if}
         </p>{/if}
     </dialog>
   </div>{/if}

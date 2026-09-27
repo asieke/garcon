@@ -12,3 +12,8 @@ The same original icon is displayed in both light and dark themes.
 
 The OpenAI logo belongs to OpenAI. Its use identifies the supported provider
 and does not imply endorsement. See [OpenAI brand guidelines](https://openai.com/brand/).
+
+`../assets/providers/claude-app.png` is the Claude app icon previously imported
+in commit b361cfc from `/Applications/Claude.app/Contents/Resources/electron.icns`.
+Restored unchanged to identify Claude Code. The mark belongs to Anthropic and
+does not imply endorsement.

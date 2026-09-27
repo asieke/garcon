@@ -317,7 +317,7 @@ func TestCorruptPinsFailClosed(t *testing.T) {
 
 func TestExplicitEnrollment(t *testing.T) {
 	r, _, _ := setup(t)
-	for _, ids := range [][]string{{}, {"missing"}, {"a", "a"}} {
+	for _, ids := range [][]string{{"missing"}, {"a", "a"}} {
 		if err := r.ConfigureAccounts(true, ids); err == nil {
 			t.Fatal("accepted invalid selection")
 		}
@@ -336,7 +336,41 @@ func TestExplicitEnrollment(t *testing.T) {
 	}
 }
 
-func TestPriorityThenQuotaPerHour(t *testing.T) {
+func TestAutomaticPoolAndEmptySelectionSurviveRestart(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	saveLogin(t, filepath.Join(home, ".codex"), "a", time.Now().Add(time.Hour))
+	dir := t.TempDir()
+	snapshot := func() limits.Snapshot { return limits.Snapshot{} }
+	r := New(dir, snapshot)
+	if !r.Enabled() || !r.enrolled("a") {
+		t.Fatal("initial account pool is not automatic")
+	}
+	// New logins do not silently join an already selected pool.
+	saveLogin(t, filepath.Join(home, ".codex-b"), "b", time.Now().Add(time.Hour))
+	r = New(dir, snapshot)
+	if !r.enrolled("a") || r.enrolled("b") {
+		t.Fatal("restart changed the selected pool")
+	}
+	// Account-only API updates work without a separate enable switch.
+	req := httptest.NewRequest("PUT", "http://127.0.0.1:4141/api/routing/codex", strings.NewReader(`{"accounts":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	r = New(dir, snapshot)
+	if !r.Enabled() || len(r.config.Accounts) != 0 {
+		t.Fatal("empty pool did not survive restart")
+	}
+	if _, err := r.Prepare(request("no-accounts")); err == nil {
+		t.Fatal("empty pool allowed a request")
+	}
+}
+
+func TestSmartRoutingIgnoresLegacyPriorities(t *testing.T) {
 	r, s, _ := setup(t)
 	// B has most remaining quota, but A resets sooner and has more percent/hour.
 	s.Accounts[0].Windows[0].ResetsAt = r.now().Add(10 * time.Minute).UnixMilli()
@@ -358,24 +392,27 @@ func TestPriorityThenQuotaPerHour(t *testing.T) {
 		t.Fatal(err)
 	}
 	release()
-	if second.Header.Get("ChatGPT-Account-Id") != "b" {
-		t.Fatal("score overrode priority group")
+	if second.Header.Get("ChatGPT-Account-Id") != "a" {
+		t.Fatal("legacy priority overrode smart routing score")
+	}
+	if got := r.Status().Accounts[0].ID; got != "a" {
+		t.Fatalf("display order disagrees with smart routing: %s", got)
 	}
 	exhausted := 100.0
-	s.Accounts[1].Windows[0].UsedPercent = &exhausted
+	s.Accounts[0].Windows[0].UsedPercent = &exhausted
 	third := request("fallback")
 	release, err = r.Prepare(third)
 	if err != nil {
 		t.Fatal(err)
 	}
 	release()
-	if third.Header.Get("ChatGPT-Account-Id") != "a" {
-		t.Fatal("did not fall back to next eligible group")
+	if third.Header.Get("ChatGPT-Account-Id") != "b" {
+		t.Fatal("did not fall back to the next eligible score")
 	}
 	if err = r.ConfigurePriorities(false, []string{}, map[string]int{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.config.Accounts) != 0 || r.config.Enabled {
+	if len(r.config.Accounts) != 0 || !r.config.Enabled {
 		t.Fatal("could not remove last account")
 	}
 }

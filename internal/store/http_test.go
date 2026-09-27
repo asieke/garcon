@@ -33,6 +33,7 @@ func TestSessionTaskMetadataAndActivity(t *testing.T) {
 		{RequestID: "main", SessionID: "task", Model: "main-model", Time: 1, Status: 503, State: "failed", Error: "Quota unavailable"},
 		{RequestID: "review", SessionID: "task", Model: "codex-auto-review", Time: 2, State: "streaming"},
 		{RequestID: "unassigned", Time: 3, State: "streaming"},
+		{RequestID: "claude", Harness: "claude", SessionID: "task", Time: 0, Model: "claude-model", Status: 200},
 	} {
 		if err = s.SaveRecord(r); err != nil {
 			t.Fatal(err)
@@ -44,6 +45,7 @@ func TestSessionTaskMetadataAndActivity(t *testing.T) {
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)
 		var rows []struct {
+			Harness string              `json:"harness"`
 			ID      string              `json:"session_id"`
 			Model   string              `json:"model"`
 			Active  int                 `json:"active"`
@@ -56,7 +58,7 @@ func TestSessionTaskMetadataAndActivity(t *testing.T) {
 		if err = json.Unmarshal(w.Body.Bytes(), &rows); err != nil {
 			t.Fatal(w.Body.String(), err)
 		}
-		if len(rows) != 3 || rows[0].ID != "task" || rows[0].Model != "main-model" || rows[0].Active != 1 || rows[0].Reviews != 1 || rows[0].Since != 2 || rows[0].State != "failed" || rows[0].Error != "Quota unavailable" {
+		if len(rows) != 4 || rows[0].ID != "task" || rows[0].Model != "main-model" || rows[0].Active != 1 || rows[0].Reviews != 1 || rows[0].Since != 2 || rows[0].State != "failed" || rows[0].Error != "Quota unavailable" {
 			t.Fatalf("wrong activity: %+v", rows)
 		}
 		if remote == "127.0.0.1:1234" {
@@ -66,8 +68,13 @@ func TestSessionTaskMetadataAndActivity(t *testing.T) {
 		} else if rows[0].Task != nil {
 			t.Fatal("remote client received local metadata")
 		}
-		if rows[2].Active != 0 || rows[2].Task != nil {
-			t.Fatal("legacy session incorrectly joined unassigned traffic")
+		for _, row := range rows {
+			if row.ID == "" && (row.Active != 0 || row.Task != nil) {
+				t.Fatal("legacy session incorrectly joined unassigned traffic")
+			}
+			if row.Harness == "claude" && row.Task != nil {
+				t.Fatal("Claude received a Codex title for the same session ID")
+			}
 		}
 	}
 }
