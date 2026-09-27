@@ -16,9 +16,10 @@ type tap struct {
 	dropping  bool
 	rec       usage.Record
 	failure   string
+	completed bool
 	readError error
 	once      sync.Once
-	done      func(usage.Record, string, error)
+	done      func(usage.Record, string, bool, error)
 }
 
 const maxEventBytes = 16 << 20
@@ -31,8 +32,16 @@ func (t *tap) fold(line []byte) {
 		Type string `json:"type"`
 	}
 	raw := bytes.TrimSpace(bytes.TrimPrefix(bytes.TrimSpace(line), []byte("data:")))
-	if json.Unmarshal(raw, &event) == nil && (event.Type == "response.failed" || event.Type == "response.incomplete" || event.Type == "error") {
-		t.failure = "Upstream reported a failed or incomplete response"
+	if json.Unmarshal(raw, &event) == nil {
+		switch event.Type {
+		case "response.completed":
+			// The response is finished even if the client closes the HTTP stream
+			// before the upstream connection reaches EOF. Output-item completion
+			// and usage counts alone do not establish response completion.
+			t.completed = true
+		case "response.failed", "response.incomplete", "error":
+			t.failure = "Upstream reported a failed or incomplete response"
+		}
 	}
 
 }
@@ -77,7 +86,7 @@ func (t *tap) Close() error {
 		if t.readError == nil {
 			t.readError = err
 		}
-		t.done(t.rec, t.failure, t.readError)
+		t.done(t.rec, t.failure, t.completed, t.readError)
 		t.pending = nil
 	})
 	return err

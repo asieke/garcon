@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"garcon/internal/claude"
+	"garcon/internal/clauderouting"
 	"garcon/internal/codexmetadata"
 	"garcon/internal/codexrouting"
 	"garcon/internal/connections"
@@ -56,7 +57,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-claude-gateway-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)
@@ -79,6 +80,7 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:4141", "address to listen on")
 	allowRemote := flag.Bool("allow-remote", false, "serve on a non-loopback -listen address; there is no authentication, so the dashboard, the settings and the relay are then open to that network")
 	data := flag.String("data", filepath.Join(home, ".local/share/garcon/usage.db"), "local SQLite database (legacy .jsonl paths are migrated)")
+	claudeGatewayConfig := flag.String("claude-gateway-config", filepath.Join(home, ".config/garcon/claude-gateway.json"), "optional Claude Desktop gateway key/profile configuration (absent disables the gateway)")
 	flag.Parse()
 	if flag.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "unknown command %q; run garcon --help\n", flag.Arg(0))
@@ -89,6 +91,10 @@ func main() {
 		os.Exit(2)
 	}
 
+	claudeGateway, err := claude.LoadGateway(*claudeGatewayConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatal(err)
@@ -110,6 +116,26 @@ func main() {
 	static := own(dashboard.Handler(), false)
 
 	mux := http.NewServeMux()
+	if claudeGateway != nil {
+		claudeRouter, err := clauderouting.New(st.DB, li.Snapshot, claudeGateway.Profile())
+		if err != nil {
+			log.Fatal(err)
+		}
+		claudeGateway.Prepare = claudeRouter.Prepare
+		go claudeRouter.Run(context.Background())
+		mux.Handle("/api/routing/claude", readOnly(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(claudeRouter.Status()) }))
+	}
+
+	claudeGatewayHandler := claudeGateway.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rt, ok := proxy.ParseRoute(r.URL.Path)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		px.Serve(w, r, rt)
+	}))
+	mux.Handle("/claude-gateway", claudeGatewayHandler)
+	mux.Handle("/claude-gateway/", claudeGatewayHandler)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if rt, ok := proxy.ParseRoute(r.URL.Path); ok {
 			px.Serve(w, r, rt)

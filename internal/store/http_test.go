@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"garcon/internal/codexmetadata"
 	"garcon/internal/usage"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -76,6 +77,56 @@ func TestSessionTaskMetadataAndActivity(t *testing.T) {
 				t.Fatal("Claude received a Codex title for the same session ID")
 			}
 		}
+	}
+}
+
+func TestLogsHideZeroTokens(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "usage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, record := range []usage.Record{
+		{RequestID: "input", Input: 10},
+		{RequestID: "cache-read", CacheRead: 10},
+		{RequestID: "cache-write", CacheWrite: 10},
+		{RequestID: "output-error", Output: 10, Status: 500},
+		{RequestID: "zero-error", Status: 500},
+		{RequestID: "metadata", Kind: "request"},
+	} {
+		s.Save(record)
+	}
+	for _, tc := range []struct {
+		query string
+		total int
+		ids   []string
+	}{
+		{"", 6, []string{"metadata", "zero-error", "output-error", "cache-write", "cache-read", "input"}},
+		{"hide_zero_tokens=false", 6, []string{"metadata", "zero-error", "output-error", "cache-write", "cache-read", "input"}},
+		{"hide_zero_tokens=true", 4, []string{"output-error", "cache-write", "cache-read", "input"}},
+		{"hide_zero_tokens=true&limit=2&offset=1", 4, []string{"cache-write", "cache-read"}},
+		{"hide_zero_tokens=true&errors=true", 1, []string{"output-error"}},
+		{"hide_zero_tokens=true&q=metadata", 0, nil},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?"+tc.query, nil))
+			var result struct {
+				Total    int            `json:"total"`
+				Requests []RecentRecord `json:"requests"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != http.StatusOK || result.Total != tc.total || len(result.Requests) != len(tc.ids) {
+				t.Fatalf("status %d: %+v", w.Code, result)
+			}
+			for i, id := range tc.ids {
+				if result.Requests[i].RequestID != id {
+					t.Fatalf("request %d: got %q, want %q", i, result.Requests[i].RequestID, id)
+				}
+			}
+		})
 	}
 }
 

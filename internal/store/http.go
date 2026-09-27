@@ -85,6 +85,9 @@ func (s *Store) logs(r *http.Request) (any, error) {
 	if r.URL.Query().Get("errors") == "true" {
 		where += " AND (status>=400 OR state IN ('failed','interrupted'))"
 	}
+	if r.URL.Query().Get("hide_zero_tokens") == "true" {
+		where += ` AND (coalesce(json_extract(record,'$.input'),0)+coalesce(json_extract(record,'$.cache_read'),0)+coalesce(json_extract(record,'$.cache_write'),0)+coalesce(json_extract(record,'$.output'),0))>0`
+	}
 	var total int
 	if err := s.DB.QueryRow("SELECT count(*) FROM requests WHERE "+where, args...).Scan(&total); err != nil {
 		return nil, err

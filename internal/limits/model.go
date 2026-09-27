@@ -55,3 +55,8 @@ func accountID(provider, person, workspace string) string {
 	d := sha256.Sum256([]byte(provider + "\x00" + person + "\x00" + workspace))
 	return fmt.Sprintf("%s:%x", provider, d[:16])
 }
+
+// AccountID is the stable provider/person/workspace identity shared by routing and limits.
+func AccountID(provider, person, workspace string) string {
+	return accountID(provider, person, workspace)
+}

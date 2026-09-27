@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"garcon/internal/database"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -300,27 +299,7 @@ func (r *Router) Refresh(ctx context.Context) {
 // expired windows as unused quota. Percentages across different plans are a
 // headroom heuristic, not a claim about absolute tokens remaining.
 func headroom(a limits.Account, now time.Time) (float64, string) {
-	if a.Status != "fresh" || a.FetchedAt <= 0 || now.UnixMilli()-a.FetchedAt > 600000 {
-		return 0, "Waiting for fresh usage limits"
-	}
-	remaining, found := 100.0, false
-	for _, w := range a.Windows {
-		if !strings.HasPrefix(w.ID, "codex:") {
-			continue
-		}
-		if w.UsedPercent == nil || math.IsNaN(*w.UsedPercent) || math.IsInf(*w.UsedPercent, 0) || *w.UsedPercent < 0 || w.Expired || (w.ResetsAt > 0 && w.ResetsAt <= now.UnixMilli()) {
-			return 0, "Waiting for fresh usage limits"
-		}
-		found = true
-		remaining = math.Min(remaining, math.Max(0, 100-*w.UsedPercent))
-	}
-	if !found {
-		return 0, "Usage limits unavailable"
-	}
-	if remaining <= 0 {
-		return 0, "Usage exhausted"
-	}
-	return remaining, "Ready"
+	return limits.Headroom(a, now, func(w limits.Window) bool { return strings.HasPrefix(w.ID, "codex:") })
 }
 
 func (r *Router) account(c credential, model string, snapshot limits.Snapshot) Account {
@@ -559,27 +538,9 @@ func (r *Router) Observe(id string, res *http.Response) {
 
 // The most constrained general quota window determines the account's score.
 func quotaScore(a limits.Account, now time.Time) (float64, float64) {
-	score, hours := math.Inf(1), 0.0
-	found := false
-	for _, w := range a.Windows {
-		if !strings.HasPrefix(w.ID, "codex:") {
-			continue
-		}
-		if w.UsedPercent == nil || w.ResetsAt <= now.UnixMilli() {
-			return -1, 0
-		}
-		h := float64(w.ResetsAt-now.UnixMilli()) / 3600000
-		v := math.Max(0, 100-*w.UsedPercent) / h
-		if v < score {
-			score, hours = v, h
-		}
-		found = true
-	}
-	if !found {
-		return -1, 0
-	}
-	return score, hours
+	return limits.QuotaScore(a, now, func(w limits.Window) bool { return strings.HasPrefix(w.ID, "codex:") })
 }
+
 func (r *Router) persistConfig(c Config) error {
 	if r.db != nil {
 		return r.db.Put("codex-routing", c)
