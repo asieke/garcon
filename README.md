@@ -75,6 +75,15 @@ The ticker and request inspector also show task names. **Analytics** shows token
 
 Open [the compact widget](http://127.0.0.1:4141/usage-widget/) for Codex and Claude allowances, reset times, and Codex reset credits. Press **R** to refresh. Provider limits include work done outside Garcon; missing data isn't counted as unused quota.
 
+On macOS, the small [Swift app](macos/usage-widget.swift) opens that same widget in a native window. Build it with Apple's Command Line Tools installed:
+
+```sh
+bash macos/build.sh
+open "macos/build/Garcon Usage.app"
+```
+
+Garcon must already be running on port 4141. The app loads the page directly from Garcon; it does not bundle a separate server or dashboard. You can move the built app to Applications. **⌘R** reloads, **⌘W** closes, and **⌘Q** quits.
+
 Garcon stores request metadata, account assignments, preferences, and snapshots in `~/.local/share/garcon/usage.db`. It doesn't save prompts, response bodies, or OAuth tokens in the ledger. Provider CLIs own their logins. A saved OpenRouter key lives in a separate owner-only file.
 
 Task titles and paths are read from Codex's local index without changing it. Data stays on this machine; there is no cross-device sync. Garcon has no app login, so keep its default loopback binding. `-allow-remote` exposes the dashboard and relay to the network.
