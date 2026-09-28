@@ -79,6 +79,15 @@ export function widgetGroups(accounts: LimitAccount[]): { key: string; label: st
 	}));
 }
 
+export function widgetProviderGroups(accounts: LimitAccount[]): { key: string; label: string; accounts: LimitAccount[] }[] {
+	return ['codex', 'claude'].map(provider => ({
+		key: provider,
+		label: provider === 'codex' ? 'Codex' : 'Claude',
+		accounts: accounts.filter(account => account.provider === provider)
+			.sort((a, b) => a.email.toLowerCase().localeCompare(b.email.toLowerCase()) || a.id.localeCompare(b.id))
+	})).filter(group => group.accounts.length > 0);
+}
+
 export function widgetWindows(account: LimitAccount): (LimitWindow | null)[] {
 	if (!account.windows.length) return [null];
 	const rank = (w: LimitWindow) => w.label === '5-hour' ? 0 : w.label === 'Weekly' ? 1 : 2;
