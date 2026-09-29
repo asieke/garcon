@@ -26,9 +26,10 @@ import (
 )
 
 type Config struct {
-	Enabled    bool           `json:"enabled"`
-	Accounts   []string       `json:"accounts"`
-	Priorities map[string]int `json:"priorities,omitempty"`
+	PinnedAccount string         `json:"pinned_account,omitempty"`
+	Enabled       bool           `json:"enabled"`
+	Accounts      []string       `json:"accounts"`
+	Priorities    map[string]int `json:"priorities,omitempty"`
 }
 type health struct {
 	models  map[string]bool
@@ -51,9 +52,11 @@ type Account struct {
 	Conversations int             `json:"conversations"`
 }
 type Status struct {
-	Enabled  bool      `json:"enabled"`
-	Accounts []Account `json:"accounts"`
-	Error    string    `json:"error,omitempty"`
+	PinnedAccount string    `json:"pinned_account"`
+	NextAccount   string    `json:"next_account"`
+	Enabled       bool      `json:"enabled"`
+	Accounts      []Account `json:"accounts"`
+	Error         string    `json:"error,omitempty"`
 }
 type Router struct {
 	db           *database.DB
@@ -164,6 +167,15 @@ func (r *Router) ConfigureAccounts(enabled bool, selected []string) error {
 	return r.ConfigurePriorities(enabled, selected, nil)
 }
 func (r *Router) ConfigurePriorities(enabled bool, selected []string, priorities map[string]int) error {
+	return r.configure(enabled, selected, priorities, nil)
+}
+
+// Pin overrides automatic and conversation routing until explicitly cleared.
+func (r *Router) Pin(id string) error {
+	return r.configure(false, nil, nil, &id)
+}
+
+func (r *Router) configure(enabled bool, selected []string, priorities map[string]int, pinned *string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	config := r.config
@@ -204,6 +216,27 @@ func (r *Router) ConfigurePriorities(enabled bool, selected []string, priorities
 			}
 		}
 		config.Priorities = priorities
+	}
+	if pinned != nil {
+		config.PinnedAccount = *pinned
+		if *pinned != "" {
+			found := false
+			for _, c := range r.discover() {
+				found = found || c.id == *pinned
+			}
+			if !found {
+				return errors.New("pinned account must have a local login")
+			}
+		}
+	}
+	if config.PinnedAccount != "" {
+		found := false
+		for _, id := range config.Accounts {
+			found = found || id == config.PinnedAccount
+		}
+		if !found {
+			return errors.New("unpin the account before removing it from the pool")
+		}
 	}
 	if err := r.persistConfig(config); err != nil {
 		return err
@@ -351,10 +384,16 @@ func (r *Router) Status() Status {
 	creds, snapshot := r.discover(), r.snapshot()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := Status{Enabled: r.config.Enabled, Error: r.problem, Accounts: []Account{}}
+	s := Status{Enabled: r.config.Enabled, Error: r.problem, Accounts: []Account{}, PinnedAccount: r.config.PinnedAccount}
+	var next Account
 	seen := map[string]bool{}
 	for _, c := range creds {
-		s.Accounts = append(s.Accounts, r.account(c, "", snapshot))
+		a := r.account(c, "", snapshot)
+		s.Accounts = append(s.Accounts, a)
+		if r.problem == "" && (s.PinnedAccount == "" || s.PinnedAccount == a.ID) && eligible(a) && betterAccount(a, next) {
+			next = a
+			s.NextAccount = a.ID
+		}
 		seen[c.id] = true
 	}
 	for _, id := range r.config.Accounts {
@@ -373,6 +412,13 @@ func (r *Router) Status() Status {
 		return a.Email < b.Email
 	})
 	return s
+}
+
+func eligible(a Account) bool { return a.Enrolled && a.Status == "Ready" && a.Score != nil }
+
+// Use the same deterministic tie-break for the status indicator and requests.
+func betterAccount(a, b Account) bool {
+	return b.ID == "" || *a.Score > *b.Score || (*a.Score == *b.Score && a.ID < b.ID)
 }
 
 type routingError struct {
@@ -397,7 +443,7 @@ func localRequest(req *http.Request) bool {
 }
 
 // Prepare changes only outbound identity headers. Assignments survive restarts.
-// Unknown continuations stay on their original enrolled account. No automatic
+// Without a manual override, continuations stay on their original account. No automatic
 // replay or cross-account switch is performed after a request has started.
 func (r *Router) Prepare(req *http.Request) (func(), error) {
 	if !localRequest(req) {
@@ -449,7 +495,10 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	if r.problem != "" {
 		return nil, &routingError{503, r.problem}
 	}
-	pinned := r.pins[key]
+	pinned := r.config.PinnedAccount
+	if pinned == "" {
+		pinned = r.pins[key]
+	}
 	if pinned == "" && hasState {
 		pinned = req.Header.Get("ChatGPT-Account-Id")
 		if pinned == "" {
@@ -457,21 +506,20 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 		}
 	}
 	var chosen credential
-	best := -1.0
+	var best Account
 	for _, c := range creds {
 		if pinned != "" && c.id != pinned {
 			continue
 		}
 		a := r.account(c, body.Model, snapshot)
-		if a.Status != "Ready" || !a.Enrolled || a.Score == nil {
+		if !eligible(a) {
 			continue
 		}
-		score := *a.Score
 		// Legacy priorities remain readable for API compatibility. All eligible
 		// accounts now compete on quota per hour within one smart-routing pool.
-		if score > best {
+		if betterAccount(a, best) {
 			chosen = c
-			best = score
+			best = a
 		}
 	}
 	if chosen.id == "" {
@@ -479,21 +527,26 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 		if pinned != "" {
 			message = "The conversation's Codex account is unavailable; refresh its login or limits, or start a new conversation"
 		}
+		if r.config.PinnedAccount != "" {
+			message = "The pinned Codex account is unavailable for this request; refresh its login or limits, or unpin it in Usage"
+		}
 		return nil, &routingError{503, message}
 	}
-	if key != "" && r.pins[key] == "" {
-		if r.db == nil && len(r.pins) >= 8000 {
+	if key != "" {
+		previous := r.pins[key]
+		if previous == "" && r.db == nil && len(r.pins) >= 8000 {
 			return nil, &routingError{503, "Codex conversation assignment store is full"}
 		}
 		r.pins[key] = chosen.id
-		if err := r.persistPin(key, session, chosen, body.Model); err != nil {
-			delete(r.pins, key)
-			return nil, &routingError{503, "Could not persist Codex conversation assignment"}
-		}
-	}
-	if key != "" && r.db != nil {
-		if err := r.persistPin(key, session, chosen, body.Model); err != nil {
-			return nil, &routingError{503, "Could not persist Codex session activity"}
+		if previous != chosen.id || r.db != nil {
+			if err := r.persistPin(key, session, chosen, body.Model); err != nil {
+				if previous == "" {
+					delete(r.pins, key)
+				} else {
+					r.pins[key] = previous
+				}
+				return nil, &routingError{503, "Could not persist Codex conversation assignment"}
+			}
 		}
 	}
 	*req = *req.WithContext(context.WithValue(req.Context(), detailKey{}, RequestDetails{Session: session, Model: body.Model, Account: chosen.email, AccountID: chosen.id}))
@@ -553,7 +606,7 @@ func (r *Router) persistPin(key, session string, c credential, model string) err
 	}
 	now := r.now().UnixMilli()
 	_, err := r.db.Exec(`INSERT INTO sessions(key,session_id,account_id,account,model,created_at,last_seen) VALUES(?,?,?,?,?,?,?)
- ON CONFLICT(key) DO UPDATE SET session_id=excluded.session_id,account=excluded.account,model=CASE WHEN excluded.model!='' THEN excluded.model ELSE sessions.model END,last_seen=excluded.last_seen,
+ ON CONFLICT(key) DO UPDATE SET session_id=excluded.session_id,account_id=excluded.account_id,account=excluded.account,model=CASE WHEN excluded.model!='' THEN excluded.model ELSE sessions.model END,last_seen=excluded.last_seen,
  created_at=CASE WHEN sessions.created_at=0 THEN excluded.created_at ELSE sessions.created_at END`, key, session, c.id, c.email, model, now, now)
 	return err
 }

@@ -15,9 +15,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		var config struct {
-			Enabled    *bool          `json:"enabled"`
-			Accounts   []string       `json:"accounts"`
-			Priorities map[string]int `json:"priorities"`
+			PinnedAccount *string        `json:"pinned_account"`
+			Enabled       *bool          `json:"enabled"`
+			Accounts      []string       `json:"accounts"`
+			Priorities    map[string]int `json:"priorities"`
 		}
 		d := json.NewDecoder(io.LimitReader(req.Body, 32<<10))
 		d.DisallowUnknownFields()
@@ -26,11 +27,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		// Account-only updates preserve the pool when the field is omitted.
-		if err := r.ConfigurePriorities(false, config.Accounts, config.Priorities); err != nil {
-			WriteError(w, &routingError{400, "Could not save configuration: check account selection and priorities (1–99)"})
+		if err := r.configure(false, config.Accounts, config.Priorities, config.PinnedAccount); err != nil {
+			WriteError(w, &routingError{400, "Could not save configuration: check the account pool, local login, and priorities; unpin before removing the pinned account"})
 			return
 		}
-		go r.Refresh(context.Background())
+		if config.PinnedAccount == nil || config.Accounts != nil {
+			go r.Refresh(context.Background())
+		}
 	} else if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD, PUT")
 		w.WriteHeader(405)

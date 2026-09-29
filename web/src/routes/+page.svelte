@@ -107,7 +107,7 @@
     sessions.reduce((n, s) => n + s.active, 0),
   );
   const ready = $derived(enrolled.filter((a) => a.status === "Ready"));
-  const next = $derived(ready[0]);
+  const next = $derived(routing.next_account === undefined ? ready[0] : routing.accounts.find(a => a.id === routing.next_account));
   const filteredSessions = $derived(
     sessions.filter(
       (s) =>
@@ -590,7 +590,7 @@
                     >Add a Codex account <Icon name="arrow" size={16} /></button
                   >
                 </div>{/if}
-              <AccountTable accounts={routing.accounts} nextId={next?.id} {busy} ontoggle={toggleAccount} />
+              <AccountTable accounts={routing.accounts} pinnedId={routing.pinned_account} nextId={next?.id} {busy} ontoggle={toggleAccount} />
               <button class="add-inline" onclick={() => (modal = "account")}
                 ><Icon name="plus" size={16} /> Add another Codex account
                 <span>Separate login. Same endpoint.</span></button

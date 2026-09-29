@@ -41,9 +41,33 @@ For multiple general quota windows, the lowest window score wins. Active request
 
 Garcon saves the session-to-account assignment in SQLite before forwarding. Requests with the same session ID keep that account across restarts. A continuation without an assignment stays on its identifiable original enrolled account; otherwise it fails explicitly.
 
-If the assigned account becomes unavailable, the conversation returns an error. Garcon doesn't move it or replay the call elsewhere. Start a new conversation to select again. Unpinning and migration aren't supported.
+If the assigned account becomes unavailable, the conversation returns an error. Automatic routing doesn't move it or replay the call elsewhere. Start a new conversation to select again, or explicitly pin an account as described below.
 
 Upstream 401, 403, or 429 responses temporarily exclude an account from new assignments. A 401 also requests credential renewal. Reset credits are never redeemed.
+
+## Manual account pin
+
+The Usage widget shows **Up next** on the account automatic routing would choose for a new conversation. The indicator uses current eligibility and quota scores; requested-model access can change the actual choice.
+
+Click **Pin** beside an enrolled Codex account to override routing for all subsequent pooled coding requests, including existing conversations. Click **Pinned** again or **Unpin** in the banner to clear the override. The pin persists across restarts, and can be switched directly to another account. An unavailable pinned account returns an explicit error; it never falls back to another account. Unpin an account before removing it from the pool.
+
+Requests already in flight finish on their selected account. Subsequent requests update the conversation assignment to the pinned account. After unpinning, automatic selection resumes for new conversations; existing conversations keep their most recent assignment. Account-bound continuation state is forwarded unchanged and may be rejected by the provider after switching accounts; start a new conversation if that happens. Garcon does not rewrite conversation history or redeem reset credits. Claude and realtime voice are unaffected.
+
+### Pin from the CLI
+
+The CLI controls the same running service and persistent pin as the Usage widget:
+
+```sh
+garcon codex status
+garcon codex pin alex@example.com
+garcon codex pin <account-id>
+garcon codex unpin
+garcon codex status --json
+```
+
+`status` lists account IDs, emails, pool membership, health, and the pinned or next account. Pin accepts an exact account ID or a case-insensitive email; use an ID when multiple accounts share an email. The account must already be enrolled in the routing pool. `pin` and `unpin` also support `--json` for scripts. Errors exit with a nonzero status.
+
+The default service is `http://127.0.0.1:4141`. To target another local instance, put options before the account selector, for example `garcon codex pin --url http://127.0.0.1:4242 alex@example.com`. The service must be running and support pinning; the CLI does not edit its database directly or start another backend.
 
 ## Logins and renewal
 
@@ -57,7 +81,7 @@ Garcon checks authentication and model availability every minute; quota collecti
 
 Sessions shows task titles, projects, account assignments, and model traffic. Task titles, paths, and archive flags come from Codex's `state_*.sqlite` files, read without modification. Missing or incompatible indexes fall back to IDs. Task metadata stays local and isn't saved in Garcon's database.
 
-`GET /api/routing/codex` returns account health, quota, scores, and assignment counts. `PUT` accepts `accounts` to select enrolled IDs. Omit it to preserve the pool, or send an empty array to remove all accounts. Legacy `enabled` and `priorities` fields remain accepted for compatibility but do not disable routing or influence account selection.
+`GET /api/routing/codex` returns account health, quota, scores, assignment counts, `pinned_account`, and `next_account` (empty when no eligible account is available). `PUT` accepts `accounts` to select enrolled IDs. Omit it to preserve the pool, or send an empty array to remove all accounts. `PUT` also accepts `pinned_account` with an enrolled local account ID, or `""` to unpin. Omitting it preserves the current pin; pool and pin changes are saved together. Legacy `enabled` and `priorities` fields remain accepted for compatibility but do not disable routing or influence account selection.
 
 Routed calls and configuration changes require a local client and matching Origin when supplied. Successful pooled responses include `X-Garcon-Account-Id`. Pooled coding requests support HTTP streaming; their WebSocket upgrades and bodies over 32 MiB are rejected. Realtime voice bypasses the pool and retains the client's credentials as described above.
 

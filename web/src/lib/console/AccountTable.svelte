@@ -1,10 +1,11 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import { duration, initials, tone, type Account } from "./model";
-  let { accounts, provider = "Codex", nextId, busy = false, poolSupported = true, poolEditable = true, ontoggle }: {
+  let { accounts, provider = "Codex", nextId, pinnedId, busy = false, poolSupported = true, poolEditable = true, ontoggle }: {
     accounts: Account[];
     provider?: string;
     nextId?: string;
+    pinnedId?: string;
     busy?: boolean;
     poolSupported?: boolean;
     poolEditable?: boolean;
@@ -29,7 +30,7 @@
           <div>
             <div class="account-name">
               {a.email ||
-                "Missing local login"}{#if nextId === a.id}<span
+                "Missing local login"}{#if pinnedId === a.id}<a class="next-badge" href="/usage-widget" title="Manage the Codex pin in Usage">PINNED</a>{:else if nextId === a.id}<span
                   class="next-badge">UP NEXT</span
                 >{/if}
             </div>

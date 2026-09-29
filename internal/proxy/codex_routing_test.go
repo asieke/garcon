@@ -53,11 +53,12 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 	router.Refresh(context.Background())
 	calls := 0
 	upstreamStatus := 200
+	expectedAccount := "b"
 	const payload = `{"model":"test","input":"unchanged","stream":true}`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		calls++
 		b, _ := io.ReadAll(req.Body)
-		if string(b) != payload || req.Header.Get("ChatGPT-Account-Id") != "b" || req.Header.Get("Authorization") == "Bearer original" || req.URL.Path != "/backend-api/codex/responses" {
+		if string(b) != payload || req.Header.Get("ChatGPT-Account-Id") != expectedAccount || req.Header.Get("Authorization") == "Bearer original" || req.URL.Path != "/backend-api/codex/responses" {
 			t.Error("wrong upstream identity or altered request")
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -98,5 +99,14 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 	w = call()
 	if w.Code != 503 || calls != 2 || record.Status != 503 || record.State != "failed" {
 		t.Fatal("rerouted an unavailable pinned conversation")
+	}
+	// A user pin changes even this already-assigned session and its attribution.
+	if err := router.Pin("a"); err != nil {
+		t.Fatal(err)
+	}
+	expectedAccount, upstreamStatus = "a", 200
+	w = call()
+	if w.Code != 200 || calls != 3 || record.AccountID != "a" || record.Account != "a@example.com" || w.Header().Get("X-Garcon-Account-Id") != "a" {
+		t.Fatalf("manual override did not reach upstream: %d %+v", w.Code, record)
 	}
 }
