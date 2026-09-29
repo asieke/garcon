@@ -1,9 +1,42 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { Routing } from '$lib/console/model';
 	import RequestTicker from '$lib/RequestTicker.svelte';
 	import ResetCredits from '$lib/charts/ResetCredits.svelte';
 	import AccountNickname from '$lib/charts/AccountNickname.svelte';
 	import { accountStatus, barPercent, elapsedPercent, expired, widgetGroups, widgetProviderGroups, widgetWindows, widgetWindowLabel, widgetReset, type LimitsSnapshot } from '$lib/limits';
+
+	let routing = $state<Routing | null>(null);
+	let routingError = $state('');
+	let pinning = $state(false);
+	let routingGeneration = 0;
+
+	async function loadRouting() {
+		const generation = ++routingGeneration;
+		try {
+			const res = await fetch('/api/routing/codex');
+			if (!res.ok) throw new Error();
+			const result: Routing = await res.json();
+			if (generation === routingGeneration) { routing = result; routingError = ''; }
+		} catch {
+			if (generation === routingGeneration) { routing = null; routingError = 'Codex routing unavailable. Retrying automatically.'; }
+		}
+	}
+	async function pinAccount(id: string) {
+		if (pinning) return;
+		pinning = true;
+		++routingGeneration;
+		try {
+			const res = await fetch('/api/routing/codex', {
+				method: 'PUT', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ pinned_account: id })
+			});
+			const result = await res.json();
+			if (!res.ok) throw new Error(result.error?.message || 'Could not change the Codex pin.');
+			routing = result; routingError = '';
+		} catch (e) { routingError = e instanceof Error ? e.message : 'Could not change the Codex pin.'; }
+		finally { pinning = false; }
+	}
 
 	let snapshot = $state<LimitsSnapshot | null>(null);
 	let error = $state('');
@@ -33,7 +66,7 @@
 			if (!res.ok) throw new Error();
 			snapshot = await res.json(); error = '';
 		} catch { error = 'Could not refresh usage. Retrying automatically.'; }
-		finally { requesting = false; }
+		finally { requesting = false; if (!pinning) loadRouting(); }
 	}
 	function shortcut(event: KeyboardEvent) {
 		if (event.key.toLowerCase() !== 'r' || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -42,8 +75,8 @@
 		event.preventDefault(); refresh();
 	}
 	onMount(() => {
-		load();
-		const poll = setInterval(load, 10_000);
+		load(); loadRouting();
+		const poll = setInterval(() => { load(); if (!pinning) loadRouting(); }, 10_000);
 		const clock = setInterval(() => { now = Date.now(); }, 1000);
 		return () => { clearInterval(poll); clearInterval(clock); };
 	});
@@ -60,15 +93,40 @@
 			<div class="summary"><span>{snapshot?.accounts.length ?? 0} profiles</span><span class:stale title={checkedAt > 0 ? `Last provider check: ${new Date(checkedAt).toLocaleString()}` : undefined}>{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}</span>{#if staleAccounts}<span class="stale">{staleAccounts} {staleAccounts === 1 ? 'profile needs' : 'profiles need'} attention</span>{/if}<button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button></div>
 		</header>
 		{#if error || snapshot?.error}<p class="notice" role="status">{error || snapshot?.error}</p>{/if}
+		{#if routingError || routing?.error}<p class="notice" role="status">{routingError || routing?.error}</p>{/if}
 		{#each groups as group (group.key)}
 			<section class="provider-group" style:--group-rows={group.accounts.reduce((n, a) => n + widgetWindows(a).length, 0)} aria-label={group.label}>
 				<h2>{group.label}</h2>
 				<div class="columns" aria-hidden="true"><span>Window</span><span>Used</span><span>Resets in</span></div>
 				{#each group.accounts as account (account.id)}
 					{@const status = accountStatus(account, now)}
+					{@const route = account.provider === 'codex' && account.workspace ? routing?.accounts.find(a => a.id === account.workspace) : undefined}
+					{@const isPinned = !!route && routing?.pinned_account === route.id}
+					{@const isNext = !!route && routing?.next_account === route.id}
 					{@const color = accountColors[account.email.toLowerCase() || account.id]}
-					<section class="account-group" style:--account-color={color} style:--group-rows={widgetWindows(account).length} aria-label={account.email || 'Account identity unavailable'}>
-						<div class="account-heading"><AccountNickname email={account.email || 'Account identity unavailable'} {color} />{#if account.workspace && group.accounts.filter(a => a.email.toLowerCase() === account.email.toLowerCase()).length > 1}<small>{account.workspace}</small>{/if}{#if account.provider === 'codex'}<ResetCredits {account} {now} compact />{/if}</div>
+					<section class="account-group" class:up-next={isNext} style:--account-color={color} style:--group-rows={widgetWindows(account).length} aria-label={account.email || 'Account identity unavailable'}>
+						<div class="account-heading">
+							<AccountNickname email={account.email || 'Account identity unavailable'} {color} />
+							{#if account.workspace && group.accounts.filter(a => a.email.toLowerCase() === account.email.toLowerCase()).length > 1}
+								<small>{account.workspace}</small>
+							{/if}
+							{#if account.provider === 'codex'}
+								{#if route && routing?.pinned_account !== undefined}
+									<button
+										class="pin-control" class:pinned={isPinned}
+										aria-pressed={isPinned}
+										aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${account.email} for all Codex coding requests`}
+										title={isPinned ? 'Unpin to resume automatic routing for new conversations' : !route.enrolled ? 'Add this account to the Codex pool to pin it' : isNext ? 'Next for a new conversation (model access may change the choice); click to pin all Codex coding requests here' : 'Pin all subsequent Codex coding requests to this account'}
+										disabled={pinning || (!isPinned && (!route.enrolled || route.status === 'Saved login missing'))}
+										onclick={() => pinAccount(isPinned ? '' : route.id)}
+									>
+										<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="m5 2 6 0-1 4 2 3H4l2-3-1-4ZM8 9v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
+										{isPinned ? 'Pinned' : 'Pin'}
+									</button>
+								{/if}
+								<ResetCredits {account} {now} compact />
+							{/if}
+						</div>
 					{#each widgetWindows(account) as window (window?.id ?? 'unavailable')}
 						{@const isExpired = window ? expired(window, now) : false}
 						{@const elapsed = window ? elapsedPercent(window, now) : null}
@@ -94,6 +152,10 @@
 </div>
 
 <style>
+	.pin-control { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid var(--widget-border); border-radius: 4px; color: var(--widget-muted); font-size: 10px; line-height: 1.2; cursor: pointer; white-space: nowrap; }
+	.pin-control:focus-visible { outline: 2px solid var(--account-color, #3c82eb); outline-offset: 2px; }
+	.pin-control.pinned { color: var(--widget-text); background: color-mix(in srgb, var(--account-color) 18%, var(--widget-bg)); border-color: var(--account-color); }
+	.account-group.up-next { background: color-mix(in srgb, var(--account-color) 7%, var(--widget-bg)); }
 	.widget-shell { --request-ticker-height: clamp(40px, 7svh, 62px); --page-gap: clamp(4px, 1svh, 12px); }
 	.widget-page { padding: var(--page-gap) clamp(8px, 1.2vw, 20px); padding-bottom: calc(var(--request-ticker-height) + var(--page-gap) + env(safe-area-inset-bottom)); min-height: 100svh; }
 	.widget { --widget-bg: #fff; --widget-head: #f8fafc; --widget-track: #e4e9ef; --widget-border: #dce2e9; --widget-text: #26313e; --widget-muted: #68778a; --codex-color: #475569; --claude-color: #b95030; background: var(--widget-bg); color: var(--widget-text); max-width: 1800px; margin: 0 auto; border: 1px solid var(--widget-border); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 6px #0000000a; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: clamp(11px, .95vw, 15px); font-variant-numeric: tabular-nums; }

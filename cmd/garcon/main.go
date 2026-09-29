@@ -57,7 +57,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-claude-gateway-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-claude-gateway-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon codex status|pin|unpin [--help]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)
@@ -67,6 +67,12 @@ func main() {
 			os.Exit(1)
 		case "service":
 			service.Main(os.Args[2:])
+			return
+		case "codex":
+			if err := codexrouting.RunCLI(os.Args[2:], os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 			return
 		case "claude":
 			claude.Main(os.Args[2:])

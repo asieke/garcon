@@ -21,7 +21,7 @@ export type Account = {
   active_requests: number;
   conversations: number;
 };
-export type Routing = { enabled: boolean; accounts: Account[]; error?: string };
+export type Routing = { pinned_account?: string; next_account?: string; enabled: boolean; accounts: Account[]; error?: string };
 export type RequestRow = {
   harness?: string;
   provider?: string;
