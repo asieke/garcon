@@ -126,3 +126,9 @@ Run `go test ./...` and, from `web/`, `npm run check && npm test && npm run buil
 Source: `web/` (UI), `internal/` (backend), `docs/` (documentation).
 
 Merges to `main` trigger an npm patch release. `[minor]` or `[major]` in the merge message changes the bump. PRs build and test without publishing.
+
+### External CLI delegation (experimental)
+
+`garcon delegate` lets a local Codex task request a bounded, opt-in task from the
+installed Claude Code CLI. It does not replace Codex's native model backend or use
+Garcon's account pools. See [architecture, auth boundaries, setup and validation](docs/codex-cli-delegation.md).
