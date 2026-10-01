@@ -63,6 +63,10 @@ In the Usage widget, **Up next** marks the account automatic routing would selec
 
 From a terminal, run `garcon codex status` to list accounts, `garcon codex pin <account-id-or-email>` to pin one, and `garcon codex unpin` to resume automatic selection for new conversations. Add `--json` for scripting.
 
+Built-in Codex image generation and editing use the caller's ChatGPT login and image allowance. Garcon forwards their JSON or multipart payloads unchanged. These calls do not require a coding session ID and are outside the coding account pool and manual pin, like realtime voice.
+
+Coding requests containing image inputs stay in the Codex pool. Garcon accepts request bodies up to 256 MiB, including embedded images, while preserving their session assignment and payload bytes. Upstream limits still apply.
+
 Without a manual pin, a conversation stays on its assigned account, even after a restart. If the account becomes unavailable, Garcon returns an error. Start a new conversation to choose another account. It never replays a failed request on a different account or redeems reset credits. An empty pool returns an error.
 
 ## Find the task behind a session

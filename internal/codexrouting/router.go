@@ -442,6 +442,30 @@ func localRequest(req *http.Request) bool {
 	return true
 }
 
+// Image-bearing conversations can exceed the old 32 MiB text-oriented limit.
+// Keep a finite buffer bound without rejecting ordinary multimodal requests.
+const maxRoutingBodyBytes = 256 << 20
+
+func readRoutingBody(req *http.Request, limit int64) ([]byte, error) {
+	body := req.Body
+	defer body.Close()
+	tooLarge := func() error {
+		return &routingError{413, fmt.Sprintf("Codex routing request exceeds %d MiB", limit>>20)}
+	}
+	if req.ContentLength > limit {
+		return nil, tooLarge()
+	}
+	b, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if int64(len(b)) > limit {
+		return nil, tooLarge()
+	}
+	if err != nil {
+		return nil, &routingError{400, "Codex routing request body could not be read completely"}
+	}
+	req.Body = io.NopCloser(bytes.NewReader(b))
+	return b, nil
+}
+
 // Prepare changes only outbound identity headers. Assignments survive restarts.
 // Without a manual override, continuations stay on their original account. No automatic
 // replay or cross-account switch is performed after a request has started.
@@ -460,12 +484,10 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	}
 	hasState := req.Header.Get("X-Codex-Turn-State") != ""
 	if req.Body != nil && req.Body != http.NoBody {
-		b, err := io.ReadAll(io.LimitReader(req.Body, 32<<20+1))
-		req.Body.Close()
-		if err != nil || len(b) > 32<<20 {
-			return nil, &routingError{413, "Codex routing request exceeds 32 MiB or could not be read"}
+		b, err := readRoutingBody(req, maxRoutingBodyBytes)
+		if err != nil {
+			return nil, err
 		}
-		req.Body = io.NopCloser(bytes.NewReader(b))
 		if len(b) > 0 && json.Unmarshal(b, &body) != nil {
 			return nil, &routingError{400, "Invalid Codex request JSON"}
 		}

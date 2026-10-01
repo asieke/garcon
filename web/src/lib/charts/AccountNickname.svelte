@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  let { email, color }: { email: string; color: string } = $props();
+  let { email, color = "", accountKey, editable = true }: { email: string; color?: string; accountKey?: string; editable?: boolean } = $props();
+  const key = $derived(accountKey || email);
   const storageKey = $derived(`garcon.account-nickname.${email.toLowerCase()}`);
   let nickname = $state("");
   let draft = $state("");
@@ -11,7 +12,7 @@
 
   async function persist(value: string) {
     const res = await fetch(
-      `/api/nickname?account=${encodeURIComponent(email)}`,
+      `/api/nickname?account=${encodeURIComponent(key)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -24,11 +25,17 @@
     let alive = true;
     void (async () => {
       try {
-        const res = await fetch(
-          `/api/nickname?account=${encodeURIComponent(email)}`,
+        let res = await fetch(
+          `/api/nickname?account=${encodeURIComponent(key)}`,
         );
         if (!res.ok) throw new Error("read failed");
-        const data = await res.json();
+        let data = await res.json();
+        // Preserve existing email nicknames until this workspace has its own.
+        if (!data.exists && key !== email) {
+          res = await fetch(`/api/nickname?account=${encodeURIComponent(email)}`);
+          if (!res.ok) throw new Error("read failed");
+          data = await res.json();
+        }
         if (!alive) return;
         nickname = data.nickname;
         if (!data.exists) {
@@ -76,7 +83,7 @@
 </script>
 
 <div class="nickname">
-  <i style:background={color} aria-hidden="true"></i>
+  {#if color}<i style:background={color} aria-hidden="true"></i>{/if}
   {#if editing}
     <form onsubmit={save}>
       <input
@@ -96,6 +103,8 @@
       <button type="button" onclick={close}>Cancel</button>
       <span class="hint">Leave blank to use email</span>
     </form>
+  {:else if !editable}
+    <span title={email}>{nickname || email}</span>
   {:else}
     <button
       class="label"
