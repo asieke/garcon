@@ -106,10 +106,7 @@
 					{@const color = accountColors[account.email.toLowerCase() || account.id]}
 					<section class="account-group" class:up-next={isNext} style:--account-color={color} style:--group-rows={widgetWindows(account).length} aria-label={account.email || 'Account identity unavailable'}>
 						<div class="account-heading">
-							<AccountNickname email={account.email || 'Account identity unavailable'} {color} />
-							{#if account.workspace && group.accounts.filter(a => a.email.toLowerCase() === account.email.toLowerCase()).length > 1}
-								<small>{account.workspace}</small>
-							{/if}
+							<AccountNickname email={account.email || 'Account identity unavailable'} accountKey={account.provider === 'codex' && account.workspace ? `codex:${account.workspace}` : undefined} {color} />
 							{#if account.provider === 'codex'}
 								{#if route && routing?.pinned_account !== undefined}
 									<button
@@ -177,7 +174,6 @@
 	h2 { margin: 0; padding: 7px 12px; background: var(--widget-head); border-bottom: 1px solid var(--widget-border); font-size: 12px; letter-spacing: .08em; }
 	.account-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; padding: 2px 24px 2px 12px; font-size: 11px; }
 	.account-heading :global(.reset-credits) { margin-left: auto; justify-content: flex-end; }
-	.account-heading small { color: var(--widget-muted); }
 	.account-group { display: flex; flex-direction: column; flex: var(--group-rows) 0 auto; border-left: 5px solid var(--account-color); border-bottom: 1px solid var(--widget-border); }
 	.usage-row { --fill: var(--codex-color); flex: 1 0 18px; padding-left: 23px; min-height: 18px; border-top: 1px solid color-mix(in srgb, var(--widget-border) 60%, transparent); }
 	.usage-row:first-child { border-top: 0; }

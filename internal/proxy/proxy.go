@@ -96,6 +96,14 @@ func isCodexRealtime(rt Route) bool {
 	return false
 }
 
+// Built-in image calls do not carry a coding conversation ID, and image edits
+// may use multipart bodies. Keep the caller's image entitlement and payload;
+// coding-session assignments, model checks, and pins do not apply here.
+func isCodexImage(rt Route) bool {
+	return rt.Harness == "codex" && rt.Provider == "chatgpt" &&
+		(rt.Rest == "backend-api/codex/images/generations" || rt.Rest == "backend-api/codex/images/edits")
+}
+
 // Proxy forwards routed requests and hands each completion's Record to Save.
 type Proxy struct {
 	Save     func(usage.Record)
@@ -125,7 +133,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 			rec.Account = p.Accounts.Resolve(rt.Provider, r.Header)
 		}
 	}
-	routed := p.Codex != nil && rt.Harness == "codex" && rt.Provider == "chatgpt" && p.Codex.Enabled() && !isCodexRealtime(rt)
+	routed := p.Codex != nil && rt.Harness == "codex" && rt.Provider == "chatgpt" && p.Codex.Enabled() && !isCodexRealtime(rt) && !isCodexImage(rt)
 	if routed {
 		// Clone before replacing identity so callers and other middleware keep
 		// their original request. The actual upstream identity drives attribution.
