@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,7 +21,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"garcon/internal/claude"
@@ -97,6 +100,13 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Updates restart the service after every deploy, so SIGTERM/SIGINT must drain
+	// in-flight streams instead of severing them mid-response: completions stream
+	// for minutes, and the systemd unit and the macOS LaunchAgent both send
+	// SIGTERM. The 30s drain below fits inside systemd's default 90s stop window.
+	shutdownCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
 	claudeGateway, err := claude.LoadGateway(*claudeGatewayConfig)
 	if err != nil {
 		log.Fatal(err)
@@ -114,10 +124,10 @@ func main() {
 	st.Tasks = codexmetadata.New()
 	log.SetOutput(io.MultiWriter(os.Stderr, st.DB))
 	li := limits.New(st.Dir(), st.DB)
-	go li.Run(context.Background())
+	go li.Run(shutdownCtx)
 	started := time.Now()
 	routing := codexrouting.New(st.Dir(), li.Snapshot, st.DB)
-	go routing.Run(context.Background())
+	go routing.Run(shutdownCtx)
 	px := &proxy.Proxy{Save: st.Save, Start: st.Save, Codex: routing}
 	static := own(dashboard.Handler(), false)
 
@@ -128,7 +138,7 @@ func main() {
 			log.Fatal(err)
 		}
 		claudeGateway.Prepare = claudeRouter.Prepare
-		go claudeRouter.Run(context.Background())
+		go claudeRouter.Run(shutdownCtx)
 		mux.Handle("/api/routing/claude", readOnly(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(claudeRouter.Status()) }))
 	}
 
@@ -189,7 +199,25 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second, // completions stream for minutes, so no write or whole-request timeout
 		IdleTimeout:       2 * time.Minute,
 	}
-	log.Fatal(srv.Serve(listener))
+	// Serve in the background so a SIGTERM/SIGINT stops accepting new
+	// connections and drains in-flight streams before the deferred store close
+	// runs and the process exits.
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(listener) }()
+	select {
+	case err := <-serveErr:
+		// Serve only returns on its own for a real failure.
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("serve: %v", err)
+		}
+	case <-shutdownCtx.Done():
+		log.Printf("received shutdown signal; draining in-flight requests (up to 30s)")
+		drain, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(drain); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
+	}
 }
 
 // own marks a response as Garcon's own (the dashboard or the API) rather than a
