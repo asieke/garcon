@@ -127,6 +127,8 @@ Run `go test ./...` and, from `web/`, `npm run check && npm test && npm run buil
 
 Source: `web/` (UI), `internal/` (backend), `docs/` (documentation).
 
+[Product acceptance and verification](docs/acceptance-checks.md) defines concrete routing, usage, ticker, widget, privacy, and release checks, including what requires live end-to-end evidence.
+
 Merges to `main` trigger an npm patch release. `[minor]` or `[major]` in the merge message changes the bump. PRs build and test without publishing.
 
 ### External CLI delegation (experimental)
