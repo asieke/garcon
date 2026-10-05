@@ -1,6 +1,9 @@
 /garcon
 /macos/build/
 /AGENTS.md
+/agents.md
+# Private project overview, documents, and conversation snapshots
+/.local/
 /npm/ai-garcon/dist/
 /internal/dashboard/build/*
 !/internal/dashboard/build/.gitkeep
