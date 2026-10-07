@@ -1,6 +1,7 @@
 package codexrouting
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,7 @@ func routeTo(t *testing.T, r *Router, session, want string) {
 	}
 }
 
-func TestManualPinOverridesConversationsAndSurvivesRestart(t *testing.T) {
+func TestManualPinOnlyAffectsNewConversationsAndSurvivesRestart(t *testing.T) {
 	for _, sqlite := range []bool{false, true} {
 		name := "json"
 		if sqlite {
@@ -50,12 +51,12 @@ func TestManualPinOverridesConversationsAndSurvivesRestart(t *testing.T) {
 			if s := r.Status(); s.PinnedAccount != "a" || s.NextAccount != "a" {
 				t.Fatalf("wrong status: %+v", s)
 			}
-			routeTo(t, r, "existing", "a")
+			routeTo(t, r, "existing", "b")
 			routeTo(t, r, "new", "a")
 			if db != nil {
 				var id string
-				if err := db.QueryRow("SELECT account_id FROM sessions WHERE session_id='existing'").Scan(&id); err != nil || id != "a" {
-					t.Fatalf("assignment not updated: %s %v", id, err)
+				if err := db.QueryRow("SELECT account_id FROM sessions WHERE session_id='existing'").Scan(&id); err != nil || id != "b" {
+					t.Fatalf("original assignment changed: %s %v", id, err)
 				}
 			}
 			var restarted *Router
@@ -69,7 +70,9 @@ func TestManualPinOverridesConversationsAndSurvivesRestart(t *testing.T) {
 			if err := restarted.Pin("c"); err != nil {
 				t.Fatal(err)
 			}
-			routeTo(t, restarted, "existing", "c")
+			routeTo(t, restarted, "existing", "b")
+			routeTo(t, restarted, "new", "a")
+			routeTo(t, restarted, "switched-pin", "c")
 			if err := restarted.Pin(""); err != nil {
 				t.Fatal(err)
 			}
@@ -77,7 +80,9 @@ func TestManualPinOverridesConversationsAndSurvivesRestart(t *testing.T) {
 				t.Fatalf("automatic routing not restored: %+v", s)
 			}
 			routeTo(t, restarted, "automatic", "b")
-			routeTo(t, restarted, "existing", "c")
+			routeTo(t, restarted, "switched-pin", "c")
+			routeTo(t, restarted, "existing", "b")
+			routeTo(t, restarted, "new", "a")
 		})
 	}
 }
@@ -86,6 +91,7 @@ func TestManualPinNoFallback(t *testing.T) {
 	for _, condition := range []string{"exhausted", "stale", "unknown", "model", "cooldown", "missing-login"} {
 		t.Run(condition, func(t *testing.T) {
 			r, snapshot, home := setup(t)
+			routeTo(t, r, "existing", "b")
 			if err := r.Pin("a"); err != nil {
 				t.Fatal(err)
 			}
@@ -106,6 +112,7 @@ func TestManualPinNoFallback(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			routeTo(t, r, "existing", "b")
 			if _, err := r.Prepare(request("new")); err == nil || !strings.Contains(err.Error(), "pinned Codex account") {
 				t.Fatalf("expected explicit pin failure, got %v", err)
 			}
@@ -178,22 +185,62 @@ func TestNextAccountMatchesSelectionIncludingTies(t *testing.T) {
 	}
 }
 
-func TestManualPinOverridesContinuationOwner(t *testing.T) {
+func TestManualPinPreservesContinuationOwner(t *testing.T) {
+	for _, state := range []string{"header", "previous_response", "encrypted"} {
+		t.Run(state, func(t *testing.T) {
+			r, _, _ := setup(t)
+			if err := r.Pin("b"); err != nil {
+				t.Fatal(err)
+			}
+			req := request("continuation")
+			req.Header.Set("ChatGPT-Account-Id", "a")
+			switch state {
+			case "header":
+				req.Header.Set("X-Codex-Turn-State", "opaque-state")
+			case "previous_response":
+				req.Body = io.NopCloser(strings.NewReader(`{"model":"model","previous_response_id":"resp_original"}`))
+			case "encrypted":
+				req.Body = io.NopCloser(strings.NewReader(`{"model":"model","input":[{"type":"reasoning","encrypted_content":"opaque"}]}`))
+			}
+			done, err := r.Prepare(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done()
+			if req.Header.Get("ChatGPT-Account-Id") != "a" {
+				t.Fatal("manual pin replaced continuation owner")
+			}
+			routeTo(t, r, "continuation", "a")
+		})
+	}
+}
+
+func TestManualPinCannotSupplyMissingContinuationOwner(t *testing.T) {
 	r, _, _ := setup(t)
 	if err := r.Pin("b"); err != nil {
 		t.Fatal(err)
 	}
-	req := request("continuation")
+	req := request("unknown-continuation")
 	req.Header.Set("X-Codex-Turn-State", "opaque-state")
 	req.Header.Del("ChatGPT-Account-Id")
-	done, err := r.Prepare(req)
-	if err != nil {
+	if _, err := r.Prepare(req); err == nil || ErrorStatus(err) != 409 {
+		t.Fatalf("expected unknown-owner error, got %v", err)
+	}
+}
+
+func TestManualPinCannotRescueUnavailableConversation(t *testing.T) {
+	r, _, _ := setup(t)
+	routeTo(t, r, "existing", "b")
+	if err := r.Pin("a"); err != nil {
 		t.Fatal(err)
 	}
-	done()
-	if req.Header.Get("ChatGPT-Account-Id") != "b" {
-		t.Fatal("manual pin ignored for continuation")
+	r.cooldown["b"] = r.now().Add(time.Minute)
+	if _, err := r.Prepare(request("existing")); err == nil || !strings.Contains(err.Error(), "conversation's Codex account") {
+		t.Fatalf("expected original-account failure, got %v", err)
 	}
+	routeTo(t, r, "new", "a")
+	delete(r.cooldown, "b")
+	routeTo(t, r, "existing", "b")
 }
 
 func TestPinHTTPUpdatesAndLocalBoundary(t *testing.T) {
@@ -247,13 +294,13 @@ func TestPinChangeLeavesInflightRequestAlone(t *testing.T) {
 	if err := r.Pin("a"); err != nil {
 		t.Fatal(err)
 	}
-	routeTo(t, r, "ongoing", "a")
+	routeTo(t, r, "ongoing", "b")
 	if old.Header.Get("ChatGPT-Account-Id") != "b" || r.active["b"] != 1 || r.active["a"] != 0 {
 		t.Fatal("pin disrupted in-flight identity or accounting")
 	}
 }
 
-func TestFailedReassignmentPreservesPreviousConversation(t *testing.T) {
+func TestFailedNewAssignmentPreservesExistingConversation(t *testing.T) {
 	r, _, _ := setup(t)
 	routeTo(t, r, "existing", "b")
 	if err := r.Pin("a"); err != nil {
@@ -266,12 +313,12 @@ func TestFailedReassignmentPreservesPreviousConversation(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Prepare(request("existing")); err == nil {
-		t.Fatal("forwarded without saving reassignment")
+	if _, err := r.Prepare(request("new")); err == nil {
+		t.Fatal("forwarded without saving new assignment")
 	}
 	for _, id := range r.pins {
 		if id != "b" {
-			t.Fatal("failed reassignment replaced original identity")
+			t.Fatal("failed new assignment changed original identity")
 		}
 	}
 }

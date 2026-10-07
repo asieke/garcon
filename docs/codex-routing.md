@@ -49,9 +49,9 @@ Upstream 401, 403, or 429 responses temporarily exclude an account from new assi
 
 The Usage widget shows **Up next** on the account automatic routing would choose for a new conversation. The indicator uses current eligibility and quota scores; requested-model access can change the actual choice.
 
-Click **Pin** beside an enrolled Codex account to override routing for all subsequent pooled coding requests, including existing conversations. Click **Pinned** again or **Unpin** in the banner to clear the override. The pin persists across restarts, and can be switched directly to another account. An unavailable pinned account returns an explicit error; it never falls back to another account. Unpin an account before removing it from the pool.
+Click **Pin** beside an enrolled Codex account to select the account for new Codex conversations. Click **Pinned** again or **Unpin** in the banner to resume automatic selection for new conversations. The pin persists across restarts, and can be switched directly to another account. An unavailable pinned account returns an explicit error; it never falls back to another account. Unpin an account before removing it from the pool.
 
-Requests already in flight finish on their selected account. Subsequent requests update the conversation assignment to the pinned account. After unpinning, automatic selection resumes for new conversations; existing conversations keep their most recent assignment. Account-bound continuation state is forwarded unchanged and may be rejected by the provider after switching accounts; start a new conversation if that happens. Garcon does not rewrite conversation history or redeem reset credits. Claude and realtime voice are unaffected.
+Existing conversations keep their original account when the manual pin changes or is cleared, including after a restart. Continuations without a saved assignment use their original account identity; if that identity is missing, Garcon returns an error. An unavailable original account fails explicitly rather than moving the conversation to the manual pin or another account. After unpinning, automatic selection resumes only for new conversations. Garcon does not rewrite conversation history or redeem reset credits. Claude and realtime voice are unaffected.
 
 ### Pin from the CLI
 

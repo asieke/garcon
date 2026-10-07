@@ -29,7 +29,8 @@ func TestCLIPinLifecycleUsesRunningRouter(t *testing.T) {
 	if out := run("pin", "A@EXAMPLE.COM"); !strings.Contains(out, "PINNED") {
 		t.Fatalf("pin not confirmed: %s", out)
 	}
-	routeTo(t, r, "existing", "a")
+	routeTo(t, r, "existing", "b")
+	routeTo(t, r, "pinned-new", "a")
 	if len(r.config.Accounts) != 3 {
 		t.Fatal("CLI pin changed the account pool")
 	}

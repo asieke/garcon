@@ -170,7 +170,7 @@ func (r *Router) ConfigurePriorities(enabled bool, selected []string, priorities
 	return r.configure(enabled, selected, priorities, nil)
 }
 
-// Pin overrides automatic and conversation routing until explicitly cleared.
+// Pin selects the account for new conversations until explicitly cleared.
 func (r *Router) Pin(id string) error {
 	return r.configure(false, nil, nil, &id)
 }
@@ -467,7 +467,7 @@ func readRoutingBody(req *http.Request, limit int64) ([]byte, error) {
 }
 
 // Prepare changes only outbound identity headers. Assignments survive restarts.
-// Without a manual override, continuations stay on their original account. No automatic
+// Continuations stay on their original account, regardless of the manual pin. No automatic
 // replay or cross-account switch is performed after a request has started.
 func (r *Router) Prepare(req *http.Request) (func(), error) {
 	if !localRequest(req) {
@@ -517,15 +517,17 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	if r.problem != "" {
 		return nil, &routingError{503, r.problem}
 	}
-	pinned := r.config.PinnedAccount
-	if pinned == "" {
-		pinned = r.pins[key]
-	}
+	pinned := r.pins[key]
 	if pinned == "" && hasState {
 		pinned = req.Header.Get("ChatGPT-Account-Id")
 		if pinned == "" {
 			return nil, &routingError{409, "Cannot determine the original account for this existing Codex conversation; start a new conversation"}
 		}
+	}
+	// Only a new conversation may use the account-level pin.
+	manualPin := pinned == "" && r.config.PinnedAccount != ""
+	if manualPin {
+		pinned = r.config.PinnedAccount
 	}
 	var chosen credential
 	var best Account
@@ -549,7 +551,7 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 		if pinned != "" {
 			message = "The conversation's Codex account is unavailable; refresh its login or limits, or start a new conversation"
 		}
-		if r.config.PinnedAccount != "" {
+		if manualPin {
 			message = "The pinned Codex account is unavailable for this request; refresh its login or limits, or unpin it in Usage"
 		}
 		return nil, &routingError{503, message}
