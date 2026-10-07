@@ -158,7 +158,7 @@ func enrolledPinAccount(account Account) (string, error) {
 func printRouting(out io.Writer, status Status) error {
 	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if status.PinnedAccount != "" {
-		fmt.Fprintf(table, "Pinned Codex account: %s\n", status.PinnedAccount)
+		fmt.Fprintf(table, "Pinned Codex account for new conversations: %s\n", status.PinnedAccount)
 	} else {
 		fmt.Fprintln(table, "Codex routing: automatic")
 	}

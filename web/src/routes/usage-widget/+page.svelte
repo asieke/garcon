@@ -112,8 +112,8 @@
 									<button
 										class="pin-control" class:pinned={isPinned}
 										aria-pressed={isPinned}
-										aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${account.email} for all Codex coding requests`}
-										title={isPinned ? 'Unpin to resume automatic routing for new conversations' : !route.enrolled ? 'Add this account to the Codex pool to pin it' : isNext ? 'Next for a new conversation (model access may change the choice); click to pin all Codex coding requests here' : 'Pin all subsequent Codex coding requests to this account'}
+										aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${account.email} for new Codex conversations`}
+										title={isPinned ? 'Unpin to resume automatic routing for new conversations' : !route.enrolled ? 'Add this account to the Codex pool to pin it' : isNext ? 'Next for a new conversation (model access may change the choice); click to pin new Codex conversations here' : 'Pin new Codex conversations to this account; existing conversations keep their original account'}
 										disabled={pinning || (!isPinned && (!route.enrolled || route.status === 'Saved login missing'))}
 										onclick={() => pinAccount(isPinned ? '' : route.id)}
 									>

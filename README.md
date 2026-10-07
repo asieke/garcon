@@ -59,7 +59,7 @@ This is an experimental subscription-authentication bridge, not a guarantee of c
 
 For a new Codex conversation, Garcon checks login health, quota, and model access. It automatically chooses the highest **remaining percentage ÷ hours until reset**. This compares percentages, not absolute token allowances.
 
-In the Usage widget, **Up next** marks the account automatic routing would select for a new conversation (model access can change the choice). Click **Pin** on a Codex account to send subsequent pooled coding requests, including existing conversations, through that account until you **Unpin**. The pin survives restarts and never silently falls back if the account is unavailable. Claude and realtime voice routing are unchanged.
+In the Usage widget, **Up next** marks the account automatic routing would select for a new conversation (model access can change the choice). Click **Pin** on a Codex account to assign new Codex conversations to that account until you **Unpin**. The pin survives restarts and never silently falls back if the account is unavailable. Claude and realtime voice routing are unchanged.
 
 From a terminal, run `garcon codex status` to list accounts, `garcon codex pin <account-id-or-email>` to pin one, and `garcon codex unpin` to resume automatic selection for new conversations. Add `--json` for scripting.
 
@@ -67,7 +67,7 @@ Built-in Codex image generation and editing use the caller's ChatGPT login and i
 
 Coding requests containing image inputs stay in the Codex pool. Garcon accepts request bodies up to 256 MiB, including embedded images, while preserving their session assignment and payload bytes. Upstream limits still apply.
 
-Without a manual pin, a conversation stays on its assigned account, even after a restart. If the account becomes unavailable, Garcon returns an error. Start a new conversation to choose another account. It never replays a failed request on a different account or redeems reset credits. An empty pool returns an error.
+A conversation always stays on its assigned account, regardless of later pin changes, even after a restart. If the account becomes unavailable, Garcon returns an error. Start a new conversation to choose another account. It never replays a failed request on a different account or redeems reset credits. An empty pool returns an error.
 
 ## Find the task behind a session
 

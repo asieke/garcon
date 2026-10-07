@@ -71,10 +71,11 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 	p := Proxy{Codex: router, Start: func(r usage.Record) { started = r }, Save: func(r usage.Record) { record = r }}
 	route, _ := ParseRoute("/codex/backend-api/codex/responses")
 	route.Target = target
+	session := "conversation"
 	call := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest("POST", "http://127.0.0.1:4141/codex/backend-api/codex/responses", strings.NewReader(payload))
 		req.RemoteAddr = "127.0.0.1:1111"
-		req.Header.Set("Session-Id", "conversation")
+		req.Header.Set("Session-Id", session)
 		req.Header.Set("Authorization", "Bearer original")
 		req.Header.Set("ChatGPT-Account-Id", "a")
 		w := httptest.NewRecorder()
@@ -100,13 +101,19 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 	if w.Code != 503 || calls != 2 || record.Status != 503 || record.State != "failed" {
 		t.Fatal("rerouted an unavailable pinned conversation")
 	}
-	// A user pin changes even this already-assigned session and its attribution.
+	// A manual pin cannot move an unavailable existing conversation.
 	if err := router.Pin("a"); err != nil {
 		t.Fatal(err)
 	}
+	w = call()
+	if w.Code != 503 || calls != 2 {
+		t.Fatal("manual pin moved an existing conversation")
+	}
+	// New conversations use the manual pin and attribute the forwarded identity.
+	session = "new-conversation"
 	expectedAccount, upstreamStatus = "a", 200
 	w = call()
 	if w.Code != 200 || calls != 3 || record.AccountID != "a" || record.Account != "a@example.com" || w.Header().Get("X-Garcon-Account-Id") != "a" {
-		t.Fatalf("manual override did not reach upstream: %d %+v", w.Code, record)
+		t.Fatalf("new-conversation pin did not reach upstream: %d %+v", w.Code, record)
 	}
 }
