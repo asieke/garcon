@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
   import AccountNickname from "../charts/AccountNickname.svelte";
+  import { barPercent } from "../limits";
   import { duration, initials, tone, type Account } from "./model";
   let { accounts, provider = "Codex", nextId, pinnedId, busy = false, poolSupported = true, poolEditable = true, ontoggle }: {
     accounts: Account[];
@@ -16,7 +17,7 @@
 
 <div class="account-table">
     <div class="account-columns">
-      <span>ACCOUNT</span><span>AVAILABLE USAGE</span><span
+      <span>ACCOUNT</span><span>USAGE</span><span
         >ROUTING SCORE</span
       ><span>IN POOL</span>
     </div>
@@ -53,15 +54,15 @@
               class="usage-top"
             >
               <strong
-                >{a.remaining_percent.toFixed(0)}<small
-                  >% left</small
+                >{Number((100 - a.remaining_percent).toFixed(1))}<small
+                  >% used</small
                 ></strong
               ><span>{duration(a.hours_left)} to reset</span>
             </div>
             <div class="meter">
               <span
                 class:low={a.remaining_percent < 15}
-                style:width={`${a.remaining_percent}%`}
+                style:width={`${barPercent(100 - a.remaining_percent)}%`}
               ></span>
             </div>
             {#if a.windows.filter((w) => provider !== "Codex" || w.id.startsWith("codex:")).length > 1}<div
@@ -71,7 +72,7 @@
                     title={`Resets ${new Date(w.resets_at).toLocaleString()}`}
                     >{w.label}: {w.used_percent === null
                       ? "—"
-                      : (100 - w.used_percent).toFixed(0)}% left</span
+                      : Number(w.used_percent.toFixed(1))}% used</span
                   >{/each}
               </div>{/if}{:else}<span class="muted"
               >Usage unavailable</span

@@ -1,11 +1,12 @@
 import type { Row } from './usage';
 
-export type RecentRequest = Row & { sequence: number };
+export type RecentRequest = Row & { sequence: number; state?: string };
 
-/** The first snapshot is a baseline. Only later completions enter the FIFO. */
+/** The first snapshot is a baseline. Only later token-bearing activity enters the FIFO. */
 export class RequestQueue {
 	private latest: number | null = null;
 	private pending: RecentRequest[] = [];
+	private waiting = new Map<number, RecentRequest>();
 
 	update(rows: RecentRequest[]): boolean {
 		const newest = rows.at(-1)?.sequence ?? 0;
@@ -13,11 +14,29 @@ export class RequestQueue {
 		if (this.latest === null || reset) {
 			this.latest = newest;
 			this.pending = [];
+			this.waiting.clear();
 			return reset;
 		}
 		const latest = this.latest;
-		const arrivals = rows.filter(row => row.sequence > latest);
-		this.pending = [...this.pending, ...arrivals].slice(-30);
+		const current = new Map(rows.map(row => [row.sequence, row]));
+		this.pending = this.pending
+			.map(row => current.get(row.sequence) ?? row)
+			.filter(row => requestTokens(row) > 0);
+		for (const [sequence] of this.waiting) {
+			if (!current.has(sequence)) this.waiting.delete(sequence);
+		}
+		for (const row of rows) {
+			if (row.sequence <= latest && !this.waiting.has(row.sequence)) continue;
+			if (requestTokens(row) > 0) {
+				this.pending.push(row);
+				this.waiting.delete(row.sequence);
+			} else if (row.state === 'streaming') {
+				this.waiting.set(row.sequence, row);
+			} else {
+				this.waiting.delete(row.sequence);
+			}
+		}
+		this.pending = this.pending.slice(-30);
 		this.latest = newest;
 		return reset;
 	}

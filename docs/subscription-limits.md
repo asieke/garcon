@@ -34,6 +34,17 @@ The service's `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `HERMES_HOME` add custom di
 
 Duplicate profiles for the same provider, person, and workspace share a snapshot. Distinct subscriptions remain separate, even with the same email. Quota discovery is broader than the [Codex routing pool](codex-routing.md); finding an account doesn't enroll it.
 
+For persistent access to several Codex accounts, use independent file-backed CLI
+profiles such as `~/.codex-personal`, `~/.codex-dev`, and `~/.codex-work`. Leave
+`~/.codex` for the desktop app's current login. A shell alias using `~/.codex`
+follows that desktop login; its name does not pin an account. Authenticate each
+profile independently instead of copying or sharing `auth.json` files.
+
+When the desktop signs out of an account's only login, its cached limits become
+stale. Sign into its independent profile and refresh Limits to recover. Desktop
+and CLI profiles for the same account still produce one quota card and one poll.
+Independent directories prevent overwrites; provider sessions can still expire.
+
 ## Refresh and recovery
 
 Codex quota comes from `/backend-api/wham/usage` on `chatgpt.com`; credits use `/backend-api/wham/rate-limit-reset-credits`. Claude uses `/api/oauth/profile` and `/api/oauth/usage` on `api.anthropic.com`.
