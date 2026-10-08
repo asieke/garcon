@@ -89,8 +89,8 @@
 <main class="widget-page">
 	<section class="widget" aria-label="Account usage widget">
 		<header>
-			<h1><a href="/?view=limits" title="Open the full Limits dashboard">Usage</a></h1>
-			<div class="summary"><span>{snapshot?.accounts.length ?? 0} profiles</span><span class:stale title={checkedAt > 0 ? `Last provider check: ${new Date(checkedAt).toLocaleString()}` : undefined}>{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}</span>{#if staleAccounts}<span class="stale">{staleAccounts} {staleAccounts === 1 ? 'profile needs' : 'profiles need'} attention</span>{/if}<button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button></div>
+			<h1>Usage</h1>
+			<div class="summary"><span>{snapshot?.accounts.length ?? 0} profiles</span><span class:stale title={checkedAt > 0 ? `Last provider check: ${new Date(checkedAt).toLocaleString()}` : undefined}>{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}</span>{#if staleAccounts}<span class="stale">{staleAccounts} {staleAccounts === 1 ? 'profile needs' : 'profiles need'} attention</span>{/if}<button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button><a class="dashboard-link" href="/" target="_blank" rel="noopener noreferrer" title="Open the main Garcon dashboard in your browser">Dashboard ↗</a></div>
 		</header>
 		{#if error || snapshot?.error}<p class="notice" role="status">{error || snapshot?.error}</p>{/if}
 		{#if routingError || routing?.error}<p class="notice" role="status">{routingError || routing?.error}</p>{/if}
@@ -159,8 +159,8 @@
 	.widget { display: flex; flex-direction: column; height: calc(100svh - var(--request-ticker-height) - 2 * var(--page-gap) - env(safe-area-inset-bottom)); min-height: min-content; }
 	header { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px 20px; padding: clamp(2px, calc(2svh - 6px), 12px) 22px; background: var(--widget-head); border-bottom: 1px solid var(--widget-border); }
 	h1 { font-size: 16px; text-transform: uppercase; letter-spacing: .2em; }
-	h1 a { color: inherit; text-decoration: none; }
-	h1 a:hover { text-decoration: underline; text-underline-offset: 4px; }
+	.dashboard-link { color: var(--widget-text); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+	.dashboard-link:focus-visible { outline: 2px solid var(--account-color, #3c82eb); outline-offset: 2px; }
 	.summary { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; color: var(--widget-muted); font-size: 12px; }
 	.summary > :not(:first-child)::before { content: '·'; margin-right: 12px; color: var(--widget-muted); }
 	button { border: 0; border-radius: 4px; background: transparent; padding: 3px 0; color: inherit; font: inherit; }

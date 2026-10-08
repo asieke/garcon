@@ -112,6 +112,8 @@ To remove it, restore your tools' original provider URLs first, then run `garcon
 
 ## Work on Garcon
 
+See [Contributing](CONTRIBUTING.md) for the repository layout, review workflow, and publication checks.
+
 Source builds need Go 1.27+ and Node 22+; versions are in `.mise.toml`.
 
 ```sh
@@ -124,6 +126,8 @@ Production stays on **4141**; development uses **4242**. Keep your tools pointed
 Run `go test ./...` and, from `web/`, `npm run check && npm test && npm run build`. Rebuild and install explicitly to update production; a frontend dev server doesn't update the installed binary.
 
 Source: `web/` (UI), `internal/` (backend), `docs/` (documentation).
+
+[Product acceptance and verification](docs/acceptance-checks.md) defines concrete routing, usage, ticker, widget, privacy, and release checks, including what requires live end-to-end evidence.
 
 Merges to `main` trigger an npm patch release. `[minor]` or `[major]` in the merge message changes the bump. PRs build and test without publishing.
 

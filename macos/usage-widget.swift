@@ -85,10 +85,15 @@ final class Widget: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUID
         alert.beginSheetModal(for: window)
     }
 
-    // Keep links that request a new window inside this widget.
+    // Open new-window links in the default browser, leaving the widget open.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if navigationAction.targetFrame == nil { webView.load(navigationAction.request) }
+        if navigationAction.targetFrame == nil,
+           navigationAction.navigationType == .linkActivated,
+           let url = navigationAction.request.url,
+           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            NSWorkspace.shared.open(url)
+        }
         return nil
     }
 }
