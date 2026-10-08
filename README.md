@@ -112,6 +112,8 @@ To remove it, restore your tools' original provider URLs first, then run `garcon
 
 ## Work on Garcon
 
+See [Contributing](CONTRIBUTING.md) for the repository layout, review workflow, and publication checks.
+
 Source builds need Go 1.27+ and Node 22+; versions are in `.mise.toml`.
 
 ```sh
