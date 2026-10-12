@@ -265,7 +265,8 @@ func (r *Router) Run(ctx context.Context) {
 	}
 }
 
-// Refresh verifies credentials and model access without generating any tokens.
+// Refresh renews discovered logins for usage collection and verifies model access
+// only for enrolled accounts, without generating any tokens.
 func (r *Router) Refresh(ctx context.Context) {
 	r.refreshMu.Lock()
 	defer r.refreshMu.Unlock()
@@ -274,7 +275,7 @@ func (r *Router) Refresh(ctx context.Context) {
 		enabled := r.config.Enabled && r.enrolled(c.id)
 		force := r.forceRefresh[c.id]
 		r.mu.Unlock()
-		if !enabled || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			continue
 		}
 		h := health{checked: r.now()}
@@ -289,6 +290,11 @@ func (r *Router) Refresh(ctx context.Context) {
 				delete(r.forceRefresh, c.id)
 				r.mu.Unlock()
 			}
+		}
+		// Usage-only accounts still need renewable logins, but must not enter
+		// the inference pool or trigger model availability requests.
+		if !enabled {
+			continue
 		}
 		if h.problem == "" {
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://chatgpt.com/backend-api/codex/models?client_version=0.155.0", nil)

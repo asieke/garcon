@@ -51,7 +51,7 @@ Codex quota comes from `/backend-api/wham/usage` on `chatgpt.com`; credits use `
 
 Garcon sends tokens only to the fixed provider endpoints, with timeouts, response-size limits, and rate-limit backoff. SQLite stores the latest normalized snapshots, not tokens or quota history. A failed refresh preserves the previous values and their original timestamp.
 
-Once a minute, Garcon checks idle Claude logins. Near expiry, an isolated Claude process renews its own credentials; empty input and a loopback relay block model traffic. Attempts have a 45-second timeout and back off after failure. This relies on Claude CLI behavior and may need adjustment after upgrades. Missing or revoked grants require signing in again. Codex pool renewal is described in the routing guide.
+Once a minute, Garcon checks idle Claude logins. Near expiry, an isolated Claude process renews its own credentials; empty input and a loopback relay block model traffic. Attempts have a 45-second timeout and back off after failure. This relies on Claude CLI behavior and may need adjustment after upgrades. Missing or revoked grants require signing in again. Codex logins are also renewed every minute when near expiry, including accounts outside the inference pool. This keeps usage-only accounts refreshing without enrolling them. The routing guide describes the renewal flow.
 
 ## API
 

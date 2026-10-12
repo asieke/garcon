@@ -75,7 +75,7 @@ Use **Providers → Add account → Codex OAuth account** for browser sign-in. G
 
 Discovery reads `~/.codex/auth.json`, `~/.codex-*/auth.json`, and the service's `CODEX_HOME`. Duplicate accounts prefer the token with the latest expiry. Keyring-only logins, API keys, and Hermes profiles aren't part of this pool.
 
-Garcon checks authentication and model availability every minute; quota collection runs every five minutes. Near expiry or after a 401, it asks `codex app-server` to refresh that profile's login. Codex saves the credentials; Garcon checks the same account received a usable replacement. Missing or revoked grants require signing in again. The catalog adapter uses protocol version `0.155.0` and may need updating when Codex changes.
+Garcon checks authentication for all discovered Codex logins every minute, including usage-only accounts outside the pool. Model availability is checked only for enrolled accounts; quota collection runs every five minutes. Renewing a login does not enroll it or send inference requests. Near expiry or after a 401, it asks `codex app-server` to refresh that profile's login. Codex saves the credentials; Garcon checks the same account received a usable replacement. Missing or revoked grants require signing in again. The catalog adapter uses protocol version `0.155.0` and may need updating when Codex changes.
 
 ## See and control routing
 
