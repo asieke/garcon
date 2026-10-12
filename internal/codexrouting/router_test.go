@@ -303,6 +303,60 @@ func TestCatalogAndRenewal(t *testing.T) {
 	}
 }
 
+func TestUsageOnlyAccountRenewal(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "renewed", true: "revoked"}[fail], func(t *testing.T) {
+			r, _, home := setup(t)
+			profile := filepath.Join(home, ".codex-usage-only")
+			saveLogin(t, profile, "usage-only", r.now().Add(-time.Minute))
+			renewed := 0
+			r.renew = func(_ context.Context, c credential) error {
+				if c.id != "usage-only" {
+					t.Fatal("renewed an unexpired account")
+				}
+				renewed++
+				if fail {
+					return io.ErrUnexpectedEOF
+				}
+				saveLogin(t, c.dir, c.id, r.now().Add(time.Hour))
+				return nil
+			}
+			r.client.Transport = transport(func(req *http.Request) (*http.Response, error) {
+				if req.Header.Get("ChatGPT-Account-Id") == "usage-only" {
+					t.Fatal("usage-only account triggered model discovery")
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"models":[{"slug":"model"}]}`)), Header: http.Header{}}, nil
+			})
+			r.Refresh(context.Background())
+			if renewed != 1 {
+				t.Fatalf("usage-only renewals = %d, want 1", renewed)
+			}
+			c, err := loadCredential(profile)
+			if err != nil || c.expires.After(r.now()) == fail {
+				t.Fatal("unexpected saved credential expiry")
+			}
+			found := false
+			for _, account := range r.Status().Accounts {
+				if account.ID == "usage-only" {
+					found = true
+					if account.Enrolled || account.Status != "Not enrolled" {
+						t.Fatal("renewal changed pool membership")
+					}
+				}
+			}
+			if !found {
+				t.Fatal("usage-only account disappeared")
+			}
+			if !fail {
+				r.Refresh(context.Background())
+				if renewed != 1 {
+					t.Fatal("renewed an already fresh usage-only login")
+				}
+			}
+		})
+	}
+}
+
 func TestCorruptPinsFailClosed(t *testing.T) {
 	r, _, _ := setup(t)
 	if err := os.WriteFile(filepath.Join(r.dir, "codex-routing-pins.json"), []byte("broken"), 0600); err != nil {
