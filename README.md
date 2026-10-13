@@ -77,6 +77,12 @@ In-flight sessions appear first, with elapsed time. Background reviews have thei
 
 **No model request** means just that. The task might still be running tools or waiting for you. Garcon doesn't track every action inside Codex.
 
+Claude Code can connect directly to Anthropic and still appear in **Analytics** and **Sessions**. Garcon imports usage metadata from local Claude transcript files on startup and checks for new entries every 15 seconds. It discovers the default profile, named `.claude-*` profiles, `CLAUDE_CONFIG_DIR`, and profiles in its launcher registry, including local Desktop and subagent transcripts where available. Remote or cloud-only history is not collected.
+
+Imported records are labelled **Local history** and stay out of the live ticker. They include model, session, timestamp, and input/output/cache tokens; project folders identify sessions without copying conversation text. Account labels are inferred from the profile metadata at import time, so a historical login may be unknown or different. Network status, latency, and live activity are not inferred from transcripts. Provider quota bars continue to use provider usage snapshots independently of imports.
+
+Repeated transcript blocks and copied messages count once. Provider request/message IDs reconcile imported and proxied records in either arrival order; older proxy rows without these IDs are reconciled only when a unique session/model/token match falls within the request interval. Ambiguous legacy overlap cannot be conclusively deduplicated. Import progress and unreadable/malformed-file counts appear in Analytics and Sessions and at `/api/imports/claude`. Start the service with `-claude-import=false` to disable collection; existing imported history is retained.
+
 The ticker and request inspector also show task names. **Analytics** shows tokens, cache use, and estimated API-equivalent cost—not your subscription bill. **Logs** includes failures and interrupted streams.
 
 ## Limits and local data

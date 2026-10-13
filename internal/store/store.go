@@ -44,22 +44,41 @@ func (s *Store) SaveRecord(r usage.Record) error {
 	if r.State == "" {
 		r.State = "complete"
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	skip, err := reconcileClaude(tx, &r)
+	if err != nil {
+		return err
+	}
+	if skip {
+		return tx.Commit()
+	}
 	b, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	var id any
 	if r.RequestID != "" {
 		id = r.RequestID
 	}
 	var seq int
-	err = s.DB.QueryRow(`INSERT INTO requests(request_id,time,account_id,session_id,model,status,kind,state,record) VALUES(?,?,?,?,?,?,?,?,?)
- ON CONFLICT(request_id) DO UPDATE SET model=excluded.model,status=excluded.status,state=excluded.state,record=excluded.record
+	err = tx.QueryRow(`INSERT INTO requests(request_id,time,account_id,session_id,model,status,kind,state,record) VALUES(?,?,?,?,?,?,?,?,?)
+ ON CONFLICT(request_id) DO UPDATE SET time=excluded.time,account_id=excluded.account_id,session_id=excluded.session_id,model=excluded.model,status=excluded.status,state=excluded.state,record=excluded.record
  RETURNING sequence`, id, r.Time, r.AccountID, r.SessionID, r.Model, r.Status, r.Kind, r.State, string(b)).Scan(&seq)
 	if err != nil {
 		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	// Backfills and local log updates belong in analytics, never the live feed.
+	if r.Source == "claude-local" {
+		return nil
 	}
 	found := false
 	for i := range s.recent {

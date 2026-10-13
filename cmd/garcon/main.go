@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"garcon/internal/claude"
+	"garcon/internal/claudeimport"
 	"garcon/internal/clauderouting"
 	"garcon/internal/codexmetadata"
 	"garcon/internal/codexrouting"
@@ -98,6 +99,7 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:4141", "address to listen on")
 	allowRemote := flag.Bool("allow-remote", false, "serve on a non-loopback -listen address; there is no authentication, so the dashboard, the settings and the relay are then open to that network")
 	data := flag.String("data", filepath.Join(home, ".local/share/garcon/usage.db"), "local SQLite database (legacy .jsonl paths are migrated)")
+	importClaude := flag.Bool("claude-import", true, "import usage metadata from local Claude Code transcripts")
 	claudeGatewayConfig := flag.String("claude-gateway-config", filepath.Join(home, ".config/garcon/claude-gateway.json"), "optional Claude Desktop gateway key/profile configuration (absent disables the gateway)")
 	flag.Parse()
 	if flag.NArg() > 0 {
@@ -130,6 +132,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer st.Close()
+	localClaude := claudeimport.New(st)
+	if *importClaude {
+		ctx, cancel := context.WithCancel(shutdownCtx)
+		done := make(chan struct{})
+		go func() { defer close(done); localClaude.Run(ctx) }()
+		defer func() { cancel(); <-done }()
+	}
 	st.Tasks = codexmetadata.New()
 	log.SetOutput(io.MultiWriter(os.Stderr, st.DB))
 	li := limits.New(st.Dir(), st.DB)
@@ -141,6 +150,7 @@ func main() {
 	static := own(dashboard.Handler(), false)
 
 	mux := http.NewServeMux()
+	mux.Handle("/api/imports/claude", readOnly(localClaude.ServeHTTP))
 	if claudeGateway != nil {
 		claudeRouter, err := clauderouting.New(st.DB, li.Snapshot, claudeGateway.Profile())
 		if err != nil {

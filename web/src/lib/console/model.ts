@@ -23,6 +23,8 @@ export type Account = {
 };
 export type Routing = { pinned_account?: string; next_account?: string; enabled: boolean; accounts: Account[]; error?: string };
 export type RequestRow = {
+	source?: string;
+	account_attribution?: string;
   harness?: string;
   provider?: string;
   sequence: number;
@@ -46,6 +48,9 @@ export type RequestRow = {
   first_byte_ms?: number;
 };
 export type Session = {
+	source?: string;
+	account_attribution?: string;
+	entrypoint?: string;
   harness: string;
   provider?: string;
 	task?: { title: string; cwd: string; archived: boolean };

@@ -14,15 +14,19 @@ func (s *Store) sessions() ([]map[string]any, error) {
  SELECT r.*,coalesce(nullif(json_extract(record,'$.harness'),''),
    CASE WHEN EXISTS (SELECT 1 FROM sessions s WHERE s.session_id=r.session_id AND s.session_id!='') THEN 'codex' ELSE '' END) AS harness
  FROM requests r WHERE session_id!=''
+), ordered AS (
+ SELECT *,row_number() OVER (PARTITION BY harness,session_id ORDER BY time DESC,sequence DESC) AS newest,
+ row_number() OVER (PARTITION BY harness,session_id ORDER BY CASE WHEN kind='completion' AND NOT (harness='codex' AND model='codex-auto-review') THEN 0 ELSE 1 END,time DESC,sequence DESC) AS completion
+ FROM tagged
 ), observed AS (
  SELECT harness,session_id,min(time) AS created_at,
  max(time+max(0,coalesce(json_extract(record,'$.ms'),0))) AS last_seen,
  count(*) AS requests,sum(state='streaming') AS active,
  sum(state='streaming' AND harness='codex' AND model='codex-auto-review') AS reviews,
  coalesce(min(CASE WHEN state='streaming' THEN time END),0) AS active_since,
- max(CASE WHEN kind='completion' AND NOT (harness='codex' AND model='codex-auto-review') THEN sequence END) AS latest,
- max(sequence) AS last_request
- FROM tagged GROUP BY harness,session_id
+ max(CASE WHEN completion=1 AND kind='completion' AND NOT (harness='codex' AND model='codex-auto-review') THEN sequence END) AS latest,
+ max(CASE WHEN newest=1 THEN sequence END) AS last_request
+ FROM ordered GROUP BY harness,session_id
 ), inventory AS (
  SELECT coalesce(s.key,json_array(o.harness,o.session_id)) AS key,o.harness,o.session_id,
  coalesce(nullif(s.account_id,''),r.account_id) AS account_id,
@@ -70,7 +74,7 @@ SELECT * FROM inventory ORDER BY (active>0) DESC,last_seen DESC LIMIT 1000`)
 				provider = "anthropic"
 			}
 		}
-		out = append(out, map[string]any{"key": key, "harness": harness, "provider": provider, "session_id": id, "account_id": aid, "account": account, "model": model, "created_at": created, "last_seen": last, "requests": n, "active": active, "active_reviews": reviews, "active_since": activeSince, "last_state": latest.State, "last_status": latest.Status, "last_error": latest.Error})
+		out = append(out, map[string]any{"key": key, "harness": harness, "provider": provider, "session_id": id, "account_id": aid, "account": account, "model": model, "created_at": created, "last_seen": last, "requests": n, "active": active, "active_reviews": reviews, "active_since": activeSince, "last_state": latest.State, "last_status": latest.Status, "last_error": latest.Error, "source": latest.Source, "account_attribution": latest.AccountAttribution})
 	}
 	return out, rows.Err()
 }

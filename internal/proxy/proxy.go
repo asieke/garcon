@@ -219,6 +219,9 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 			pr.Out = pr.Out.WithContext(httptrace.WithClientTrace(pr.Out.Context(), trace))
 		},
 		ModifyResponse: func(res *http.Response) error {
+			if rt.Harness == "claude" {
+				rec.UpstreamRequestID = metadataID(res.Header.Get("request-id"))
+			}
 			if d := claude.Details(r); d.AccountID != "" {
 				res.Header.Set("X-Garcon-Account-Id", d.AccountID)
 				if d.Observe != nil {
@@ -250,6 +253,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 				rec.DnsMs, rec.TcpMs, rec.TlsMs = span(tDNSStart, tDNSDone), span(tTCPStart, tTCPDone), span(tTLSStart, tTLSDone)
 				rec.FirstByteMs = span(start, tFirstByte)
 				if IsCompletion(rt.Rest) {
+					rec.MessageID = measured.MessageID
 					if measured.Model != "" {
 						rec.Model = measured.Model
 					}
