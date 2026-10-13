@@ -13,6 +13,24 @@ import (
 
 type transportFunc func(*http.Request) (*http.Response, error)
 
+func TestClaudeProviderCorrelationIDs(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("request-id", "req_provider")
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_provider\",\"model\":\"claude-test\",\"usage\":{\"input_tokens\":12}}}\n\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\n\n")
+	}))
+	defer upstream.Close()
+	target, _ := url.Parse(upstream.URL)
+	rt, _ := ParseRoute("/claude/v1/messages")
+	rt.Target = target
+	var got usage.Record
+	p := Proxy{Save: func(r usage.Record) { got = r }}
+	p.Serve(httptest.NewRecorder(), httptest.NewRequest("POST", "/claude/v1/messages", strings.NewReader(`{"model":"claude-test"}`)), rt)
+	if got.UpstreamRequestID != "req_provider" || got.MessageID != "msg_provider" || got.Input != 12 || got.Output != 9 {
+		t.Fatalf("missing provider IDs: %+v", got)
+	}
+}
+
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestClaudeAccountFollowsRequestCredentials(t *testing.T) {

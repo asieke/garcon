@@ -6,6 +6,7 @@ import (
 	"garcon/internal/local"
 	"garcon/internal/usage"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -23,6 +24,9 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/sessions":
 		var sessions []map[string]any
 		sessions, err = s.sessions()
+		if err == nil && local.Host(r.RemoteAddr) && local.Host(r.Host) {
+			err = s.claudeSessionMetadata(sessions)
+		}
 		// Task titles and workspace paths are exposed only to local clients,
 		// even if the operator enables the remote usage dashboard.
 		if err == nil && s.Tasks != nil && local.Host(r.RemoteAddr) && local.Host(r.Host) {
@@ -92,7 +96,7 @@ func (s *Store) logs(r *http.Request) (any, error) {
 	if err := s.DB.QueryRow("SELECT count(*) FROM requests WHERE "+where, args...).Scan(&total); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.Query("SELECT sequence,record FROM requests WHERE "+where+" ORDER BY sequence DESC LIMIT ? OFFSET ?", append(args, limit, offset)...)
+	rows, err := s.DB.Query("SELECT sequence,record FROM requests WHERE "+where+" ORDER BY time DESC,sequence DESC LIMIT ? OFFSET ?", append(args, limit, offset)...)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +114,35 @@ func (s *Store) logs(r *http.Request) (any, error) {
 		out = append(out, rec)
 	}
 	return map[string]any{"requests": out, "total": total, "offset": offset, "limit": limit}, rows.Err()
+}
+
+func (s *Store) claudeSessionMetadata(sessions []map[string]any) error {
+	byID := map[string]map[string]any{}
+	args := []any{}
+	for _, session := range sessions {
+		if session["harness"] == "claude" {
+			id := session["session_id"].(string)
+			byID[id] = session
+			args = append(args, id)
+		}
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	rows, err := s.DB.Query("SELECT session_id,cwd,entrypoint FROM claude_import_sessions WHERE session_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+")", args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, cwd, entrypoint string
+		if err = rows.Scan(&id, &cwd, &entrypoint); err != nil {
+			return err
+		}
+		byID[id]["task"] = map[string]any{"title": filepath.Base(cwd), "cwd": cwd, "archived": false}
+		byID[id]["entrypoint"] = entrypoint
+	}
+	return rows.Err()
 }
 func (s *Store) events(r *http.Request) (any, error) {
 	var total int

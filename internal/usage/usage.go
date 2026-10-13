@@ -8,19 +8,24 @@ import (
 	"strings"
 )
 
-// Record is one completion call, as stored one per line in usage.jsonl.
+// Record is one request observation in the local SQLite ledger.
 type Record struct {
-	RequestID string `json:"request_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
-	AccountID string `json:"account_id,omitempty"`
-	Method    string `json:"method,omitempty"`
-	Path      string `json:"path,omitempty"`
-	Kind      string `json:"kind,omitempty"`
-	State     string `json:"state,omitempty"`
-	Error     string `json:"error,omitempty"`
-	Time      int64  `json:"time"` // unix milliseconds
-	Harness   string `json:"harness"`
-	Account   string `json:"account"`
+	Source string `json:"source,omitempty"`
+	// Provider IDs correlate local transcripts with proxied calls. Content is never saved.
+	UpstreamRequestID  string `json:"upstream_request_id,omitempty"`
+	MessageID          string `json:"message_id,omitempty"`
+	AccountAttribution string `json:"account_attribution,omitempty"`
+	RequestID          string `json:"request_id,omitempty"`
+	SessionID          string `json:"session_id,omitempty"`
+	AccountID          string `json:"account_id,omitempty"`
+	Method             string `json:"method,omitempty"`
+	Path               string `json:"path,omitempty"`
+	Kind               string `json:"kind,omitempty"`
+	State              string `json:"state,omitempty"`
+	Error              string `json:"error,omitempty"`
+	Time               int64  `json:"time"` // unix milliseconds
+	Harness            string `json:"harness"`
+	Account            string `json:"account"`
 	// Provider is omitted on rows recorded before harnesses other than Claude Code
 	// and Codex were supported; those imply anthropic and chatgpt respectively.
 	Provider string `json:"provider,omitempty"`
@@ -83,6 +88,7 @@ type block struct {
 // level (Anthropic message_delta, non-streaming replies), under message
 // (Anthropic message_start) or under response (OpenAI response.* events).
 type event struct {
+	ID       string `json:"id"`
 	Model    string `json:"model"`
 	Usage    *block `json:"usage"`
 	Message  *event `json:"message"`
@@ -104,6 +110,9 @@ func Fold(body []byte, rec *Record) {
 			}
 			if e.Model != "" {
 				rec.Model = clip(e.Model, maxModel)
+			}
+			if strings.HasPrefix(e.ID, "msg_") {
+				rec.MessageID = clip(e.ID, 256)
 			}
 			if u := e.Usage; u != nil {
 				rec.Input = max(rec.Input, u.Input-u.Details.Cached, u.PromptTokens-u.PromptDetails.Cached)

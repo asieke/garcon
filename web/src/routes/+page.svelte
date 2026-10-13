@@ -38,6 +38,7 @@
   let claudeRouting = $state<Routing | null>(null);
   let connections = $state<{ client: string; connected: boolean | null; mode?: string; profiles?: number; remote_control_at_startup?: boolean }[]>([]);
   let connectionsAvailable = $state(false);
+	let claudeImport = $state<{enabled:boolean; scanning:boolean; last_scan:number; files:number; records:number; failed_files:number; skipped_lines:number} | null>(null);
   let sessions = $state<Session[]>([]),
     aggregates = $state<Aggregate[]>([]),
     feed = $state<RequestRow[] | null>(null);
@@ -129,6 +130,7 @@
     if (s.active > 0) return "Background review";
     if (s.last_state === "failed" || s.last_status >= 400) return "Last request failed";
     if (s.last_state === "interrupted") return "Last request interrupted";
+		if (s.source === "claude-local") return "Local history";
     return "No model request";
   }
   function elapsed(t: number) {
@@ -230,6 +232,9 @@
     }
   }
   async function poll() {
+		const importPoll = api("/api/imports/claude").then((result) => {
+			if (alive) claudeImport = result;
+		}).catch(() => { if (alive) claudeImport = null; });
     // A missing status endpoint must not stop the rest of the dashboard polling.
     const limitsPoll = api("/api/limits").then((result) => {
       if (alive) { limits = result; limitsAvailable = true; }
@@ -262,7 +267,7 @@
         loaded = true;
       }
     }
-    await Promise.all([connectionPoll, limitsPoll, claudeRoutingPoll]);
+    await Promise.all([connectionPoll, limitsPoll, claudeRoutingPoll, importPoll]);
   }
   onMount(() => {
     alive = true;
@@ -532,6 +537,15 @@
           The local server is unavailable. Showing the last received data;
           reconnecting automatically.
         </div>{/if}
+			{#if claudeImport && (view === "sessions" || view === "analytics")}
+				<p class="footnote" role="status">
+					{#if !claudeImport.enabled}Local Claude history import is disabled.
+					{:else}Local Claude history: {count(claudeImport.records)} imported requests from {claudeImport.files} {claudeImport.files === 1 ? "file" : "files"}.
+						{claudeImport.scanning ? "Updating…" : claudeImport.last_scan ? `Checked ${ago(claudeImport.last_scan, now)}.` : "Waiting for first scan."}
+						{#if claudeImport.failed_files || claudeImport.skipped_lines}Some history could not be read: {claudeImport.failed_files} files, {claudeImport.skipped_lines} malformed or oversized entries.{/if}
+					{/if}
+				</p>
+			{/if}
       {#if !loaded}<div class="loading-state">
           <span class="loading-line"></span>Loading…
         </div>
@@ -698,7 +712,7 @@
                           <button class="task-title" title={s.task?.title || s.session_id || s.key}
                             disabled={!s.session_id} onclick={() => sessionLogs(s)}
                             >{s.task?.title || (s.session_id ? taskName(s.session_id, s.harness) : `Legacy session ${s.key.slice(0, 8)}`)}</button>
-                          <small title={s.task?.cwd}>{harnessName(s.harness)}{s.task?.cwd ? ` · ${projectName(s)}` : ""}{s.task?.archived ? " · Archived" : ""}</small>
+                          <small title={s.task?.cwd}>{harnessName(s.harness)}{s.entrypoint === "claude-desktop" ? " · Desktop" : ""}{s.task?.cwd ? ` · ${projectName(s)}` : ""}{s.task?.archived ? " · Archived" : ""}</small>
                           <small class="session-reference"><span title={s.session_id || s.key}>{s.session_id ? `${s.session_id.slice(0, 8)}…${s.session_id.slice(-6)}` : "ID available when resumed"}</span>
                             {#if s.session_id}<button class="row-action" title="Copy full session ID" aria-label={copied === s.key ? "Session ID copied" : `Copy session ID for ${taskName(s.session_id, s.harness)}`} onclick={() => copy(s.session_id, s.key)}><Icon name={copied === s.key ? "check" : "copy"} size={12}/></button>{/if}
                             {#if !s.task}<span> · Title unavailable</span>{/if}
@@ -740,12 +754,12 @@
               <p>
                 {sessionQuery
                   ? "Try another task title, project, account, or session identifier."
-                  : "Start a Codex or Claude Code session through Garcon to see its activity here."}
+                  : "Sessions appear from Garcon traffic and local Claude Code history."}
               </p>
             </div>{/if}
           <div class="panel-footer">
             <span>{filteredSessions.length} {filteredSessions.length === 1 ? "session" : "sessions"}</span>
-            <span>Activity reflects model traffic. Tasks may run tools between requests.</span>
+            <span>Local history has no live activity signal. Imported accounts are inferred from profile metadata.</span>
             {#if sessions.length === 1000}<span>Showing up to 1,000 assignments, in-flight first</span>{/if}
           </div>
         </section>
@@ -818,7 +832,7 @@
                             r.state === "interrupted" ||
                             r.state === "failed"}
                           class:streaming={r.state === "streaming"}
-                          ><span></span>{r.state === "streaming"
+                          ><span></span>{r.source === "claude-local" ? "Recorded" : r.state === "streaming"
                             ? "Streaming"
                             : r.state === "interrupted"
                               ? "Interrupted"
@@ -830,7 +844,7 @@
                         ><strong class="model-name"
                           >{r.model || r.path || "Unknown model"}</strong
                         ><small
-                          >{r.method || "POST"} · {r.kind === "request"
+                          >{r.source === "claude-local" ? "Local history" : r.method || "POST"} · {r.kind === "request"
                             ? "Metadata request"
                             : r.session_id
                               ? taskName(r.session_id, r.harness)
@@ -839,7 +853,7 @@
                       ><td class="log-account">{r.account || "Unassigned"}</td
                       ><td class="numeric">{count(tokens(r))}</td><td
                         class="numeric muted"
-                        >{r.state === "streaming"
+                        >{r.source === "claude-local" ? "Not measured" : r.state === "streaming"
                           ? "In flight"
                           : `${(r.ms / 1000).toFixed(2)}s`}</td
                       ><td
@@ -864,7 +878,7 @@
                 <p>
                   {query || logSession || errorsOnly || hideZeroTokens
                     ? "Adjust your search or filters."
-                    : "Requests will appear here as they pass through Garcon."}
+                    : "Requests appear from Garcon traffic and local Claude Code history."}
                 </p>
               </div>{/if}
             <div class="panel-footer">
@@ -918,9 +932,7 @@
             </div>{/if}
         </section>
         <p class="footnote">
-          <Icon name="shield" size={14} /> Full request metadata is stored locally,
-          including failures. Prompts, response bodies, and credentials are never
-          saved.
+          <Icon name="shield" size={14} /> Proxy requests include network status and timing. Local history includes recorded usage only. Prompts, response bodies, and credentials are never saved in Garcon.
         </p>
       {:else if view === "analytics"}
         <div class="metric-tabs" role="tablist" aria-label="Analytics metric">
@@ -947,7 +959,7 @@
           </div>
           <div>
             <span>REQUESTS</span><strong>{count(totalRequests)}</strong><small
-              >{totalErrors} failed or interrupted</small
+              >{totalErrors} observed failures or interruptions</small
             >
           </div>
           <div>
@@ -973,7 +985,7 @@
                   ? "Estimated API equivalent, not your subscription bill."
                   : metric === "models"
                     ? "Completed and failed requests across your models."
-                    : "Tokens processed through Garcon."}
+                    : "Proxied usage and imported local Claude history."}
               </p>
             </div>
             <span class="chart-legend"
@@ -1087,8 +1099,7 @@
           </section>
         </div>
         <p class="footnote">
-          <Icon name="database" size={14} /> Only requests observed by Garcon are
-          counted. {metric === "cost"
+          <Icon name="database" size={14} /> Includes local Claude transcripts. Imported account labels come from profile metadata and may not identify the historical login. Network failures and timing are available only for proxied requests. {metric === "cost"
             ? `Rates: ${catalog?.fetched_at ? `OpenRouter catalog, refreshed ${day(catalog.fetched_at)}` : "bundled fallback list"}. Missing prices are excluded; this is not billed subscription cost.`
             : "Historical usage is preserved in your local SQLite database."}
         </p>
@@ -1158,13 +1169,13 @@
             class:bad={selected.status >= 400 ||
               selected.state === "interrupted" ||
               selected.state === "failed"}
-            >{selected.state || "complete"} · {selected.status ||
+            >{selected.state || "complete"} · {selected.source === "claude-local" ? "Local history; HTTP status unknown" : selected.status ||
               "in flight"}</span
           ><span>{day(selected.time)} · {time(selected.time)}</span>
         </div>
         {#if selected.error}<div class="alert">{selected.error}</div>{/if}
         <dl class="request-details">
-          {#each [["Client", harnessName(selected.harness)], ["Provider", selected.provider || "Not recorded"], ["Model", selected.model || "Unknown"], ["Account", selected.account || "Unassigned"], ["Account ID", selected.account_id || "Not recorded"], ["Session", selected.session_id || "Not recorded"], ["Request ID", selected.request_id || `Legacy record ${selected.sequence}`], ["Endpoint", `${selected.method || "POST"} ${selected.path || "Not recorded"}`], ["Duration", `${(selected.ms / 1000).toFixed(3)}s`], ["First byte", selected.first_byte_ms === undefined ? "Not measured" : `${selected.first_byte_ms}ms`], ["Input tokens", count(selected.input)], ["Cached input", count(selected.cache_read)], ["Cache write", count(selected.cache_write)], ["Output tokens", count(selected.output)]] as [label, value]}<div
+          {#each [["Source", selected.source === "claude-local" ? "Local Claude history" : "Garcon proxy"], ["Account attribution", selected.account_attribution === "profile" ? "Inferred from profile; historical login unverified" : "Observed request"], ["Client", harnessName(selected.harness)], ["Provider", selected.provider || "Not recorded"], ["Model", selected.model || "Unknown"], ["Account", selected.account || "Unassigned"], ["Account ID", selected.account_id || "Not recorded"], ["Session", selected.session_id || "Not recorded"], ["Request ID", selected.request_id || `Legacy record ${selected.sequence}`], ["Endpoint", selected.source === "claude-local" ? "Not observed" : `${selected.method || "POST"} ${selected.path || "Not recorded"}`], ["Duration", selected.source === "claude-local" ? "Not measured" : `${(selected.ms / 1000).toFixed(3)}s`], ["First byte", selected.first_byte_ms === undefined ? "Not measured" : `${selected.first_byte_ms}ms`], ["Input tokens", count(selected.input)], ["Cached input", count(selected.cache_read)], ["Cache write", count(selected.cache_write)], ["Output tokens", count(selected.output)]] as [label, value]}<div
             >
               <dt>{label}</dt>
               <dd>{value}</dd>
