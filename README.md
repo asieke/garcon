@@ -161,6 +161,8 @@ Garcon's account pools. See [architecture, auth boundaries, setup and validation
 
 Every merge into `main` publishes a new `ai-garcon` release to npm (see [Work on Garcon](#work-on-garcon)). npm installs pick it up with `garcon update`.
 
+The public site at https://asieke.github.io/garcon/ is GitHub Pages serving `docs/` from `main`. GitHub rebuilds it on every push, so edits to the `.html` pages in `docs/` go live when they merge; there is no separate deploy step.
+
 The owner's live install is a source build:
 
 - **Host machine:** `macbook`. The live app runs from `~/apps/garcon`, which always stays on `main`. It installs `~/.local/bin/garcon` and runs it as the background service.
