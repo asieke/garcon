@@ -23,6 +23,7 @@ import (
 
 	"garcon/internal/limits"
 	"garcon/internal/local"
+	"garcon/internal/usage"
 )
 
 type Config struct {
@@ -482,25 +483,25 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	if strings.EqualFold(req.Header.Get("Upgrade"), "websocket") {
 		return nil, &routingError{426, "Codex routing currently requires HTTP streaming; disable provider WebSockets"}
 	}
-	var body struct {
-		Model    string            `json:"model"`
-		Previous string            `json:"previous_response_id"`
-		CacheKey string            `json:"prompt_cache_key"`
-		Metadata map[string]string `json:"client_metadata"`
-	}
+	// One narrow decoding serves routing and the ledger's call details; the
+	// unrouted proxy path uses the same parser.
+	var body usage.RequestBody
 	hasState := req.Header.Get("X-Codex-Turn-State") != ""
 	if req.Body != nil && req.Body != http.NoBody {
 		b, err := readRoutingBody(req, maxRoutingBodyBytes)
 		if err != nil {
 			return nil, err
 		}
-		if len(b) > 0 && json.Unmarshal(b, &body) != nil {
-			return nil, &routingError{400, "Invalid Codex request JSON"}
+		if len(b) > 0 {
+			if body, err = usage.ParseRequest(b); err != nil {
+				return nil, &routingError{400, "Invalid Codex request JSON"}
+			}
 		}
 		hasState = hasState || body.Previous != "" || bytes.Contains(b, []byte(`"encrypted_content"`))
 	}
+	call := body.Call(req.Header)
 	session := ""
-	for _, value := range []string{req.Header.Get("Session_id"), req.Header.Get("Session-Id"), body.Metadata["session_id"], req.Header.Get("Thread-Id"), body.Metadata["thread_id"], body.CacheKey} {
+	for _, value := range []string{req.Header.Get("Session_id"), req.Header.Get("Session-Id"), usage.StringValue(body.ClientMetadata, "session_id"), req.Header.Get("Thread-Id"), usage.StringValue(body.ClientMetadata, "thread_id"), body.CacheKey} {
 		if value != "" {
 			session = value
 			break
@@ -512,7 +513,7 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 	if session == "" && req.Method != http.MethodGet {
 		return nil, &routingError{400, "A stable Codex session identifier is required for account routing"}
 	}
-	*req = *req.WithContext(context.WithValue(req.Context(), detailKey{}, RequestDetails{Session: session, Model: body.Model}))
+	*req = *req.WithContext(context.WithValue(req.Context(), detailKey{}, RequestDetails{Session: session, Model: body.Model, Call: call}))
 	key := ""
 	if session != "" {
 		key = fmt.Sprintf("%x", sha256.Sum256([]byte(session)))
@@ -579,7 +580,7 @@ func (r *Router) Prepare(req *http.Request) (func(), error) {
 			}
 		}
 	}
-	*req = *req.WithContext(context.WithValue(req.Context(), detailKey{}, RequestDetails{Session: session, Model: body.Model, Account: chosen.email, AccountID: chosen.id}))
+	*req = *req.WithContext(context.WithValue(req.Context(), detailKey{}, RequestDetails{Session: session, Model: body.Model, Account: chosen.email, AccountID: chosen.id, Call: call}))
 	for _, h := range []string{"Authorization", "ChatGPT-Account-Id", "OpenAI-Organization", "OpenAI-Project", "X-Api-Key", "Cookie"} {
 		req.Header.Del(h)
 	}
@@ -642,7 +643,11 @@ func (r *Router) persistPin(key, session string, c credential, model string) err
 }
 
 type detailKey struct{}
-type RequestDetails struct{ Session, Model, Account, AccountID string }
+type RequestDetails struct {
+	Session, Model, Account, AccountID string
+	// Call places the request in its conversation (turn, thread, subagent).
+	Call usage.Call
+}
 
 func Details(req *http.Request) RequestDetails {
 	v, _ := req.Context().Value(detailKey{}).(RequestDetails)

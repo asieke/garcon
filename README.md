@@ -76,7 +76,20 @@ A conversation always stays on its assigned account, regardless of later pin cha
 
 ## Find the task behind a session
 
-**Sessions** tracks Codex, Claude Code, and other clients separately, with client logos and local Codex task titles when available. Search by client, title, project, account, model, or ID. Click a session for that client's request history; identical IDs from different clients stay separate.
+**Sessions** tracks Codex, Claude Code, and other clients separately, with client logos and local Codex task titles when available. Search by client, title, project, account, model, or ID. Identical IDs from different clients stay separate.
+
+Click a session to drill into it. The session view shows:
+
+- totals for model calls, tokens, tool calls, subagents, and wall-clock time;
+- an activity strip of every call over time, one lane per agent;
+- the models used, with reasoning effort;
+- how often each tool was called;
+- the subagents (spawned agents, reviews, compaction) with their models and calls;
+- a timeline grouped by turn. Each call shows its time from the session start, model and effort, tokens, duration, status, and the tools it asked for.
+
+Click a call to inspect it. Click a subagent to see only its calls. **Open in Logs** keeps the filtered request list.
+
+Garcon records only tool names and counts. It never saves tool arguments, tool output, prompts, or responses. Codex calls through Garcon carry turn, subagent, and reasoning details. Claude Code calls carry tool names, and local transcripts also mark subagent (sidechain) calls. Calls recorded before this feature have no tool details.
 
 In-flight sessions appear first, with elapsed time. Background reviews have their own activity label and don't replace the conversation model. Missing task metadata falls back to the ID.
 

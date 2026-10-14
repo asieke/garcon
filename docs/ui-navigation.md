@@ -14,7 +14,7 @@ Claude quota and reset windows come from its local account snapshots. Claude use
 
 ## Sessions
 
-Sessions, logs, and live activity identify each client with a logo, using a generic icon for unknown clients. Search by client, Codex task title, project, account, model, or session ID. Click a session for requests matching both its client and ID. Titles come from Codex's local index and are not applied to another client's session with the same ID. Missing titles and older hashed assignments remain visible.
+Sessions, logs, and live activity identify each client with a logo, using a generic icon for unknown clients. Search by client, Codex task title, project, account, model, or session ID. Click a session to drill into it: every model call in time order, grouped by turn, with model, effort, tokens, duration, status and tool names, plus breakdowns of models, tools and subagents. Click a subagent to see only its calls; `?view=sessions&session=ID&harness=CLIENT` links to the view directly. The list icon or **Open in Logs** shows requests matching both its client and ID. Titles come from Codex's local index and are not applied to another client's session with the same ID. Missing titles and older hashed assignments remain visible.
 
 In-flight sessions come first. Activity distinguishes model responses, background reviews, and the last failed or interrupted request. **No model request** doesn't mean the task has finished—it may be running tools.
 

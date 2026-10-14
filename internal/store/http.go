@@ -44,6 +44,12 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result = sessions
+	case "/api/sessions/timeline":
+		if r.URL.Query().Get("session_id") == "" {
+			http.Error(w, "session_id is required", 400)
+			return
+		}
+		result, err = s.timeline(r)
 	case "/api/logs":
 		result, err = s.logs(r)
 	case "/api/events":
@@ -79,7 +85,7 @@ func (s *Store) logs(r *http.Request) (any, error) {
 		}
 	}
 	if value := r.URL.Query().Get("harness"); r.URL.Query().Has("harness") {
-		where += ` AND coalesce(nullif(json_extract(record,'$.harness'),''),CASE WHEN EXISTS (SELECT 1 FROM sessions s WHERE s.session_id=requests.session_id AND s.session_id!='') THEN 'codex' ELSE '' END)=?`
+		where += ` AND ` + harnessExpr + `=?`
 		args = append(args, value)
 	}
 	if value := r.URL.Query().Get("session_id"); value != "" {

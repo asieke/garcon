@@ -185,7 +185,7 @@ func main() {
 		json.NewEncoder(w).Encode(st.RequestFeed())
 	}))
 	mux.Handle("/api/connections", own(connections.Handler("http://"+*listen), true))
-	for _, path := range []string{"/api/sessions", "/api/logs", "/api/events", "/api/analytics"} {
+	for _, path := range []string{"/api/sessions", "/api/sessions/timeline", "/api/logs", "/api/events", "/api/analytics"} {
 		mux.Handle(path, own(st, true))
 	}
 	mux.Handle("/api/nickname", own(http.HandlerFunc(st.Nickname), true))

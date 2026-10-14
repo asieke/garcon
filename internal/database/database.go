@@ -66,6 +66,7 @@ func (d *DB) migrate(legacy string) error {
  CREATE INDEX IF NOT EXISTS requests_session ON requests(session_id);
  CREATE INDEX IF NOT EXISTS requests_message ON requests(json_extract(record,'$.message_id'));
  CREATE INDEX IF NOT EXISTS requests_upstream ON requests(json_extract(record,'$.upstream_request_id'));
+ CREATE INDEX IF NOT EXISTS requests_parent ON requests(json_extract(record,'$.parent_session_id'));
  CREATE TABLE IF NOT EXISTS claude_import_files (path TEXT PRIMARY KEY, checkpoint TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS claude_import_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, entrypoint TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS sessions (
