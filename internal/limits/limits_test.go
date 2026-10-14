@@ -411,6 +411,21 @@ func TestAGYAndMuseLimits(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(museDir, "auth.json"), []byte(museAuth), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// A fake `muse serve` host: newline-delimited JSON-RPC with a
+	// notification before each answer, as a real host may send.
+	fakeMuse := filepath.Join(binDir, "muse")
+	museScript := `#!/bin/sh
+[ "$1" = serve ] || exit 2
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*) printf '%s\n' '{"jsonrpc":"2.0","method":"session/listChanged","params":{}}' '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"muse"}}}' ;;
+    *'"method":"usage/read"'*) printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"usage":{"observedAtMs":1893456000000,"tier":"plus","window":{"usedPercent":42,"windowDurationMins":300,"resetsAtMs":1893474000000},"weekly":{"usedPercent":7,"resetsAtMs":1894060800000}}}}' ;;
+  esac
+done
+`
+	if err := os.WriteFile(fakeMuse, []byte(museScript), 0700); err != nil {
+		t.Fatal(err)
+	}
 
 	s := testService(t, nil, nil)
 	s.discover = func(ctx context.Context) []source { return discover(ctx, home) }
@@ -422,8 +437,43 @@ func TestAGYAndMuseLimits(t *testing.T) {
 	if snap.Accounts[0].Provider != "agy" || snap.Accounts[0].Email != "user@example.com" || snap.Accounts[0].Status != "fresh" || len(snap.Accounts[0].Windows) != 4 {
 		t.Fatalf("unexpected agy account: %+v", snap.Accounts[0])
 	}
-	if snap.Accounts[1].Provider != "muse" || snap.Accounts[1].Email != "user@example.com" || snap.Accounts[1].Status != "fresh" || snap.Accounts[1].Plan != "Muse Code" || len(snap.Accounts[1].Windows) != 2 {
-		t.Fatalf("unexpected muse account: %+v", snap.Accounts[1])
+	muse := snap.Accounts[1]
+	if muse.Provider != "muse" || muse.Email != "user@example.com" || muse.Status != "fresh" || muse.Plan != "plus" || len(muse.Windows) != 2 {
+		t.Fatalf("unexpected muse account: %+v", muse)
+	}
+	if muse.Windows[0].Label != "Weekly" || *muse.Windows[0].UsedPercent != 7 || muse.Windows[1].Label != "5-hour" || *muse.Windows[1].UsedPercent != 42 || muse.Windows[1].ResetsAt != 1893474000000 {
+		t.Fatalf("unexpected muse windows: %+v", muse.Windows)
+	}
+
+	// Without a host answer, an unreported window is unavailable, never a blank "fresh" row.
+	if err := os.Remove(fakeMuse); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	s = testService(t, nil, nil)
+	s.discover = func(ctx context.Context) []source { return discoverMuse(ctx, home) }
+	s.Refresh(context.Background())
+	if a := s.Snapshot().Accounts; len(a) != 1 || a[0].Status != "unavailable" || len(a[0].Windows) != 0 || !strings.Contains(a[0].Error, "Muse CLI not found") {
+		t.Fatalf("missing Muse host must not look fresh: %+v", a)
+	}
+}
+
+func TestMuseUsageShapes(t *testing.T) {
+	var stored museUsage
+	if err := json.Unmarshal([]byte(`{"window":{"used_percent":12.5,"window_duration_mins":300,"resets_at":"2030-01-01T05:00:00Z"},"weekly":{"used_percent":101,"resets_at_ms":1893974400000}}`), &stored); err != nil {
+		t.Fatal(err)
+	}
+	ws := parseMuseWindows(&stored)
+	if len(ws) != 2 || ws[1].Label != "5-hour" || *ws[1].UsedPercent != 12.5 || ws[1].ResetsAt != 1893474000000 || *ws[0].UsedPercent != 101 || ws[0].ResetsAt != 1893974400000 {
+		t.Fatalf("snake_case usage: %+v", ws)
+	}
+	if ws := parseMuseWindows(&museUsage{Window: &museWindow{}, Weekly: &museWindow{}}); len(ws) != 0 {
+		t.Fatalf("empty windows must not be reported: %+v", ws)
+	}
+	for in, want := range map[int64]int64{1893474000: 1893474000000, 1893474000000: 1893474000000, 1893474000000000: 1893474000000, 1893474000000000000: 1893474000000} {
+		if got := epochMillis(in); got != want {
+			t.Fatalf("epochMillis(%d) = %d, want %d", in, got, want)
+		}
 	}
 }
 
