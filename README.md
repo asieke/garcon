@@ -178,11 +178,9 @@ Every merge into `main` publishes a new `ai-garcon` release to npm (see [Work on
 
 The public site at https://asieke.github.io/garcon/ is GitHub Pages serving `docs/` from `main`. GitHub rebuilds it on every push, so edits to the `.html` pages in `docs/` go live when they merge; there is no separate deploy step.
 
-The owner's live install is a source build:
+The owner runs two live installs, one per platform. Both serve port 4141 as a background service and keep data in `~/.local/share/garcon`. Finish active requests before deploying: the service restarts.
 
-- **Host machine:** `macbook`. The live app runs from `~/apps/garcon`, which always stays on `main`. It installs `~/.local/bin/garcon` and runs it as the background service.
 - **Secrets:** none in the repository or in `.env`. Settings live in `~/.config/garcon`, provider CLIs own their logins, and a saved OpenRouter key lives in a separate owner-only file.
-- **First install:** `git clone https://github.com/asieke/garcon ~/apps/garcon && ~/apps/garcon/scripts/install.sh --service`
-- **Deploy script:** `scripts/deploy.sh` refuses unless `~/apps/garcon` is a clean checkout of `main`, fetches and resets to `origin/main`, runs `scripts/install.sh` (dashboard and binary build, install, service restart) and runs the smoke test. It is safe to run repeatedly; `--force` rebuilds when already up to date.
-- **On a desktop:** run `~/apps/garcon/scripts/deploy.sh` manually after merging a pull request. Finish active requests first: the service restarts.
-- **Branch work:** when working on a branch on `macbook`, use a separate checkout at `~/work/garcon/` (one folder per branch); never edit `~/apps/garcon` directly. Changes reach the live app only by merging a pull request to `main`.
+- **macOS (npm release):** run `scripts/deploy-macos.sh` from any checkout after a merge. It reads the `v*` tag the Release workflow puts on the head of `origin/main`, installs that exact `ai-garcon` version from npm (no Go toolchain needed), links `~/.local/bin/garcon` to the npm install so an older source build cannot shadow it, refreshes the LaunchAgent `dev.garcon` and checks that the running service reports the new version. If the release is still publishing it stops and says so. It is safe to run repeatedly; `--force` reinstalls when already up to date.
+- **Linux (source build):** the live app runs from `~/apps/garcon`, which always stays on `main`. First install: `git clone https://github.com/asieke/garcon ~/apps/garcon && ~/apps/garcon/scripts/install.sh --service`. `scripts/deploy.sh` refuses unless `~/apps/garcon` is a clean checkout of `main`, fetches and resets to `origin/main`, runs `scripts/install.sh` (dashboard and binary build, install, service restart) and runs the smoke test. It is safe to run repeatedly; `--force` rebuilds when already up to date.
+- **Branch work:** use a separate checkout at `~/work/garcon/` (one folder per branch); never edit `~/apps/garcon` directly. Changes reach the live app only by merging a pull request to `main`.
