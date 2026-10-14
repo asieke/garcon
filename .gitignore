@@ -1,11 +1,27 @@
 /garcon
 /macos/build/
-/AGENTS.md
-/agents.md
-# Private project overview, documents, and conversation snapshots
+# Private agent notes, project overview, documents, and conversation snapshots
 /.local/
 /npm/ai-garcon/dist/
 /internal/dashboard/build/*
 !/internal/dashboard/build/.gitkeep
 /npm/platforms/
 /npm/ai-garcon/*.tgz
+
+# Standard (asieke/workspace templates/common/.gitignore)
+.env
+.env.*
+!.env.example
+node_modules/
+__pycache__/
+.venv/
+dist/
+build/
+*.log
+.DS_Store
+
+# build/ above would also hide the placeholder that lets `go:embed all:build` compile before the
+# dashboard is built, so re-include it here (negations must follow the pattern they override).
+!/internal/dashboard/build/
+/internal/dashboard/build/*
+!/internal/dashboard/build/.gitkeep

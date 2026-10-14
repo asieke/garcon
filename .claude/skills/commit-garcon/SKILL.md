@@ -33,8 +33,8 @@ one PR when that matters.
 
 ```sh
 git status                      # know what is being committed; never commit unrelated files
-git checkout -b <topic>         # from main; use the existing branch if already on one
-go test ./... && (cd web && npm run check && npm run build >/dev/null)
+git switch -c <type>/<slug> origin/main  # feat|fix|chore|docs, see AGENTS.md; reuse the existing branch if already on one
+scripts/check.sh
 git add <files>
 git commit -m "<imperative summary>"
 ```
@@ -47,15 +47,15 @@ will run, when a change touches the build, the npm package or the workflow itsel
 ## 2. Push and merge (this is the release)
 
 ```sh
-git push -u origin <topic>
-gh pr create --fill              # or --title/--body; add [minor] or [major] to the title if the bump should not be a patch
+git push -u origin <type>/<slug>
+gh pr create                     # fill in .github/pull_request_template.md; add [minor] or [major] to the title if the bump should not be a patch
 gh pr checks --watch             # the CI build; merge only when it is green
 gh pr merge --merge --delete-branch <pr>   # merge commit, like the rest of the history
 git checkout main && git pull --ff-only
 ```
 
-Ask before merging unless the user already said "merge" or "ship", because the merge
-publishes. Then watch the run:
+`PROJECT.md` sets `merge: owner`: only the owner merges. Never merge unless the owner
+explicitly said "merge" or "ship" for this PR, because the merge publishes. Then watch the run:
 
 ```sh
 gh run watch --exit-status        # the Release workflow for the merge commit
