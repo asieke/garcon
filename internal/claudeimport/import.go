@@ -6,11 +6,13 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,10 +176,12 @@ func (i *Importer) Scan(ctx context.Context) {
 			status.FailedFiles++
 		}
 	}
+	i.scanMuse(ctx, seen, &status)
+	i.scanAGY(ctx, seen, &status)
 	if ctx.Err() == nil {
 		status.LastScan = time.Now().UnixMilli()
 	}
-	if err := i.Store.DB.QueryRow(`SELECT count(*) FROM requests WHERE json_extract(record,'$.source')='claude-local'`).Scan(&status.Records); err != nil {
+	if err := i.Store.DB.QueryRow(`SELECT count(*) FROM requests WHERE json_extract(record,'$.source') IN ('claude-local','muse-local','agy-local')`).Scan(&status.Records); err != nil {
 		status.FailedFiles++
 	}
 	i.mu.Lock()
@@ -191,7 +195,7 @@ type checkpoint struct {
 	Skipped                int
 }
 
-func (i *Importer) file(ctx context.Context, path, account string) (int, error) {
+func (i *Importer) scanFile(ctx context.Context, path string, handle func([]byte) (bool, error)) (int, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, err
@@ -235,19 +239,11 @@ func (i *Importer) file(ctx context.Context, path, account string) (int, error) 
 		if oversize {
 			next.Skipped++
 		} else if len(strings.TrimSpace(string(line))) > 0 {
-			var e event
-			if json.Unmarshal(line, &e) != nil {
+			badJSON, err := handle(line)
+			if badJSON {
 				next.Skipped++
-			} else if rec, ok := e.record(account); ok {
-				if err = i.Store.SaveRecord(rec); err != nil {
-					return next.Skipped, err
-				}
-				if e.CWD != "" && len(e.CWD) <= 4096 && len(e.Entrypoint) <= 128 {
-					_, err = i.Store.DB.Exec(`INSERT INTO claude_import_sessions(session_id,cwd,entrypoint) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET cwd=excluded.cwd,entrypoint=excluded.entrypoint`, rec.SessionID, e.CWD, e.Entrypoint)
-					if err != nil {
-						return next.Skipped, err
-					}
-				}
+			} else if err != nil {
+				return next.Skipped, err
 			}
 		}
 		next.Offset += int64(bytes)
@@ -258,6 +254,325 @@ func (i *Importer) file(ctx context.Context, path, account string) (int, error) 
 	b, _ := json.Marshal(next)
 	_, err = i.Store.DB.Exec("INSERT INTO claude_import_files(path,checkpoint) VALUES(?,?) ON CONFLICT(path) DO UPDATE SET checkpoint=excluded.checkpoint", path, string(b))
 	return next.Skipped, err
+}
+
+func (i *Importer) saveSessionMeta(sessionID, cwd, entrypoint string) error {
+	if sessionID == "" || len(sessionID) > 256 || len(cwd) > 4096 || len(entrypoint) > 512 {
+		return nil
+	}
+	if cwd == "" && entrypoint == "" {
+		return nil
+	}
+	_, err := i.Store.DB.Exec(`INSERT INTO claude_import_sessions(session_id,cwd,entrypoint) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET cwd=CASE WHEN excluded.cwd!='' THEN excluded.cwd ELSE claude_import_sessions.cwd END,entrypoint=CASE WHEN excluded.entrypoint!='' THEN excluded.entrypoint ELSE claude_import_sessions.entrypoint END`, sessionID, cwd, entrypoint)
+	return err
+}
+
+func (i *Importer) file(ctx context.Context, path, account string) (int, error) {
+	return i.scanFile(ctx, path, func(line []byte) (bool, error) {
+		var e event
+		if json.Unmarshal(line, &e) != nil {
+			return true, nil
+		}
+		if rec, ok := e.record(account); ok {
+			if err := i.Store.SaveRecord(rec); err != nil {
+				return false, err
+			}
+			if e.CWD != "" && len(e.CWD) <= 4096 && len(e.Entrypoint) <= 128 {
+				if err := i.saveSessionMeta(rec.SessionID, e.CWD, e.Entrypoint); err != nil {
+					return false, err
+				}
+			}
+		}
+		return false, nil
+	})
+}
+
+func (i *Importer) museAccount() string {
+	var data struct {
+		Providers map[string]struct {
+			UserEmail string `json:"user_email"`
+		} `json:"providers"`
+	}
+	if readSmall(filepath.Join(i.Home, ".config/muse/auth.json"), &data) {
+		if email := data.Providers["meta"].UserEmail; len(email) <= 320 && strings.Contains(email, "@") {
+			return email
+		}
+	}
+	return "Local profile: muse"
+}
+
+func (i *Importer) scanMuse(ctx context.Context, seen map[string]bool, status *Status) {
+	museDir := filepath.Join(i.Home, ".local/share/muse")
+	sessionsRoot := filepath.Join(museDir, "sessions")
+	if _, err := os.Stat(sessionsRoot); os.IsNotExist(err) {
+		return
+	}
+	account := i.museAccount()
+	if dbPath := filepath.Join(museDir, "session-index.db"); fileExists(dbPath) {
+		u := url.URL{Scheme: "file", Path: dbPath}
+		if db, err := sql.Open("sqlite", u.String()+"?mode=ro&_pragma=busy_timeout(2000)"); err == nil {
+			rows, qErr := db.QueryContext(ctx, "SELECT session_id, workspace_root, title FROM sessions")
+			if qErr == nil {
+				for rows.Next() {
+					var id, cwd, title string
+					if rows.Scan(&id, &cwd, &title) == nil {
+						_ = i.saveSessionMeta(id, cwd, title)
+					}
+				}
+				rows.Close()
+			}
+			db.Close()
+		}
+	}
+	err := filepath.WalkDir(sessionsRoot, func(path string, d fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			status.FailedFiles++
+			return nil
+		}
+		if d.IsDir() || !d.Type().IsRegular() || !strings.HasSuffix(path, ".jsonl") || seen[path] {
+			return nil
+		}
+		seen[path] = true
+		status.Files++
+		parentSession := museParentSession(path)
+		skipped, err := i.scanFile(ctx, path, func(line []byte) (bool, error) {
+			var e museEvent
+			if json.Unmarshal(line, &e) != nil {
+				return true, nil
+			}
+			if rec, ok := e.record(account, parentSession); ok {
+				if err := i.Store.SaveRecord(rec); err != nil {
+					return false, err
+				}
+			}
+			return false, nil
+		})
+		status.SkippedLines += skipped
+		if err != nil {
+			status.FailedFiles++
+		}
+		return nil
+	})
+	if err != nil && ctx.Err() == nil {
+		status.FailedFiles++
+	}
+}
+
+func museParentSession(path string) string {
+	slash := filepath.ToSlash(path)
+	if idx := strings.Index(slash, "/subagent/"); idx > 0 {
+		return filepath.Base(slash[:idx])
+	}
+	return filepath.Base(filepath.Dir(slash))
+}
+
+type museEvent struct {
+	ID          string `json:"id"`
+	RecordedAt  int64  `json:"recorded_at"`
+	PayloadType string `json:"payload_type"`
+	Stream      struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+	} `json:"stream"`
+	Payload struct {
+		Kind  string `json:"kind"`
+		Event struct {
+			Kind       string `json:"kind"`
+			Model      string `json:"model"`
+			DurationMs int64  `json:"duration_ms"`
+			Usage      *struct {
+				Input      int64 `json:"input_tokens"`
+				Output     int64 `json:"output_tokens"`
+				Cached     int64 `json:"cached_tokens"`
+				CacheWrite int64 `json:"cache_write_tokens"`
+				CacheRead  int64 `json:"cache_read_tokens"`
+			} `json:"usage"`
+		} `json:"event"`
+	} `json:"payload"`
+}
+
+func (e museEvent) record(account, parentSession string) (usage.Record, bool) {
+	ev := e.Payload.Event
+	u := ev.Usage
+	if e.PayloadType != "runtime.session" || e.Payload.Kind != "run" || ev.Kind != "model_completed" || u == nil || e.ID == "" || ev.Model == "" {
+		return usage.Record{}, false
+	}
+	sessionID := parentSession
+	if sessionID == "" {
+		sessionID = e.Stream.ID
+	}
+	tMs := e.RecordedAt / 1000
+	if tMs <= 0 || sessionID == "" || len(e.ID) > 256 || len(sessionID) > 256 || len(ev.Model) > 200 || min(u.Input, u.Output, u.Cached, u.CacheRead, u.CacheWrite) < 0 {
+		return usage.Record{}, false
+	}
+	cacheRead := max(u.CacheRead, u.Cached)
+	input := max(0, u.Input-cacheRead)
+	return usage.Record{
+		RequestID:          "muse-local:" + e.ID,
+		MessageID:          e.ID,
+		SessionID:          sessionID,
+		Time:               tMs,
+		Ms:                 max(0, ev.DurationMs),
+		Harness:            "muse",
+		Provider:           "meta",
+		Model:              ev.Model,
+		Account:            account,
+		AccountAttribution: "profile",
+		Source:             "muse-local",
+		Kind:               "completion",
+		State:              "recorded",
+		Input:              input,
+		Output:             u.Output,
+		CacheRead:          cacheRead,
+		CacheWrite:         u.CacheWrite,
+	}, true
+}
+
+func (i *Importer) agyAccountAndModel(agyDir string) (string, string) {
+	model := "agy"
+	var settings struct {
+		Model string `json:"model"`
+	}
+	if readSmall(filepath.Join(agyDir, "settings.json"), &settings) && settings.Model != "" && len(settings.Model) <= 200 {
+		model = settings.Model
+	}
+	if f, err := os.Open(filepath.Join(agyDir, "cli.log")); err == nil {
+		b, _ := io.ReadAll(io.LimitReader(f, 1<<20))
+		f.Close()
+		const marker = "applyAuthResult: email="
+		if idx := strings.LastIndex(string(b), marker); idx >= 0 {
+			rest := string(b)[idx+len(marker):]
+			if end := strings.IndexAny(rest, ", \t\r\n"); end >= 0 {
+				rest = rest[:end]
+			}
+			if len(rest) <= 320 && strings.Contains(rest, "@") {
+				return rest, model
+			}
+		}
+	}
+	return "Local profile: antigravity-cli", model
+}
+
+func (i *Importer) scanAGY(ctx context.Context, seen map[string]bool, status *Status) {
+	agyDir := filepath.Join(i.Home, ".gemini/antigravity-cli")
+	brainRoot := filepath.Join(agyDir, "brain")
+	if _, err := os.Stat(brainRoot); os.IsNotExist(err) {
+		return
+	}
+	account, defaultModel := i.agyAccountAndModel(agyDir)
+	if dbPath := filepath.Join(agyDir, "conversation_summaries.db"); fileExists(dbPath) {
+		u := url.URL{Scheme: "file", Path: dbPath}
+		if db, err := sql.Open("sqlite", u.String()+"?mode=ro&_pragma=busy_timeout(2000)"); err == nil {
+			rows, qErr := db.QueryContext(ctx, "SELECT conversation_id, title, workspace_uris FROM conversation_summaries")
+			if qErr == nil {
+				for rows.Next() {
+					var id, title, urisRaw string
+					if rows.Scan(&id, &title, &urisRaw) == nil {
+						var uris []string
+						_ = json.Unmarshal([]byte(urisRaw), &uris)
+						cwd := ""
+						if len(uris) > 0 {
+							cwd = strings.TrimPrefix(uris[0], "file://")
+						}
+						_ = i.saveSessionMeta(id, cwd, title)
+					}
+				}
+				rows.Close()
+			}
+			db.Close()
+		}
+	}
+	entries, err := os.ReadDir(brainRoot)
+	if err != nil {
+		status.FailedFiles++
+		return
+	}
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return
+		}
+		if !entry.IsDir() {
+			continue
+		}
+		convID := entry.Name()
+		path := filepath.Join(brainRoot, convID, ".system_generated/logs/transcript.jsonl")
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || seen[path] {
+			continue
+		}
+		seen[path] = true
+		status.Files++
+		skipped, err := i.scanFile(ctx, path, func(line []byte) (bool, error) {
+			var e agyEvent
+			if json.Unmarshal(line, &e) != nil {
+				return true, nil
+			}
+			if rec, ok := e.record(account, convID, defaultModel); ok {
+				if err := i.Store.SaveRecord(rec); err != nil {
+					return false, err
+				}
+			}
+			return false, nil
+		})
+		status.SkippedLines += skipped
+		if err != nil {
+			status.FailedFiles++
+		}
+	}
+}
+
+type agyEvent struct {
+	Type            string `json:"type"`
+	StepIndex       int    `json:"step_index"`
+	CreatedAt       string `json:"created_at"`
+	Status          string `json:"status"`
+	Model           string `json:"model"`
+	InputTokens     int64  `json:"input_tokens"`
+	CacheReadTokens int64  `json:"cache_read_tokens"`
+	OutputTokens    int64  `json:"output_tokens"`
+}
+
+func (e agyEvent) record(account, convID, defaultModel string) (usage.Record, bool) {
+	t, err := time.Parse(time.RFC3339Nano, e.CreatedAt)
+	if e.Type != "PLANNER_RESPONSE" || err != nil || t.UnixMilli() <= 0 || convID == "" || e.StepIndex < 0 {
+		return usage.Record{}, false
+	}
+	if min(e.InputTokens, e.CacheReadTokens, e.OutputTokens) < 0 || e.InputTokens+e.CacheReadTokens+e.OutputTokens == 0 {
+		return usage.Record{}, false
+	}
+	model := e.Model
+	if model == "" {
+		model = defaultModel
+	}
+	if len(convID) > 256 || len(model) > 200 {
+		return usage.Record{}, false
+	}
+	id := fmt.Sprintf("agy-local:%s:%d", convID, e.StepIndex)
+	return usage.Record{
+		RequestID:          id,
+		MessageID:          id,
+		SessionID:          convID,
+		Time:               t.UnixMilli(),
+		Harness:            "agy",
+		Provider:           "google",
+		Model:              model,
+		Account:            account,
+		AccountAttribution: "profile",
+		Source:             "agy-local",
+		Kind:               "completion",
+		State:              "recorded",
+		Input:              e.InputTokens,
+		Output:             e.OutputTokens,
+		CacheRead:          e.CacheReadTokens,
+	}, true
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func readLine(r *bufio.Reader) ([]byte, int, bool, error) {

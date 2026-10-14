@@ -8,7 +8,7 @@ export type LimitWindow = {
 };
 export type LimitAccount = {
 	id: string;
-	provider: 'codex' | 'claude';
+	provider: 'codex' | 'claude' | 'agy' | 'muse';
 	email: string;
 	workspace?: string;
 	plan?: string;
@@ -67,6 +67,7 @@ export function resetCreditInfo(account: LimitAccount, now: number) {
 }
 
 export function widgetGroups(accounts: LimitAccount[]): { key: string; label: string; accounts: LimitAccount[] }[] {
+	const order: Record<string, number> = { codex: 0, claude: 1, agy: 2, muse: 3 };
 	const groups = new Map<string, { key: string; label: string; accounts: LimitAccount[] }>();
 	for (const account of accounts) {
 		const key = account.email.toLowerCase() || account.id;
@@ -75,17 +76,41 @@ export function widgetGroups(accounts: LimitAccount[]): { key: string; label: st
 		groups.set(key, group);
 	}
 	return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label)).map(g => ({ ...g,
-		accounts: g.accounts.sort((a, b) => (a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider === 'codex' ? -1 : 1))
+		accounts: g.accounts.sort((a, b) => (a.provider === b.provider ? a.id.localeCompare(b.id) : (order[a.provider] ?? 9) - (order[b.provider] ?? 9)))
 	}));
 }
 
+const providerLabels: Record<string, string> = {
+	codex: 'Codex',
+	claude: 'Claude',
+	agy: 'Google',
+	muse: 'Facebook'
+};
+
 export function widgetProviderGroups(accounts: LimitAccount[]): { key: string; label: string; accounts: LimitAccount[] }[] {
-	return ['codex', 'claude'].map(provider => ({
+	return (['codex', 'claude', 'agy', 'muse'] as const).map(provider => ({
 		key: provider,
-		label: provider === 'codex' ? 'Codex' : 'Claude',
+		label: providerLabels[provider],
 		accounts: accounts.filter(account => account.provider === provider)
 			.sort((a, b) => a.email.toLowerCase().localeCompare(b.email.toLowerCase()) || a.id.localeCompare(b.id))
 	})).filter(group => group.accounts.length > 0);
+}
+
+export function widgetAccountCells(account: LimitAccount): {
+	fiveHour: LimitWindow | null;
+	weekly: LimitWindow | null;
+	extra: LimitWindow | null;
+	extraLabel: string;
+} {
+	const fiveHour = account.windows.find(w => w.label === '5-hour') ?? null;
+	const weekly = account.windows.find(w => w.label === 'Weekly') ?? null;
+	const others = account.windows.filter(w => w !== fiveHour && w !== weekly);
+	const extra = others.find(w => w.label.endsWith(' · Weekly')) ?? others[0] ?? null;
+	let extraLabel = '';
+	if (extra) {
+		extraLabel = extra.label.replace(/ · Weekly$/, '').replace(/ · 5-hour$/, '').replace(/^Claude & GPT$/, '3P');
+	}
+	return { fiveHour, weekly, extra, extraLabel };
 }
 
 export function widgetWindows(account: LimitAccount): (LimitWindow | null)[] {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -367,3 +368,62 @@ func TestStartupRenewsBeforeCollectingLimits(t *testing.T) {
 		t.Fatal("startup did not maintain idle credentials")
 	}
 }
+
+func TestAGYAndMuseLimits(t *testing.T) {
+	agyJSON := `{"command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.75,"reset_time":"2030-01-07T00:00:00Z"},{"id":"gemini-5h","window":"5h","remaining_fraction":0.5,"reset_time":"2030-01-01T05:00:00Z"}]},{"name":"Claude and GPT models","buckets":[{"id":"3p-weekly","window":"weekly","remaining_fraction":0.9,"reset_time":"2030-01-07T00:00:00Z"},{"id":"3p-5h","window":"5h","remaining_fraction":0.8,"reset_time":"2030-01-01T05:00:00Z"}]}]}}}`
+	ws, err := parseAGY([]byte(agyJSON))
+	if err != nil || len(ws) != 4 {
+		t.Fatalf("parseAGY: %+v %v", ws, err)
+	}
+	if ws[0].Label != "Weekly" || *ws[0].UsedPercent != 25 || ws[1].Label != "5-hour" || *ws[1].UsedPercent != 50 {
+		t.Fatalf("unexpected primary AGY windows: %+v", ws)
+	}
+	if ws[2].Label != "Claude & GPT · 5-hour" || math.Abs(*ws[2].UsedPercent-20) > 1e-6 || ws[3].Label != "Claude & GPT · Weekly" || math.Abs(*ws[3].UsedPercent-10) > 1e-6 {
+		t.Fatalf("unexpected secondary AGY windows: %+v", ws)
+	}
+
+	home := t.TempDir()
+	for _, key := range []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR", "HERMES_HOME", "AGY_HOME", "AGY_BIN", "MUSE_AUTH_PATH"} {
+		t.Setenv(key, "")
+	}
+	agyDir := filepath.Join(home, ".gemini", "antigravity-cli")
+	if err := os.MkdirAll(agyDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agyDir, "cli.log"), []byte("I1014 10:18:31.015864 1 server_oauth.go:204] applyAuthResult: email=user@example.com, authMethod=consumer\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	fakeAGY := filepath.Join(binDir, "agy")
+	script := "#!/bin/sh\nprintf '%s\\n' '" + agyJSON + "'\n"
+	if err := os.WriteFile(fakeAGY, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	museDir := filepath.Join(home, ".config", "muse")
+	if err := os.MkdirAll(museDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	museAuth := `{"providers":{"meta":{"mechanism":"oauth","storage":"keychain","subs_active":true,"user_full_name":"Test User","user_email":"user@example.com"}}}`
+	if err := os.WriteFile(filepath.Join(museDir, "auth.json"), []byte(museAuth), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := testService(t, nil, nil)
+	s.discover = func(ctx context.Context) []source { return discover(ctx, home) }
+	s.Refresh(context.Background())
+	snap := s.Snapshot()
+	if len(snap.Accounts) != 2 {
+		t.Fatalf("expected 2 accounts (agy + muse), got %+v", snap.Accounts)
+	}
+	if snap.Accounts[0].Provider != "agy" || snap.Accounts[0].Email != "user@example.com" || snap.Accounts[0].Status != "fresh" || len(snap.Accounts[0].Windows) != 4 {
+		t.Fatalf("unexpected agy account: %+v", snap.Accounts[0])
+	}
+	if snap.Accounts[1].Provider != "muse" || snap.Accounts[1].Email != "user@example.com" || snap.Accounts[1].Status != "fresh" || snap.Accounts[1].Plan != "Muse Code" || len(snap.Accounts[1].Windows) != 2 {
+		t.Fatalf("unexpected muse account: %+v", snap.Accounts[1])
+	}
+}
+

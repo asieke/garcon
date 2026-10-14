@@ -120,7 +120,8 @@ func (s *Store) claudeSessionMetadata(sessions []map[string]any) error {
 	byID := map[string]map[string]any{}
 	args := []any{}
 	for _, session := range sessions {
-		if session["harness"] == "claude" {
+		h, _ := session["harness"].(string)
+		if h == "claude" || h == "muse" || h == "agy" {
 			id := session["session_id"].(string)
 			byID[id] = session
 			args = append(args, id)
@@ -139,8 +140,14 @@ func (s *Store) claudeSessionMetadata(sessions []map[string]any) error {
 		if err = rows.Scan(&id, &cwd, &entrypoint); err != nil {
 			return err
 		}
-		byID[id]["task"] = map[string]any{"title": filepath.Base(cwd), "cwd": cwd, "archived": false}
-		byID[id]["entrypoint"] = entrypoint
+		sess := byID[id]
+		h, _ := sess["harness"].(string)
+		title := filepath.Base(cwd)
+		if (h == "muse" || h == "agy") && entrypoint != "" {
+			title = entrypoint
+		}
+		sess["task"] = map[string]any{"title": title, "cwd": cwd, "archived": false}
+		sess["entrypoint"] = entrypoint
 	}
 	return rows.Err()
 }

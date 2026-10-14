@@ -169,3 +169,35 @@ func TestRegisteredCustomProfileAndMissingHomes(t *testing.T) {
 		t.Fatalf("custom/duplicate roots: %+v", i.Snapshot())
 	}
 }
+
+func TestMuseAndAGYLocalImport(t *testing.T) {
+	i, _ := setup(t)
+	ctx := context.Background()
+
+	// Muse setup
+	put(t, filepath.Join(i.Home, ".config/muse/auth.json"), `{"providers":{"meta":{"user_email":"muse@example.com"}}}`)
+	museLog := filepath.Join(i.Home, ".local/share/muse/sessions/2026/10/14/sess-muse-1/session.jsonl")
+	put(t, museLog, `{"id":"evt-1","stream":{"kind":"session","id":"sess-muse-1"},"recorded_at":1791903248148000,"payload_type":"runtime.session","payload":{"kind":"run","event":{"kind":"model_completed","model":"muse-wonder-1.0","duration_ms":3688,"usage":{"input_tokens":2000,"output_tokens":50,"cached_tokens":500,"cache_write_tokens":100,"cache_read_tokens":500}}}}`+"\n")
+
+	// AGY setup
+	put(t, filepath.Join(i.Home, ".gemini/antigravity-cli/settings.json"), `{"model":"Claude Opus 5.5 (Medium)"}`)
+	put(t, filepath.Join(i.Home, ".gemini/antigravity-cli/cli.log"), "I1014 10:18:31.015864 1 server_oauth.go:204] applyAuthResult: email=agy@example.com, authMethod=consumer\n")
+	agyLog := filepath.Join(i.Home, ".gemini/antigravity-cli/brain/conv-agy-1/.system_generated/logs/transcript.jsonl")
+	put(t, agyLog, `{"type":"PLANNER_RESPONSE","step_index":3,"created_at":"2026-10-14T13:19:01Z","status":"DONE","input_tokens":3355,"cache_read_tokens":22222,"output_tokens":485}`+"\n")
+
+	i.Scan(ctx)
+	rows := i.Store.All()
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 imported rows, got %+v", rows)
+	}
+	if rows[0].Harness != "muse" || rows[0].Provider != "meta" || rows[0].Account != "muse@example.com" || rows[0].Input != 1500 || rows[0].CacheRead != 500 || rows[0].CacheWrite != 100 || rows[0].Output != 50 {
+		t.Fatalf("unexpected muse row: %+v", rows[0])
+	}
+	if rows[1].Harness != "agy" || rows[1].Provider != "google" || rows[1].Account != "agy@example.com" || rows[1].Model != "Claude Opus 5.5 (Medium)" || rows[1].Input != 3355 || rows[1].CacheRead != 22222 || rows[1].Output != 485 {
+		t.Fatalf("unexpected agy row: %+v", rows[1])
+	}
+	if len(i.Store.Recent()) != 0 {
+		t.Fatal("muse/agy backfill entered live ticker")
+	}
+}
+

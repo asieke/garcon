@@ -77,7 +77,7 @@ func (s *Store) SaveRecord(r usage.Record) error {
 		return err
 	}
 	// Backfills and local log updates belong in analytics, never the live feed.
-	if r.Source == "claude-local" {
+	if r.Source == "claude-local" || r.Source == "muse-local" || r.Source == "agy-local" {
 		return nil
 	}
 	found := false

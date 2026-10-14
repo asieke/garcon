@@ -5,22 +5,26 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"garcon/internal/claude"
 )
 
 // source exists only during a refresh. Access tokens never enter snapshots.
 type source struct {
-	account  Account
-	token    string
-	selected string
-	expires  int64
-	problem  string
+	account    Account
+	token      string
+	selected   string
+	expires    int64
+	problem    string
+	localFetch func(context.Context) (string, string, []Window, error)
 }
 
 func readFile(path string) ([]byte, error) {
@@ -143,7 +147,10 @@ func discover(ctx context.Context, home string) []source {
 		}
 		out = append(out, hermesSources(b)...)
 	}
-	return append(out, discoverClaude(ctx, home)...)
+	out = append(out, discoverClaude(ctx, home)...)
+	out = append(out, discoverAGY(ctx, home)...)
+	out = append(out, discoverMuse(ctx, home)...)
+	return out
 }
 
 func discoverClaude(ctx context.Context, home string) []source {
@@ -174,6 +181,156 @@ func discoverClaude(ctx context.Context, home string) []source {
 		}
 		if err != nil {
 			s.problem = "Login needs refresh"
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func extractAGYEmail(b []byte) string {
+	const marker = "applyAuthResult: email="
+	idx := strings.LastIndex(string(b), marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := string(b)[idx+len(marker):]
+	if end := strings.IndexAny(rest, ", \t\r\n"); end >= 0 {
+		rest = rest[:end]
+	}
+	if strings.Contains(rest, "@") && len(rest) <= 320 {
+		return rest
+	}
+	return ""
+}
+
+func discoverAGY(_ context.Context, home string) []source {
+	agyDir := filepath.Join(home, ".gemini", "antigravity-cli")
+	if env := os.Getenv("AGY_HOME"); env != "" {
+		agyDir = env
+	}
+	st, err := os.Stat(agyDir)
+	if err != nil || !st.IsDir() {
+		return nil
+	}
+	cachedEmail := ""
+	if b, err := readFile(filepath.Join(agyDir, "cli.log")); err == nil {
+		cachedEmail = extractAGYEmail(b)
+	}
+	bin := os.Getenv("AGY_BIN")
+	if bin == "" {
+		candidate := filepath.Join(home, ".local", "bin", "agy")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			bin = candidate
+		} else if p, err := exec.LookPath("agy"); err == nil {
+			bin = p
+		}
+	}
+	id := accountID("agy", agyDir, "")
+	s := source{
+		token:   "local:agy",
+		account: Account{ID: id, Provider: "agy", Email: cachedEmail, Plan: "Antigravity"},
+	}
+	if bin == "" {
+		s.problem = "AGY CLI binary not found"
+		return []source{s}
+	}
+	s.localFetch = func(ctx context.Context) (string, string, []Window, error) {
+		runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		tmpLog, err := os.CreateTemp("", "garcon-agy-*.log")
+		logPath := ""
+		if err == nil {
+			logPath = tmpLog.Name()
+			tmpLog.Close()
+			defer os.Remove(logPath)
+		}
+		args := []string{"-p", "/usage", "--output-format", "json"}
+		if logPath != "" {
+			args = append(args, "--log-file", logPath)
+		}
+		cmd := exec.CommandContext(runCtx, bin, args...)
+		out, err := cmd.Output()
+		email := cachedEmail
+		if logPath != "" {
+			if b, readErr := readFile(logPath); readErr == nil {
+				if e := extractAGYEmail(b); e != "" {
+					email = e
+				}
+			}
+		}
+		if err != nil {
+			return email, "Antigravity", nil, errors.New("Could not query AGY CLI usage")
+		}
+		ws, err := parseAGY(out)
+		if err != nil {
+			return email, "Antigravity", nil, err
+		}
+		return email, "Antigravity", ws, nil
+	}
+	return []source{s}
+}
+
+func discoverMuse(_ context.Context, home string) []source {
+	paths := []string{filepath.Join(home, ".config", "muse", "auth.json")}
+	if env := os.Getenv("MUSE_AUTH_PATH"); env != "" {
+		paths = append(paths, env)
+	}
+	seen := map[string]bool{}
+	out := []source{}
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil || seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		b, err := readFile(abs)
+		if err != nil {
+			continue
+		}
+		var data struct {
+			Providers map[string]struct {
+				Mechanism    string     `json:"mechanism"`
+				Storage      string     `json:"storage"`
+				SubsActive   bool       `json:"subs_active"`
+				SubsTierName string     `json:"subs_tier_name"`
+				UserFullName string     `json:"user_full_name"`
+				UserEmail    string     `json:"user_email"`
+				SubsUsage    *museUsage `json:"subs_usage"`
+			} `json:"providers"`
+		}
+		if json.Unmarshal(b, &data) != nil {
+			continue
+		}
+		meta, ok := data.Providers["meta"]
+		if !ok || (meta.UserEmail == "" && !meta.SubsActive && meta.Mechanism == "") {
+			continue
+		}
+		person := meta.UserEmail
+		if person == "" {
+			person = meta.UserFullName
+		}
+		if person == "" {
+			person = abs
+		}
+		plan := meta.SubsTierName
+		if plan == "" {
+			if meta.SubsActive {
+				plan = "Muse Code"
+			} else {
+				plan = "Meta"
+			}
+		}
+		s := source{
+			token:   "local:muse",
+			account: Account{ID: accountID("muse", person, ""), Provider: "muse", Email: meta.UserEmail, Workspace: meta.UserFullName, Plan: plan},
+		}
+		if !meta.SubsActive && meta.SubsUsage == nil && meta.UserEmail == "" {
+			s.problem = "Login needs refresh"
+		} else {
+			usageSnap := meta.SubsUsage
+			s.localFetch = func(context.Context) (string, string, []Window, error) {
+				return meta.UserEmail, plan, parseMuseWindows(usageSnap), nil
+			}
 		}
 		out = append(out, s)
 	}

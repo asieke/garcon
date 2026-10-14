@@ -1,11 +1,19 @@
 <script lang="ts">
   import codex from "$lib/assets/providers/openai-app.png";
   import claude from "$lib/assets/providers/claude-app.png";
+  import google from "$lib/assets/providers/google.svg";
+  import facebook from "$lib/assets/providers/facebook.svg";
   import Icon from "./Icon.svelte";
   import { harnessName } from "./harness";
 
   let { harness, size = 24 }: { harness?: string; size?: number } = $props();
-  const src = $derived(harness === "codex" ? codex : harness === "claude" ? claude : undefined);
+  const src = $derived(
+    harness === "codex" ? codex
+    : harness === "claude" ? claude
+    : harness === "agy" || harness === "google" ? google
+    : harness === "muse" || harness === "facebook" || harness === "meta" ? facebook
+    : undefined
+  );
 </script>
 
 <span class="harness-logo" title={harnessName(harness)} role="img" aria-label={harnessName(harness)}>

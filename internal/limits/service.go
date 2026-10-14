@@ -97,7 +97,7 @@ func New(dir string, databases ...*database.DB) *Service {
 		_ = s.db.Get("limits", &s.cache)
 		filtered := []Account{}
 		for _, a := range s.cache.Accounts {
-			if a.Provider == "codex" || a.Provider == "claude" {
+			if a.Provider == "codex" || a.Provider == "claude" || a.Provider == "agy" || a.Provider == "muse" {
 				a.Status = "stale"
 				filtered = append(filtered, a)
 			}
@@ -105,7 +105,10 @@ func New(dir string, databases ...*database.DB) *Service {
 		s.cache.Accounts = filtered
 		s.cache.Refreshing = false
 		s.discover = func(ctx context.Context) []source {
-			return append(discoverCodex(home), discoverClaude(ctx, home)...)
+			out := append(discoverCodex(home), discoverClaude(ctx, home)...)
+			out = append(out, discoverAGY(ctx, home)...)
+			out = append(out, discoverMuse(ctx, home)...)
+			return out
 		}
 		s.maintain = nil
 	}
@@ -304,6 +307,28 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 			a.Error = "Provider refresh is rate limited"
 			if a.FetchedAt > 0 {
 				a.Status = "stale"
+			}
+		case src.localFetch != nil:
+			email, plan, ws, err := src.localFetch(ctx)
+			if email != "" {
+				a.Email = email
+			}
+			if plan != "" {
+				a.Plan = plan
+			}
+			if err == nil {
+				a.Windows = ws
+				a.FetchedAt = s.now().UnixMilli()
+				a.Status = "fresh"
+				if len(ws) == 0 {
+					a.Status = "unavailable"
+					a.Error = "No subscription limits reported"
+				}
+			} else {
+				a.Error = err.Error()
+				if a.FetchedAt > 0 {
+					a.Status = "stale"
+				}
 			}
 		default:
 			var raw []byte

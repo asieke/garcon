@@ -18,10 +18,10 @@ func maxUsage(dst *usage.Record, src usage.Record) {
 // order. Legacy proxy rows can only be joined by a unique exact usage match in
 // the same session and request interval. Never infer a join from time alone.
 func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
-	if r.Harness != "claude" || r.Kind != "completion" {
+	if r.Kind != "completion" {
 		return false, nil
 	}
-	imported := r.Source == "claude-local"
+	imported := r.Source == "claude-local" || r.Source == "muse-local" || r.Source == "agy-local"
 	if imported {
 		var raw string
 		err := tx.QueryRow("SELECT record FROM requests WHERE request_id=?", r.RequestID).Scan(&raw)
@@ -39,6 +39,9 @@ func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
 			r.Account, r.AccountAttribution = old.Account, old.AccountAttribution
 			r.SessionID = old.SessionID
 		}
+	}
+	if r.Harness != "claude" {
+		return false, nil
 	}
 	where := `json_extract(record,'$.harness')='claude' AND kind='completion' AND (request_id IS NULL OR request_id!=?) AND `
 	args := []any{r.RequestID}
