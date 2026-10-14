@@ -10,6 +10,11 @@ Open the app at **http://127.0.0.1:4141**. It has four sections: **Accounts, Ses
 
 These docs describe the current source. An installed npm release may lag behind unmerged changes.
 
+## Scope
+
+- Does: route Codex conversations across your enrolled accounts by quota, pin new conversations to an account, relay Claude Code, Pi and other compatible clients to their providers, import local Claude Code usage, and show requests, sessions, usage, limits and errors at http://127.0.0.1:4141.
+- Does not: store prompts, response bodies or OAuth tokens, replay a failed request on another account, sync across devices, or authenticate dashboard users (keep the loopback binding).
+
 ## Get started
 
 ```sh
@@ -61,7 +66,7 @@ For a new Codex conversation, Garcon checks login health, quota, and model acces
 
 In the Usage widget, **Up next** marks the account automatic routing would select for a new conversation (model access can change the choice). Click **Pin** on a Codex account to assign new Codex conversations to that account until you **Unpin**. The pin survives restarts and never silently falls back if the account is unavailable. Claude and realtime voice routing are unchanged.
 
-From a terminal, run `garcon codex status` to list accounts, `garcon codex pin <account-id-or-email>` to pin one, and `garcon codex unpin` to resume automatic selection for new conversations. Add `--json` for scripting.
+From a terminal, run `garcon codex status` to list accounts, `garcon codex pin ACCOUNT` (an account ID or email) to pin one, and `garcon codex unpin` to resume automatic selection for new conversations. Add `--json` for scripting.
 
 Built-in Codex image generation and editing use the caller's ChatGPT login and image allowance. Garcon forwards their JSON or multipart payloads unchanged. These calls do not require a coding session ID and are outside the coding account pool and manual pin, like realtime voice.
 
@@ -123,13 +128,16 @@ See [Contributing](CONTRIBUTING.md) for the repository layout, review workflow, 
 Source builds need Go 1.27+ and Node 22+; versions are in `.mise.toml`.
 
 ```sh
-bash scripts/dev.sh              # build and run on 4242
-cd web && npm run dev:frontend    # hot reload; API comes from 4141
+bash scripts/dev.sh              # build the dashboard and serve it on 4242; API comes from 4141
 ```
 
-Production stays on **4141**; development uses **4242**. Keep your tools pointed at 4141. Both development modes use real local data, so dashboard edits affect your settings. Set `GARCON_BACKEND_URL` to choose a different backend for frontend work.
+Production stays on **4141**; development uses **4242**. Keep your tools pointed at 4141. The development dashboard uses real local data, so dashboard edits affect your settings. Set `GARCON_BACKEND_URL` to choose a different backend.
 
-Run `go test ./...` and, from `web/`, `npm run check && npm test && npm run build`. Rebuild and install explicitly to update production; a frontend dev server doesn't update the installed binary.
+Run `scripts/check.sh` before pushing; it includes `go test ./...` and, from `web/`, `npm run check && npm test && npm run build`. Rebuild and install explicitly to update production; the development dashboard doesn't update the installed binary.
+
+### Architecture
+
+One Go binary (`cmd/garcon`, packages in `internal/`) serves the proxy, the JSON API and the dashboard on port 4141. The dashboard is a SvelteKit app in `web/`, built into `internal/dashboard/build` and embedded in the binary. Request metadata, account assignments, preferences and snapshots live in SQLite at `~/.local/share/garcon/usage.db`. The npm package `ai-garcon` (`npm/ai-garcon/`) ships prebuilt binaries for linux and darwin on x64 and arm64. `macos/` holds the optional native usage widget.
 
 Source: `web/` (UI), `internal/` (backend), `docs/` (documentation).
 
@@ -142,3 +150,22 @@ Merges to `main` trigger an npm patch release. `[minor]` or `[major]` in the mer
 `garcon delegate` lets a local Codex task request a bounded, opt-in task from the
 installed Claude Code CLI. It does not replace Codex's native model backend or use
 Garcon's account pools. See [architecture, auth boundaries, setup and validation](docs/codex-cli-delegation.md).
+
+## Test
+
+- `scripts/check.sh` runs the repository-boundary check, the dashboard check, tests and build, `go vet ./...`, `go test ./...` and the npm package tests. CI runs it on every pull request, after scanning new commits for secrets, and then runs `scripts/release.sh 9.9.9 --dry-run` (the four cross-builds and a dry-run pack).
+- Tests need no `.env` file and no real accounts.
+- Smoke test after deploy: `curl -fsS http://127.0.0.1:4141/api/usage`
+
+## Deploy
+
+Every merge into `main` publishes a new `ai-garcon` release to npm (see [Work on Garcon](#work-on-garcon)). npm installs pick it up with `garcon update`.
+
+The owner's live install is a source build:
+
+- **Host machine:** `macbook`. The live app runs from `~/apps/garcon`, which always stays on `main`. It installs `~/.local/bin/garcon` and runs it as the background service.
+- **Secrets:** none in the repository or in `.env`. Settings live in `~/.config/garcon`, provider CLIs own their logins, and a saved OpenRouter key lives in a separate owner-only file.
+- **First install:** `git clone https://github.com/asieke/garcon ~/apps/garcon && ~/apps/garcon/scripts/install.sh --service`
+- **Deploy script:** `scripts/deploy.sh` refuses unless `~/apps/garcon` is a clean checkout of `main`, fetches and resets to `origin/main`, runs `scripts/install.sh` (dashboard and binary build, install, service restart) and runs the smoke test. It is safe to run repeatedly; `--force` rebuilds when already up to date.
+- **On a desktop:** run `~/apps/garcon/scripts/deploy.sh` manually after merging a pull request. Finish active requests first: the service restarts.
+- **Branch work:** when working on a branch on `macbook`, use a separate checkout at `~/work/garcon/` (one folder per branch); never edit `~/apps/garcon` directly. Changes reach the live app only by merging a pull request to `main`.
