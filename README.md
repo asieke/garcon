@@ -153,7 +153,7 @@ Garcon's account pools. See [architecture, auth boundaries, setup and validation
 
 ## Test
 
-- `scripts/check.sh` runs the repository-boundary check, the dashboard check, tests and build, `go vet ./...`, `go test ./...` and the npm package tests. CI runs it on every pull request, after scanning new commits for secrets, and then runs `scripts/release.sh 9.9.9 --dry-run` (the four cross-builds and a dry-run pack).
+- `scripts/check.sh` runs the repository-boundary check, the dashboard check, tests and build, `go vet ./...`, `go test ./...` and the npm package tests. CI runs it on every pull request and push to `main`, after scanning new commits for secrets. On pull requests it then runs `scripts/release.sh 9.9.9 --dry-run` without repeating the tests (the four cross-builds and a dry-run pack); on `main` the Release workflow runs the real build instead.
 - Tests need no `.env` file and no real accounts.
 - Smoke test after deploy: `curl -fsS http://127.0.0.1:4141/api/usage`
 
