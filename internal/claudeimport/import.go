@@ -194,9 +194,12 @@ type checkpoint struct {
 	Offset, Size, Modified int64
 	Fingerprint            string
 	Skipped                int
+	// Parser is bumped when a reader learns to recognize lines it skipped
+	// before, so already-scanned files are read again. Records are idempotent.
+	Parser int `json:",omitempty"`
 }
 
-func (i *Importer) scanFile(ctx context.Context, path string, handle func([]byte) (bool, error)) (int, error) {
+func (i *Importer) scanFile(ctx context.Context, path string, parser int, handle func([]byte) (bool, error)) (int, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, err
@@ -216,7 +219,10 @@ func (i *Importer) scanFile(ctx context.Context, path string, handle func([]byte
 	if _, err = io.ReadFull(f, prefix); err != nil {
 		return old.Skipped, err
 	}
-	next := checkpoint{Size: info.Size(), Modified: info.ModTime().UnixNano(), Fingerprint: fmt.Sprintf("%x", sha256.Sum256(prefix))}
+	next := checkpoint{Size: info.Size(), Modified: info.ModTime().UnixNano(), Fingerprint: fmt.Sprintf("%x", sha256.Sum256(prefix)), Parser: parser}
+	if old.Parser != parser {
+		old = checkpoint{}
+	}
 	if old.Fingerprint == next.Fingerprint && old.Size == next.Size && old.Modified == next.Modified && old.Offset == next.Size {
 		return old.Skipped, nil
 	}
@@ -269,7 +275,7 @@ func (i *Importer) saveSessionMeta(sessionID, cwd, entrypoint string) error {
 }
 
 func (i *Importer) file(ctx context.Context, path, account string) (int, error) {
-	return i.scanFile(ctx, path, func(line []byte) (bool, error) {
+	return i.scanFile(ctx, path, 0, func(line []byte) (bool, error) {
 		var e event
 		if json.Unmarshal(line, &e) != nil {
 			return true, nil
@@ -302,22 +308,58 @@ func (i *Importer) museAccount() string {
 	return "Local profile: muse"
 }
 
+// museParser versions the Muse reader. Version 1 looked only under
+// ~/.local/share/muse and assumed microsecond timestamps.
+const museParser = 2
+
+// museHomes lists Muse data directories. The CLI keeps sessions under
+// ~/.muse; MUSE_HOME and the XDG location are also checked.
+func (i *Importer) museHomes() []string {
+	candidates := []string{}
+	if env := os.Getenv("MUSE_HOME"); env != "" {
+		candidates = append(candidates, env)
+	}
+	candidates = append(candidates, filepath.Join(i.Home, ".muse"), filepath.Join(i.Home, ".local/share/muse"))
+	seen := map[string]bool{}
+	out := []string{}
+	for _, p := range candidates {
+		p, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			continue
+		}
+		if p, err = filepath.Abs(p); err != nil || seen[p] {
+			continue
+		}
+		seen[p] = true
+		if info, err := os.Stat(filepath.Join(p, "sessions")); err == nil && info.IsDir() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func (i *Importer) scanMuse(ctx context.Context, seen map[string]bool, status *Status) {
-	museDir := filepath.Join(i.Home, ".local/share/muse")
-	sessionsRoot := filepath.Join(museDir, "sessions")
-	if _, err := os.Stat(sessionsRoot); os.IsNotExist(err) {
+	homes := i.museHomes()
+	if len(homes) == 0 {
 		return
 	}
 	account := i.museAccount()
+	for _, museDir := range homes {
+		i.scanMuseHome(ctx, museDir, account, seen, status)
+	}
+}
+
+func (i *Importer) scanMuseHome(ctx context.Context, museDir, account string, seen map[string]bool, status *Status) {
+	sessionsRoot := filepath.Join(museDir, "sessions")
 	if dbPath := filepath.Join(museDir, "session-index.db"); fileExists(dbPath) {
 		u := url.URL{Scheme: "file", Path: dbPath}
 		if db, err := sql.Open("sqlite", u.String()+"?mode=ro&_pragma=busy_timeout(2000)"); err == nil {
 			rows, qErr := db.QueryContext(ctx, "SELECT session_id, workspace_root, title FROM sessions")
 			if qErr == nil {
 				for rows.Next() {
-					var id, cwd, title string
+					var id, cwd, title sql.NullString
 					if rows.Scan(&id, &cwd, &title) == nil {
-						_ = i.saveSessionMeta(id, cwd, title)
+						_ = i.saveSessionMeta(id.String, cwd.String, title.String)
 					}
 				}
 				rows.Close()
@@ -339,7 +381,7 @@ func (i *Importer) scanMuse(ctx context.Context, seen map[string]bool, status *S
 		seen[path] = true
 		status.Files++
 		parentSession := museParentSession(path)
-		skipped, err := i.scanFile(ctx, path, func(line []byte) (bool, error) {
+		skipped, err := i.scanFile(ctx, path, museParser, func(line []byte) (bool, error) {
 			var e museEvent
 			if json.Unmarshal(line, &e) != nil {
 				return true, nil
@@ -362,6 +404,8 @@ func (i *Importer) scanMuse(ctx context.Context, seen map[string]bool, status *S
 	}
 }
 
+// museParentSession maps <session>/session.jsonl and the child logs under
+// <session>/subagent/ to the top-level session directory name.
 func museParentSession(path string) string {
 	slash := filepath.ToSlash(path)
 	if idx := strings.Index(slash, "/subagent/"); idx > 0 {
@@ -370,10 +414,32 @@ func museParentSession(path string) string {
 	return filepath.Base(filepath.Dir(slash))
 }
 
+// museCount tolerates integral counters written as floats.
+type museCount float64
+
+func (c museCount) n() int64 { return int64(c) }
+
+// museUsage accepts the durable snake_case counters and the protocol's
+// camelCase spelling of the same counters.
+type museUsage struct {
+	Input           museCount `json:"input_tokens"`
+	Output          museCount `json:"output_tokens"`
+	Cached          museCount `json:"cached_tokens"`
+	CacheWrite      museCount `json:"cache_write_tokens"`
+	CacheRead       museCount `json:"cache_read_tokens"`
+	InputCamel      museCount `json:"inputTokens"`
+	OutputCamel     museCount `json:"outputTokens"`
+	CachedCamel     museCount `json:"cachedTokens"`
+	CacheWriteCamel museCount `json:"cacheWriteTokens"`
+	CacheReadCamel  museCount `json:"cacheReadTokens"`
+}
+
+func pick(a, b museCount) int64 { return max(a.n(), b.n()) }
+
 type museEvent struct {
-	ID          string `json:"id"`
-	RecordedAt  int64  `json:"recorded_at"`
-	PayloadType string `json:"payload_type"`
+	ID          string      `json:"id"`
+	RecordedAt  json.Number `json:"recorded_at"`
+	PayloadType string      `json:"payload_type"`
 	Stream      struct {
 		Kind string `json:"kind"`
 		ID   string `json:"id"`
@@ -381,54 +447,72 @@ type museEvent struct {
 	Payload struct {
 		Kind  string `json:"kind"`
 		Event struct {
-			Kind       string `json:"kind"`
-			Model      string `json:"model"`
-			DurationMs int64  `json:"duration_ms"`
-			Usage      *struct {
-				Input      int64 `json:"input_tokens"`
-				Output     int64 `json:"output_tokens"`
-				Cached     int64 `json:"cached_tokens"`
-				CacheWrite int64 `json:"cache_write_tokens"`
-				CacheRead  int64 `json:"cache_read_tokens"`
-			} `json:"usage"`
+			Kind       string     `json:"kind"`
+			Model      string     `json:"model"`
+			ModelID    string     `json:"model_id"`
+			DurationMs museCount  `json:"duration_ms"`
+			Usage      *museUsage `json:"usage"`
 		} `json:"event"`
 	} `json:"payload"`
+}
+
+// epochMillis normalizes an epoch in seconds, milliseconds, microseconds or
+// nanoseconds to milliseconds.
+func epochMillis(v int64) int64 {
+	switch {
+	case v <= 0:
+		return 0
+	case v >= 1e17:
+		return v / 1e6
+	case v >= 1e14:
+		return v / 1e3
+	case v >= 1e11:
+		return v
+	default:
+		return v * 1000
+	}
 }
 
 func (e museEvent) record(account, parentSession string) (usage.Record, bool) {
 	ev := e.Payload.Event
 	u := ev.Usage
-	if e.PayloadType != "runtime.session" || e.Payload.Kind != "run" || ev.Kind != "model_completed" || u == nil || e.ID == "" || ev.Model == "" {
+	model := ev.Model
+	if model == "" {
+		model = ev.ModelID
+	}
+	if e.PayloadType != "runtime.session" || e.Payload.Kind != "run" || ev.Kind != "model_completed" || u == nil || e.ID == "" || model == "" {
 		return usage.Record{}, false
 	}
 	sessionID := parentSession
 	if sessionID == "" {
 		sessionID = e.Stream.ID
 	}
-	tMs := e.RecordedAt / 1000
-	if tMs <= 0 || sessionID == "" || len(e.ID) > 256 || len(sessionID) > 256 || len(ev.Model) > 200 || min(u.Input, u.Output, u.Cached, u.CacheRead, u.CacheWrite) < 0 {
+	recorded, err := e.RecordedAt.Float64()
+	tMs := epochMillis(int64(recorded))
+	input, output := pick(u.Input, u.InputCamel), pick(u.Output, u.OutputCamel)
+	cached, cacheRead, cacheWrite := pick(u.Cached, u.CachedCamel), pick(u.CacheRead, u.CacheReadCamel), pick(u.CacheWrite, u.CacheWriteCamel)
+	if err != nil || tMs <= 0 || sessionID == "" || len(e.ID) > 256 || len(sessionID) > 256 || len(model) > 200 || min(input, output, cached, cacheRead, cacheWrite) < 0 {
 		return usage.Record{}, false
 	}
-	cacheRead := max(u.CacheRead, u.Cached)
-	input := max(0, u.Input-cacheRead)
+	cacheRead = max(cacheRead, cached)
 	return usage.Record{
 		RequestID:          "muse-local:" + e.ID,
 		MessageID:          e.ID,
 		SessionID:          sessionID,
 		Time:               tMs,
-		Ms:                 max(0, ev.DurationMs),
+		Ms:                 max(0, ev.DurationMs.n()),
 		Harness:            "muse",
 		Provider:           "meta",
-		Model:              ev.Model,
+		Model:              model,
 		Account:            account,
 		AccountAttribution: "profile",
 		Source:             "muse-local",
 		Kind:               "completion",
 		State:              "recorded",
-		Input:              input,
-		Output:             u.Output,
+		Input:              max(0, input-cacheRead),
+		Output:             output,
 		CacheRead:          cacheRead,
-		CacheWrite:         u.CacheWrite,
+		CacheWrite:         cacheWrite,
 	}, true
 }
 
@@ -506,7 +590,7 @@ func (i *Importer) scanAGY(ctx context.Context, seen map[string]bool, status *St
 		}
 		seen[path] = true
 		status.Files++
-		skipped, err := i.scanFile(ctx, path, func(line []byte) (bool, error) {
+		skipped, err := i.scanFile(ctx, path, 0, func(line []byte) (bool, error) {
 			var e agyEvent
 			if json.Unmarshal(line, &e) != nil {
 				return true, nil

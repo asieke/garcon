@@ -17,6 +17,9 @@ func maxUsage(dst *usage.Record, src usage.Record) {
 // account/status/timing attribution; provider IDs join them in either arrival
 // order. Legacy proxy rows can only be joined by a unique exact usage match in
 // the same session and request interval. Never infer a join from time alone.
+// plausibleTime is 2001-01-01 in Unix milliseconds.
+const plausibleTime = 978307200000
+
 func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
 	if r.Kind != "completion" {
 		return false, nil
@@ -39,7 +42,11 @@ func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
 			tools := usage.MergeTools(old.Tools, r.Tools)
 			usage.MergeCall(r, old)
 			r.Tools = tools
-			r.Time = min(r.Time, old.Time)
+			// Keep the earliest observation, unless an older reader stored an
+			// implausible pre-2001 time that a corrected reader now replaces.
+			if old.Time >= plausibleTime {
+				r.Time = min(r.Time, old.Time)
+			}
 			// A later login change must not silently reattribute imported history.
 			r.Account, r.AccountAttribution = old.Account, old.AccountAttribution
 			r.SessionID = old.SessionID
