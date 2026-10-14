@@ -12,7 +12,7 @@ Missing data stays unknown. Snapshots older than ten minutes become stale; past 
 
 ## Use the widget
 
-The widget groups rows by email, keeping providers separate. Press **R** to refresh. Extra widgets don't add provider polling.
+The widget is one table with a section per provider that has a login (Codex, Claude, Google, Facebook) and a row per account, with 5-hour, weekly and scoped-limit or reset-credit columns. It fills the window above the request ticker: rows grow and their text and bars scale up in a tall window, and the table scrolls in a short one. Narrow windows put the account name above its three usage cells. Press **R** to refresh. Extra widgets don't add provider polling.
 
 Click an account email to give it a nickname. Nicknames are stored in local SQLite; older browser nicknames migrate on first use. Save a blank name to restore the email.
 
