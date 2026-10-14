@@ -54,8 +54,9 @@ gh pr merge --merge --delete-branch <pr>   # merge commit, like the rest of the 
 git checkout main && git pull --ff-only
 ```
 
-`PROJECT.md` sets `merge: owner`: only the owner merges. Never merge unless the owner
-explicitly said "merge" or "ship" for this PR, because the merge publishes. Then watch the run:
+`PROJECT.md` sets `merge: agent`: an agent may merge its own PR once the template is
+filled in and CI is green on the current head, without asking first. The merge publishes,
+so bring the branch up to date with `main` and wait for that run before merging. Then watch the run:
 
 ```sh
 gh run watch --exit-status        # the Release workflow for the merge commit

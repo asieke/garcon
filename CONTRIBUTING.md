@@ -43,7 +43,7 @@ State what you verified and any remaining limitations. Passing tests, merging, p
 
 ## Merge and cleanup
 
-Push the task branch and open or update its PR into protected main using the PR template. Only the owner merges (`merge: owner` in [PROJECT.md](PROJECT.md)), and only with passing required checks. Keep the task worktree available while its PR is open.
+Push the task branch and open or update its PR into protected main using the PR template. The agent that opened it may merge it (`merge: agent` in [PROJECT.md](PROJECT.md)) once the template is filled in and the required checks pass on the current head; every merge is a release. Keep the task worktree available while its PR is open.
 
 After an authorized merge, fetch and verify GitHub's merged PR state and its final head, including squash merges. Remove a worktree and its branch only when the branch matches that head, no additional work remains, and no active process or session depends on the checkout. Before removing a worktree, capture its available project-scoped conversations into the configured durable home while the path exists, preserving native logs and privacy exclusions. Retain the worktree if required capture is unavailable. Preserve useful ignored artifacts and durable environment sources first. Use normal worktree removal without force. Retain dirty, unpublished, closed-unmerged, or uncertain work; do not delete by age or branch name. Guard remote branch deletion against concurrent head changes. Fast-forward clean canonical main afterward.
 
