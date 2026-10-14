@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"garcon/internal/store"
 	"garcon/internal/usage"
@@ -680,6 +681,7 @@ func readLine(r *bufio.Reader) ([]byte, int, bool, error) {
 }
 
 // Intentionally omit content, tool inputs/results, prompts and credentials.
+// Content is decoded only for tool_use block names (usage.ToolCalls).
 type event struct {
 	Type       string `json:"type"`
 	Session    string `json:"sessionId"`
@@ -688,10 +690,14 @@ type event struct {
 	CWD        string `json:"cwd"`
 	Entrypoint string `json:"entrypoint"`
 	Error      bool   `json:"isApiErrorMessage"`
-	Message    struct {
-		ID    string `json:"id"`
-		Model string `json:"model"`
-		Usage *struct {
+	// Subagent (Task) transcripts mark their lines as a sidechain with the agent's ID.
+	Sidechain bool   `json:"isSidechain"`
+	AgentID   string `json:"agentId"`
+	Message   struct {
+		ID      string          `json:"id"`
+		Model   string          `json:"model"`
+		Content usage.ToolCalls `json:"content"`
+		Usage   *struct {
 			Input  int64 `json:"input_tokens"`
 			Output int64 `json:"output_tokens"`
 			Read   int64 `json:"cache_read_input_tokens"`
@@ -710,5 +716,13 @@ func (e event) record(account string) (usage.Record, bool) {
 	if len(m.ID) > 256 || len(e.Request) > 256 || len(e.Session) > 256 || len(m.Model) > 200 || min(u.Input, u.Output, u.Read, u.Write) < 0 {
 		return usage.Record{}, false
 	}
-	return usage.Record{RequestID: "claude-local:" + m.ID, MessageID: m.ID, UpstreamRequestID: e.Request, SessionID: e.Session, Time: t.UnixMilli(), Harness: "claude", Provider: "anthropic", Model: m.Model, Account: account, AccountAttribution: "profile", Source: "claude-local", Kind: "completion", State: "recorded", Input: u.Input, Output: u.Output, CacheRead: u.Read, CacheWrite: u.Write}, true
+	rec := usage.Record{RequestID: "claude-local:" + m.ID, MessageID: m.ID, UpstreamRequestID: e.Request, SessionID: e.Session, Time: t.UnixMilli(), Harness: "claude", Provider: "anthropic", Model: m.Model, Account: account, AccountAttribution: "profile", Source: "claude-local", Kind: "completion", State: "recorded", Input: u.Input, Output: u.Output, CacheRead: u.Read, CacheWrite: u.Write, Tools: m.Content}
+	if e.Sidechain {
+		rec.Subagent = "sidechain"
+		// The agent ID groups a subagent's calls as one child thread of the session.
+		if id := strings.TrimSpace(e.AgentID); id != "" && len(id) <= 128 && !strings.ContainsFunc(id, unicode.IsControl) {
+			rec.AgentName, rec.ThreadID = id, id
+		}
+	}
+	return rec, true
 }

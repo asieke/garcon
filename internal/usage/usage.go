@@ -62,6 +62,31 @@ type Record struct {
 	CacheRead  int64 `json:"cache_read"`
 	CacheWrite int64 `json:"cache_write"`
 	Output     int64 `json:"output"`
+
+	// Call details place a model call in its session. They are metadata only:
+	// tool names and kinds, never tool arguments, inputs or outputs. All are
+	// omitted on rows recorded before they were collected.
+
+	// Tools are the tool calls the model requested in this response (at most MaxTools).
+	Tools []Tool `json:"tools,omitempty"`
+	// ToolResults counts tool results the request returned to the model.
+	ToolResults int `json:"tool_results,omitempty"`
+	// Effort is the requested reasoning effort, such as low, medium or high.
+	Effort string `json:"effort,omitempty"`
+	// ReasoningTokens is the part of Output the provider reports as reasoning.
+	ReasoningTokens int64 `json:"reasoning_tokens,omitempty"`
+	// Subagent is the kind of agent that made the call: thread_spawn, review,
+	// compact, guardian, memory_consolidation, sidechain (Claude) or another label.
+	Subagent  string `json:"subagent,omitempty"`
+	AgentName string `json:"agent_name,omitempty"`
+	// ThreadID identifies a child agent thread within the session; omitted for
+	// the session's own thread.
+	ThreadID string `json:"thread_id,omitempty"`
+	// ParentSessionID is the conversation (thread) that started this one.
+	ParentSessionID string `json:"parent_session_id,omitempty"`
+	TurnID          string `json:"turn_id,omitempty"`
+	// RequestKind is Codex's request purpose: turn, prewarm, compaction or memory.
+	RequestKind string `json:"request_kind,omitempty"`
 }
 
 // block matches the Anthropic Messages, OpenAI Responses and OpenAI chat
@@ -75,6 +100,9 @@ type block struct {
 	Details    struct {
 		Cached int64 `json:"cached_tokens"`
 	} `json:"input_tokens_details"`
+	OutputDetails struct {
+		Reasoning int64 `json:"reasoning_tokens"`
+	} `json:"output_tokens_details"`
 	// Chat completions naming. Reasoning tokens are billed as, and included in,
 	// completion_tokens, so no separate field is needed.
 	PromptTokens     int64 `json:"prompt_tokens"`
@@ -82,17 +110,31 @@ type block struct {
 	PromptDetails    struct {
 		Cached int64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	CompletionDetails struct {
+		Reasoning int64 `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
 }
 
 // event is one response body or SSE data line. Model and usage sit at the top
 // level (Anthropic message_delta, non-streaming replies), under message
 // (Anthropic message_start) or under response (OpenAI response.* events).
+//
+// Tool calls come from completed Responses output items, Anthropic content
+// blocks and chat completions tool calls. Only their type, name and ID are
+// decoded; the tolerant list types never fail the event's usage decoding.
 type event struct {
 	ID       string `json:"id"`
+	Type     string `json:"type"`
 	Model    string `json:"model"`
 	Usage    *block `json:"usage"`
 	Message  *event `json:"message"`
 	Response *event `json:"response"`
+
+	Item         toolEntry  `json:"item"`
+	ContentBlock toolEntry  `json:"content_block"`
+	Output       toolList   `json:"output"`
+	Content      toolList   `json:"content"`
+	Choices      choiceList `json:"choices"`
 }
 
 // Fold reads every event in a body into rec, keeping the largest value seen per
@@ -119,7 +161,42 @@ func Fold(body []byte, rec *Record) {
 				rec.Output = max(rec.Output, u.Output, u.CompletionTokens)
 				rec.CacheRead = max(rec.CacheRead, u.CacheRead, u.Details.Cached, u.PromptDetails.Cached)
 				rec.CacheWrite = max(rec.CacheWrite, u.CacheWrite)
+				rec.ReasoningTokens = max(rec.ReasoningTokens, u.OutputDetails.Reasoning, u.CompletionDetails.Reasoning)
 			}
+		}
+		foldTools(&ev, rec)
+	}
+}
+
+// foldTools records the tool calls one event reports. Streamed items count when
+// they finish. Complete output lists (response.completed, non-streaming bodies)
+// repeat those items, so they are used only when no streamed call was seen.
+func foldTools(ev *event, rec *Record) {
+	add := func(items ...toolItem) {
+		for _, it := range items {
+			if t, ok := it.tool(); ok {
+				rec.Tools = appendTool(rec.Tools, t)
+			}
+		}
+	}
+	switch ev.Type {
+	case "response.output_item.done":
+		if ev.Item.ok {
+			add(ev.Item.item)
+		}
+	case "content_block_start":
+		if ev.ContentBlock.ok {
+			add(ev.ContentBlock.item)
+		}
+	}
+	add(ev.Choices...)
+	if len(rec.Tools) == 0 {
+		add(ev.Output...)
+		if ev.Type == "" || ev.Type == "message" {
+			add(ev.Content...)
+		}
+		if ev.Response != nil {
+			add(ev.Response.Output...)
 		}
 	}
 }

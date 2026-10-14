@@ -46,6 +46,17 @@ export type RequestRow = {
   cache_write: number;
   output: number;
   first_byte_ms?: number;
+  // Call details; absent on rows recorded before they were collected.
+  tools?: { name: string; kind?: string; ref?: string }[];
+  tool_results?: number;
+  effort?: string;
+  reasoning_tokens?: number;
+  subagent?: string;
+  agent_name?: string;
+  thread_id?: string;
+  parent_session_id?: string;
+  turn_id?: string;
+  request_kind?: string;
 };
 export type Session = {
 	source?: string;
@@ -68,6 +79,9 @@ export type Session = {
   last_state: string;
   last_status: number;
   last_error: string;
+  tool_calls?: number;
+  subagents?: number;
+  parent_session_id?: string;
 };
 export type Aggregate = {
   time: number;

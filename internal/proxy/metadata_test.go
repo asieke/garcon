@@ -27,7 +27,7 @@ func TestRequestMetadataPreservesBody(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest("POST", "/", strings.NewReader(tc.body))
 			r.Header.Set("X-Claude-Code-Session-Id", tc.header)
-			id, model := requestMetadata(r, tc.harness)
+			id, model, _ := requestMetadata(r, tc.harness)
 			if id != tc.want || model != tc.model {
 				t.Fatalf("got %q %q", id, model)
 			}
