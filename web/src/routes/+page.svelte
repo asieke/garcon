@@ -4,7 +4,9 @@
   import LiveTicker from "$lib/console/LiveTicker.svelte";
   import AccountTable from "$lib/console/AccountTable.svelte";
   import claudeLogo from "$lib/assets/providers/claude-app.png";
-  import { claudeRows } from "$lib/console/claude";
+  import googleLogo from "$lib/assets/providers/google.svg";
+  import facebookLogo from "$lib/assets/providers/facebook.svg";
+  import { claudeRows, agyRows, museRows } from "$lib/console/claude";
   import { connectionPrompt } from "$lib/console/connection-prompts";
   import type { LimitsSnapshot } from "$lib/limits";
   import HarnessLogo from "$lib/console/HarnessLogo.svelte";
@@ -34,6 +36,8 @@
   let limits = $state<LimitsSnapshot>({ accounts: [], refreshing: false, updated_at: 0 });
   let limitsAvailable = $state(false);
   let claudeExpanded = $state(true);
+  let agyExpanded = $state(true);
+  let museExpanded = $state(true);
   let routing = $state<Routing>({ enabled: false, accounts: [] });
   let claudeRouting = $state<Routing | null>(null);
   let connections = $state<{ client: string; connected: boolean | null; mode?: string; profiles?: number; remote_control_at_startup?: boolean }[]>([]);
@@ -82,12 +86,12 @@
     {
       id: "accounts",
       label: "Accounts",
-      description: "Manage the accounts available to Codex and Claude Code.",
+      description: "Manage the accounts available to Codex, Claude Code, AGY CLI, and Muse CLI.",
     },
     {
       id: "sessions",
       label: "Sessions",
-      description: "Sessions from Codex, Claude Code, and other clients, all in one place.",
+      description: "Sessions from Codex, Claude Code, AGY CLI, Muse CLI, and other clients, all in one place.",
     },
     {
       id: "analytics",
@@ -101,6 +105,8 @@
     },
   ];
   const claudeAccounts = $derived(claudeRouting?.accounts ?? claudeRows(limits.accounts, now));
+  const agyAccounts = $derived(agyRows(limits.accounts, now));
+  const museAccounts = $derived(museRows(limits.accounts, now));
   const claudeNext = $derived(claudeAccounts.find((a) => a.enrolled && a.status === "Ready"));
   const title = $derived(views.find((v) => v.id === view)!);
   const enrolled = $derived(routing.accounts.filter((a) => a.enrolled));
@@ -130,7 +136,7 @@
     if (s.active > 0) return "Background review";
     if (s.last_state === "failed" || s.last_status >= 400) return "Last request failed";
     if (s.last_state === "interrupted") return "Last request interrupted";
-		if (s.source === "claude-local") return "Local history";
+		if (s.source === "claude-local" || s.source === "muse-local" || s.source === "agy-local") return "Local history";
     return "No model request";
   }
   function elapsed(t: number) {
@@ -458,7 +464,7 @@
           aria-current={view === item.id ? "page" : undefined}
           ><Icon name={item.id} /><span>{item.label}</span
           >{#if item.id === "accounts"}<small
-              >{(routing.accounts.length + claudeAccounts.length).toString().padStart(2, "0")}</small
+              >{(routing.accounts.length + claudeAccounts.length + agyAccounts.length + museAccounts.length).toString().padStart(2, "0")}</small
             >{:else if item.id === "sessions" && active > 0}<small
               class="active-count">{active}</small
             >{/if}</button
@@ -539,8 +545,8 @@
         </div>{/if}
 			{#if claudeImport && (view === "sessions" || view === "analytics")}
 				<p class="footnote" role="status">
-					{#if !claudeImport.enabled}Local Claude history import is disabled.
-					{:else}Local Claude history: {count(claudeImport.records)} imported requests from {claudeImport.files} {claudeImport.files === 1 ? "file" : "files"}.
+					{#if !claudeImport.enabled}Local CLI history import is disabled.
+					{:else}Local CLI history: {count(claudeImport.records)} imported requests from {claudeImport.files} {claudeImport.files === 1 ? "file" : "files"}.
 						{claudeImport.scanning ? "Updating…" : claudeImport.last_scan ? `Checked ${ago(claudeImport.last_scan, now)}.` : "Waiting for first scan."}
 						{#if claudeImport.failed_files || claudeImport.skipped_lines}Some history could not be read: {claudeImport.failed_files} files, {claudeImport.skipped_lines} malformed or oversized entries.{/if}
 					{/if}
@@ -560,7 +566,7 @@
         </section>
         <div class="section-label">
           <span>ACCOUNTS</span><span
-            >{routing.accounts.length + claudeAccounts.length} discovered</span
+            >{routing.accounts.length + claudeAccounts.length + agyAccounts.length + museAccounts.length} discovered</span
           >
         </div>
         <section class="provider-card">
@@ -633,6 +639,44 @@
             <AccountTable accounts={claudeAccounts} provider="Claude Code" poolSupported={!!claudeRouting?.enabled} poolEditable={false} nextId={claudeNext?.id} />
             <p class="provider-explanation">{#if claudeRouting?.enabled}New gateway sessions use the eligible account with the highest quota-per-hour score. Each session keeps its account across restarts. Model-specific limits can change which account is next.{:else}Profile launchers use their selected login. Configure the optional Desktop gateway to enable automatic account selection and session pinning.{/if}</p>
             <button class="add-inline" onclick={() => (modal = "claude-account")}><Icon name="plus" size={16} /> Add another Claude account<span>Separate login. Same endpoint.</span></button>
+          </div>{/if}
+        </section>
+        <section class="provider-card" aria-label="AGY CLI accounts">
+          <div class="provider-header">
+            <button class="provider-title" onclick={() => (agyExpanded = !agyExpanded)} aria-expanded={agyExpanded} aria-controls="agy-accounts">
+              <span class="provider-logo"><img src={googleLogo} width="32" height="32" alt="" /></span>
+              <span><strong>AGY CLI</strong><small>Google Antigravity CLI accounts</small></span>
+              <span class="provider-chevron" class:open={agyExpanded}><Icon name="chevron" size={16} /></span>
+            </button>
+            <div class="provider-actions">
+              <span class="provider-summary">{agyAccounts.length} {agyAccounts.length === 1 ? "account" : "accounts"} <span>·</span> Local usage tracking</span>
+            </div>
+          </div>
+          {#if agyExpanded}<div class="provider-body" id="agy-accounts">
+            {#if limitsAvailable && !agyAccounts.length}<div class="empty-state">
+              <span class="empty-icon"><Icon name="accounts" size={28} /></span>
+              <h3>No accounts found</h3><p>Sign in with AGY CLI locally. Garcon will discover it and track usage automatically.</p>
+            </div>{/if}
+            <AccountTable accounts={agyAccounts} provider="AGY CLI" poolSupported={false} poolEditable={false} />
+          </div>{/if}
+        </section>
+        <section class="provider-card" aria-label="Muse CLI accounts">
+          <div class="provider-header">
+            <button class="provider-title" onclick={() => (museExpanded = !museExpanded)} aria-expanded={museExpanded} aria-controls="muse-accounts">
+              <span class="provider-logo"><img src={facebookLogo} width="32" height="32" alt="" /></span>
+              <span><strong>Muse CLI</strong><small>Meta Muse Code accounts</small></span>
+              <span class="provider-chevron" class:open={museExpanded}><Icon name="chevron" size={16} /></span>
+            </button>
+            <div class="provider-actions">
+              <span class="provider-summary">{museAccounts.length} {museAccounts.length === 1 ? "account" : "accounts"} <span>·</span> Local usage tracking</span>
+            </div>
+          </div>
+          {#if museExpanded}<div class="provider-body" id="muse-accounts">
+            {#if limitsAvailable && !museAccounts.length}<div class="empty-state">
+              <span class="empty-icon"><Icon name="accounts" size={28} /></span>
+              <h3>No accounts found</h3><p>Sign in with Muse CLI locally. Garcon will discover it and track usage automatically.</p>
+            </div>{/if}
+            <AccountTable accounts={museAccounts} provider="Muse CLI" poolSupported={false} poolEditable={false} />
           </div>{/if}
         </section>
         <div class="routing-notes">

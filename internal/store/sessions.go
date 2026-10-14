@@ -72,6 +72,10 @@ SELECT * FROM inventory ORDER BY (active>0) DESC,last_seen DESC LIMIT 1000`)
 				provider = "chatgpt"
 			case "claude":
 				provider = "anthropic"
+			case "agy":
+				provider = "google"
+			case "muse":
+				provider = "meta"
 			}
 		}
 		out = append(out, map[string]any{"key": key, "harness": harness, "provider": provider, "session_id": id, "account_id": aid, "account": account, "model": model, "created_at": created, "last_seen": last, "requests": n, "active": active, "active_reviews": reviews, "active_since": activeSince, "last_state": latest.State, "last_status": latest.Status, "last_error": latest.Error, "source": latest.Source, "account_attribution": latest.AccountAttribution})

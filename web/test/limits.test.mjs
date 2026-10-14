@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetProviderGroups, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo } from '../src/lib/limits.ts';
+import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetProviderGroups, widgetAccountCells, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo } from '../src/lib/limits.ts';
 
 const reset = Date.UTC(2030, 0, 8);
 const week = { id: 'week', label: 'Weekly', used_percent: 32, window_seconds: 604800, resets_at: reset, expired: false };
@@ -66,18 +66,25 @@ test('compact reset display preserves unknown, pending, and active states', () =
  assert.equal(widgetReset(week, reset - 1).description, `Resets ${new Date(reset).toLocaleString()}`);
 });
 
- test('provider widget groups keep Codex first and preserve separate account seats and windows', () => {
+test('provider widget groups order Codex, Claude, Google, and Facebook and map compact cells', () => {
  const accounts = [
-  { id: 'claude-b', provider: 'claude', email: 'B@example.com', windows: [week] },
+  { id: 'muse-1', provider: 'muse', email: 'm@example.com', windows: [week] },
+  { id: 'agy-1', provider: 'agy', email: 'g@example.com', windows: [week, { ...week, id: '3p', label: 'Claude & GPT · Weekly' }] },
+  { id: 'claude-b', provider: 'claude', email: 'B@example.com', windows: [week, { ...week, id: '5h', label: '5-hour' }, { ...week, id: 'fable', label: 'Fable · Weekly' }] },
   { id: 'codex-b', provider: 'codex', email: 'b@example.com', windows: [week] },
   { id: 'claude-a2', provider: 'claude', email: 'a@example.com', windows: [] },
   { id: 'claude-a1', provider: 'claude', email: 'a@example.com', windows: [week] },
  ];
  const groups = widgetProviderGroups(accounts);
- assert.deepEqual(groups.map(group => group.label), ['Codex', 'Claude']);
+ assert.deepEqual(groups.map(group => group.label), ['Codex', 'Claude', 'Google', 'Facebook']);
  assert.deepEqual(groups[1].accounts.map(account => account.id), ['claude-a1', 'claude-a2', 'claude-b']);
- assert.equal(groups[1].accounts[0], accounts[3]);
+ assert.equal(groups[1].accounts[0], accounts[5]);
+ const claudeCells = widgetAccountCells(accounts[2]);
+ assert.equal(claudeCells.fiveHour.label, '5-hour');
+ assert.equal(claudeCells.weekly.label, 'Weekly');
+ assert.equal(claudeCells.extraLabel, 'Fable');
+ const agyCells = widgetAccountCells(accounts[1]);
+ assert.equal(agyCells.extraLabel, '3P');
  assert.deepEqual(widgetProviderGroups([]), []);
- assert.deepEqual(widgetProviderGroups([accounts[0]]).map(group => group.key), ['claude']);
- assert.equal(accounts[0].id, 'claude-b');
- });
+ assert.deepEqual(widgetProviderGroups([accounts[2]]).map(group => group.key), ['claude']);
+});

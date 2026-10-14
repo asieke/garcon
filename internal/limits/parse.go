@@ -214,3 +214,137 @@ func parseClaude(raw []byte) ([]Window, error) {
 	sortWindows(ws)
 	return ws, nil
 }
+
+func parseAGY(raw []byte) ([]Window, error) {
+	var data struct {
+		Command struct {
+			Name string `json:"name"`
+			Data struct {
+				Groups []struct {
+					Name    string `json:"name"`
+					Buckets []struct {
+						ID                string   `json:"id"`
+						Name              string   `json:"name"`
+						Window            string   `json:"window"`
+						RemainingFraction *float64 `json:"remaining_fraction"`
+						ResetTime         string   `json:"reset_time"`
+					} `json:"buckets"`
+				} `json:"groups"`
+			} `json:"data"`
+		} `json:"command"`
+	}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, errors.New("Unrecognized provider response")
+	}
+	ws := []Window{}
+	for _, g := range data.Command.Data.Groups {
+		prefix := strings.TrimSpace(g.Name)
+		switch strings.ToLower(prefix) {
+		case "", "gemini models", "gemini":
+			prefix = ""
+		case "claude and gpt models":
+			prefix = "Claude & GPT"
+		}
+		for _, b := range g.Buckets {
+			var seconds int64
+			switch strings.ToLower(b.Window) {
+			case "5h", "5-hour", "session":
+				seconds = 18000
+			case "weekly", "7d":
+				seconds = 604800
+			default:
+				continue
+			}
+			label := durationLabel(seconds)
+			if prefix != "" {
+				label = prefix + " · " + label
+			}
+			var usedPtr *float64
+			if b.RemainingFraction != nil && !math.IsNaN(*b.RemainingFraction) && !math.IsInf(*b.RemainingFraction, 0) {
+				u := math.Max(0, math.Min(100, (1.0-*b.RemainingFraction)*100.0))
+				usedPtr = validPercent(&u)
+			}
+			t, _ := time.Parse(time.RFC3339Nano, b.ResetTime)
+			var reset int64
+			if !t.IsZero() {
+				reset = t.UnixMilli()
+			}
+			id := b.ID
+			if id == "" {
+				id = "agy:" + label
+			}
+			ws = append(ws, Window{ID: id, Label: label, UsedPercent: usedPtr, WindowSeconds: seconds, ResetsAt: reset})
+		}
+	}
+	sortWindows(ws)
+	return ws, nil
+}
+
+type museWindow struct {
+	UsedPercent        *float64 `json:"used_percent"`
+	WindowDurationMins int64    `json:"window_duration_mins"`
+	ResetsAt           any      `json:"resets_at"`
+}
+
+type museUsage struct {
+	Window *museWindow `json:"window"`
+	Weekly *museWindow `json:"weekly"`
+}
+
+func parseMuseReset(v any) int64 {
+	switch x := v.(type) {
+	case float64:
+		if x > 1e12 {
+			return int64(x)
+		}
+		if x > 0 {
+			return int64(x * 1000)
+		}
+	case string:
+		if t, err := time.Parse(time.RFC3339Nano, x); err == nil && !t.IsZero() {
+			return t.UnixMilli()
+		}
+	}
+	return 0
+}
+
+func parseMuseWindows(u *museUsage) []Window {
+	if u == nil {
+		return []Window{
+			{ID: "muse:weekly", Label: "Weekly", WindowSeconds: 604800},
+			{ID: "muse:5h", Label: "5-hour", WindowSeconds: 18000},
+		}
+	}
+	ws := []Window{}
+	if u.Window != nil {
+		sec := int64(18000)
+		if u.Window.WindowDurationMins > 0 {
+			sec = u.Window.WindowDurationMins * 60
+		}
+		ws = append(ws, Window{
+			ID:            "muse:5h",
+			Label:         durationLabel(sec),
+			UsedPercent:   validPercent(u.Window.UsedPercent),
+			WindowSeconds: sec,
+			ResetsAt:      parseMuseReset(u.Window.ResetsAt),
+		})
+	}
+	if u.Weekly != nil {
+		ws = append(ws, Window{
+			ID:            "muse:weekly",
+			Label:         "Weekly",
+			UsedPercent:   validPercent(u.Weekly.UsedPercent),
+			WindowSeconds: 604800,
+			ResetsAt:      parseMuseReset(u.Weekly.ResetsAt),
+		})
+	}
+	if len(ws) == 0 {
+		return []Window{
+			{ID: "muse:weekly", Label: "Weekly", WindowSeconds: 604800},
+			{ID: "muse:5h", Label: "5-hour", WindowSeconds: 18000},
+		}
+	}
+	sortWindows(ws)
+	return ws
+}
+
