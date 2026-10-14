@@ -1780,3 +1780,8 @@ td code,
 
 .session-log-filter { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--desk-line); font-size: 12px; }
 .session-log-filter .filter-button { margin-left: auto; }
+.breadcrumb .crumb { border: 0; background: none; padding: 0; color: inherit; font: inherit; }
+.breadcrumb .crumb:hover { color: var(--desk-ink); text-decoration: underline; }
+.inspector-tools { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 16px; }
+.inspector-tools span { padding: 2px 7px; border-radius: 2px; background: var(--desk-hover); font: 11px var(--desk-mono); }
+.inspector-tools em { font-style: normal; color: var(--desk-muted); }

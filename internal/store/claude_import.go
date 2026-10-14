@@ -37,6 +37,11 @@ func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
 				return false, err
 			}
 			maxUsage(r, old)
+			// Each transcript line of one message may carry a different content
+			// block; join their tool calls (in line order) and call details.
+			tools := usage.MergeTools(old.Tools, r.Tools)
+			usage.MergeCall(r, old)
+			r.Tools = tools
 			// Keep the earliest observation, unless an older reader stored an
 			// implausible pre-2001 time that a corrected reader now replaces.
 			if old.Time >= plausibleTime {
@@ -116,6 +121,7 @@ func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
 			m.rec.UpstreamRequestID = r.UpstreamRequestID
 		}
 		maxUsage(&m.rec, *r)
+		usage.MergeCall(&m.rec, *r)
 		b, err := json.Marshal(m.rec)
 		if err != nil {
 			return false, err
@@ -128,6 +134,7 @@ func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
 	}
 	for _, m := range exact {
 		maxUsage(r, m.rec)
+		usage.MergeCall(r, m.rec)
 		if r.MessageID == "" {
 			r.MessageID = m.rec.MessageID
 		}

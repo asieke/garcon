@@ -37,7 +37,7 @@ garcon setup</code></pre></div>
 <p>New Codex conversations choose an eligible account by remaining quota relative to reset time. Existing conversations stay on their account. If it becomes unavailable, the request fails; Garcon doesn't silently switch providers or replay it elsewhere. <a href="codex-routing.md">Routing details</a>.</p>
 </section>
 <section id="dashboard"><h2>Find the work behind a request</h2>
-<p><strong>Sessions</strong> shows Codex task names, projects, routed accounts, and in-flight model requests. Search by title or ID, then open the task's request history. The ticker and request inspector show task names too.</p>
+<p><strong>Sessions</strong> shows Codex task names, projects, routed accounts, and in-flight model requests. Search by title or ID, then drill into a session to see each model call, the tools it used, and its subagents. The ticker and request inspector show task names too.</p>
 <p><strong>Analytics</strong> shows tokens and estimated API-equivalent costs. <strong>Logs</strong> includes failures and interrupted streams. A separate <a href="http://127.0.0.1:4141/usage-widget/">usage widget</a> shows subscription allowances and reset times.</p>
 <p>Garcon records model traffic. A task with no request in flight might still be running tools or waiting for you.</p>
 </section>

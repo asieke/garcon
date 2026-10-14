@@ -127,6 +127,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 		if d.Model != "" {
 			rec.Model = d.Model
 		}
+		d.Call.Apply(&rec)
 		rec.AccountID = d.AccountID
 		rec.Account = d.Account
 		if rec.Account == "" {
@@ -153,11 +154,16 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 		}
 		defer release()
 	} else {
-		rec.SessionID, rec.Model = requestMetadata(r, rt.Harness)
+		var call usage.Call
+		rec.SessionID, rec.Model, call = requestMetadata(r, rt.Harness)
+		call.Apply(&rec)
 	}
 	capture()
 	if d := claude.Details(r); d.AccountID != "" {
 		rec.AccountID, rec.Account, rec.SessionID, rec.Model = d.AccountID, d.Account, d.Session, d.Model
+		if rec.ThreadID == rec.SessionID {
+			rec.ThreadID = ""
+		}
 	}
 	if !routed && rt.Provider == "chatgpt" {
 		rec.AccountID = metadataID(r.Header.Get("ChatGPT-Account-Id"))
@@ -258,6 +264,8 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 						rec.Model = measured.Model
 					}
 					rec.Input, rec.CacheRead, rec.CacheWrite, rec.Output = measured.Input, measured.CacheRead, measured.CacheWrite, measured.Output
+					// Tool names and kinds only; the tap never decodes their arguments.
+					rec.Tools, rec.ReasoningTokens = measured.Tools, measured.ReasoningTokens
 					if failure != "" {
 						rec.State = "failed"
 						rec.Error = failure

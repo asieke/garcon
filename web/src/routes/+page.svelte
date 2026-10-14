@@ -13,6 +13,8 @@
   import { harnessName, sessionKey } from "$lib/console/harness";
   import CodexLogo from "$lib/console/CodexLogo.svelte";
   import ProviderConnection from "$lib/console/ProviderConnection.svelte";
+  import SessionDetail from "$lib/console/SessionDetail.svelte";
+  import { agentLabel, subagentLabel, toolChips } from "$lib/console/session-detail";
   import { parseCatalog, type Catalog } from "$lib/pricing";
   import {
     count,
@@ -71,6 +73,7 @@
   let query = $state(""),
     sessionQuery = $state(""),
     logSession = $state<{ id: string; harness: string } | null>(null),
+    detail = $state<{ id: string; harness: string } | null>(null),
     errorsOnly = $state(false),
     hideZeroTokens = $state(true),
     logMode = $state<"requests" | "system">("requests"),
@@ -282,6 +285,8 @@
       view = "analytics";
       metric = q === "usage" ? "usage" : q;
     } else if (views.some((v) => v.id === q)) view = q as View;
+    const params = new URLSearchParams(location.search);
+    if (view === "sessions" && params.get("session")) detail = { id: params.get("session")!, harness: params.get("harness") || "codex" };
     void poll();
     void loadLogs();
     void loadAnalytics();
@@ -324,6 +329,7 @@
   });
   function navigate(v: View) {
     view = v;
+    detail = null;
     history.replaceState(null, "", `?view=${v}`);
     selected = null;
     error = "";
@@ -391,7 +397,17 @@
       error = (e as Error).message;
     }
   }
-  function sessionLogs(s: Session) {
+  function openSession(id: string, harness: string) {
+    if (view !== "sessions") navigate("sessions");
+    detail = { id, harness };
+    history.replaceState(null, "", `?view=sessions&session=${encodeURIComponent(id)}&harness=${encodeURIComponent(harness)}`);
+    scrollTo?.({ top: 0 });
+  }
+  function closeSession() {
+    detail = null;
+    history.replaceState(null, "", "?view=sessions");
+  }
+  function sessionLogs(s: { session_id: string; harness: string }) {
     query = "";
     logSession = { id: s.session_id, harness: s.harness };
     logMode = "requests";
@@ -491,7 +507,7 @@
   <div class="workspace-main">
     <header class="topbar">
       <div class="breadcrumb">
-        Workspace <span>/</span><strong>{title.label}</strong>
+        Workspace <span>/</span>{#if view === "sessions" && detail}<button class="crumb" onclick={closeSession}>{title.label}</button> <span>/</span><strong>Session</strong>{:else}<strong>{title.label}</strong>{/if}
       </div>
       <div class="connection">
         <span class:offline={!connected} class="status-dot"></span>{connected
@@ -701,6 +717,14 @@
             </div>
           </div>
         </div>
+      {:else if view === "sessions" && detail}
+        {#key `${detail.harness}:${detail.id}`}
+          <SessionDetail harness={detail.harness} sessionId={detail.id} {sessions}
+            onselect={(row) => (selected = row)}
+            onlogs={() => detail && sessionLogs({ session_id: detail.id, harness: detail.harness })}
+            onopen={openSession}
+            onback={closeSession} />
+        {/key}
       {:else if view === "sessions"}
         <div class="summary-strip">
           <div>
@@ -754,9 +778,9 @@
                         <HarnessLogo harness={s.harness} size={28} />
                         <div>
                           <button class="task-title" title={s.task?.title || s.session_id || s.key}
-                            disabled={!s.session_id} onclick={() => sessionLogs(s)}
+                            disabled={!s.session_id} onclick={() => openSession(s.session_id, s.harness)}
                             >{s.task?.title || (s.session_id ? taskName(s.session_id, s.harness) : `Legacy session ${s.key.slice(0, 8)}`)}</button>
-                          <small title={s.task?.cwd}>{harnessName(s.harness)}{s.entrypoint === "claude-desktop" ? " · Desktop" : ""}{s.task?.cwd ? ` · ${projectName(s)}` : ""}{s.task?.archived ? " · Archived" : ""}</small>
+                          <small title={s.task?.cwd}>{harnessName(s.harness)}{s.entrypoint === "claude-desktop" ? " · Desktop" : ""}{s.task?.cwd ? ` · ${projectName(s)}` : ""}{s.task?.archived ? " · Archived" : ""}{s.parent_session_id ? ` · Subagent of ${taskName(s.parent_session_id, s.harness)}` : ""}</small>
                           <small class="session-reference"><span title={s.session_id || s.key}>{s.session_id ? `${s.session_id.slice(0, 8)}…${s.session_id.slice(-6)}` : "ID available when resumed"}</span>
                             {#if s.session_id}<button class="row-action" title="Copy full session ID" aria-label={copied === s.key ? "Session ID copied" : `Copy session ID for ${taskName(s.session_id, s.harness)}`} onclick={() => copy(s.session_id, s.key)}><Icon name={copied === s.key ? "check" : "copy"} size={12}/></button>{/if}
                             {#if !s.task}<span> · Title unavailable</span>{/if}
@@ -776,14 +800,22 @@
                         ></span>{s.account || accountName(s.account_id)}
                       </div></td
                     ><td><code>{s.model || "—"}</code></td><td class="numeric"
-                      >{s.requests}</td
+                      >{s.requests}{#if s.tool_calls || s.subagents}<small>{s.tool_calls ? `${count(s.tool_calls)} tools` : ""}{s.tool_calls && s.subagents ? " · " : ""}{s.subagents ? `${s.subagents} ${s.subagents === 1 ? "subagent" : "subagents"}` : ""}</small>{/if}</td
                     ><td class="muted">{ago(s.last_seen, now)}</td><td
                       ><button
                         class="row-action"
-                        aria-label={`View requests for ${s.session_id || s.key}`}
+                        aria-label={`Open session details for ${s.session_id || s.key}`}
+                        title="Session details"
+                        disabled={!s.session_id}
+                        onclick={() => openSession(s.session_id, s.harness)}
+                        ><Icon name="arrow" size={17} /></button
+                      ><button
+                        class="row-action"
+                        aria-label={`View request log for ${s.session_id || s.key}`}
+                        title="Request log"
                         disabled={!s.session_id}
                         onclick={() => sessionLogs(s)}
-                        ><Icon name="arrow" size={17} /></button
+                        ><Icon name="logs" size={16} /></button
                       ></td
                     ></tr
                   >{/each}</tbody
@@ -850,7 +882,7 @@
                 ><Icon name="refresh" size={15} />Refresh</button
               >{/if}
           </div>
-          {#if logMode === "requests" && logSession}<div class="session-log-filter"><HarnessLogo harness={logSession.harness} size={18} /><span>{harnessName(logSession.harness)} · {taskName(logSession.id, logSession.harness)}</span><button class="filter-button" onclick={() => { logSession = null; offset = 0; }}>Clear session filter</button></div>{/if}
+          {#if logMode === "requests" && logSession}<div class="session-log-filter"><HarnessLogo harness={logSession.harness} size={18} /><span>{harnessName(logSession.harness)} · {taskName(logSession.id, logSession.harness)}</span><button class="filter-button" onclick={() => logSession && openSession(logSession.id, logSession.harness)}>Session details</button><button class="filter-button" onclick={() => { logSession = null; offset = 0; }}>Clear session filter</button></div>{/if}
           {#if logMode === "requests"}<div class="table-scroll">
               <table class="log-table">
                 <thead
@@ -1218,8 +1250,9 @@
           ><span>{day(selected.time)} · {time(selected.time)}</span>
         </div>
         {#if selected.error}<div class="alert">{selected.error}</div>{/if}
+        {#if selected.tools?.length}<div class="inspector-tools">{#each toolChips(selected) as c}<span>{c.name}{#if c.count > 1}<em> ×{c.count}</em>{/if}</span>{/each}</div>{/if}
         <dl class="request-details">
-          {#each [["Source", selected.source === "claude-local" ? "Local Claude history" : "Garcon proxy"], ["Account attribution", selected.account_attribution === "profile" ? "Inferred from profile; historical login unverified" : "Observed request"], ["Client", harnessName(selected.harness)], ["Provider", selected.provider || "Not recorded"], ["Model", selected.model || "Unknown"], ["Account", selected.account || "Unassigned"], ["Account ID", selected.account_id || "Not recorded"], ["Session", selected.session_id || "Not recorded"], ["Request ID", selected.request_id || `Legacy record ${selected.sequence}`], ["Endpoint", selected.source === "claude-local" ? "Not observed" : `${selected.method || "POST"} ${selected.path || "Not recorded"}`], ["Duration", selected.source === "claude-local" ? "Not measured" : `${(selected.ms / 1000).toFixed(3)}s`], ["First byte", selected.first_byte_ms === undefined ? "Not measured" : `${selected.first_byte_ms}ms`], ["Input tokens", count(selected.input)], ["Cached input", count(selected.cache_read)], ["Cache write", count(selected.cache_write)], ["Output tokens", count(selected.output)]] as [label, value]}<div
+          {#each [["Source", selected.source === "claude-local" ? "Local Claude history" : "Garcon proxy"], ["Account attribution", selected.account_attribution === "profile" ? "Inferred from profile; historical login unverified" : "Observed request"], ["Client", harnessName(selected.harness)], ["Provider", selected.provider || "Not recorded"], ["Model", selected.model || "Unknown"], ["Account", selected.account || "Unassigned"], ["Account ID", selected.account_id || "Not recorded"], ["Session", selected.session_id || "Not recorded"], ["Request ID", selected.request_id || `Legacy record ${selected.sequence}`], ["Endpoint", selected.source === "claude-local" ? "Not observed" : `${selected.method || "POST"} ${selected.path || "Not recorded"}`], ["Duration", selected.source === "claude-local" ? "Not measured" : `${(selected.ms / 1000).toFixed(3)}s`], ["First byte", selected.first_byte_ms === undefined ? "Not measured" : `${selected.first_byte_ms}ms`], ["Input tokens", count(selected.input)], ["Cached input", count(selected.cache_read)], ["Cache write", count(selected.cache_write)], ["Output tokens", count(selected.output)], ["Reasoning tokens", selected.reasoning_tokens ? count(selected.reasoning_tokens) : "Not reported"], ["Reasoning effort", selected.effort || "Not recorded"], ["Tool calls", selected.tools?.length ? `${selected.tools.length} (${toolChips(selected).map((c) => c.count > 1 ? `${c.name} ×${c.count}` : c.name).join(", ")})` : "None recorded"], ["Tool results returned", selected.tool_results ? String(selected.tool_results) : "None recorded"], ["Agent", selected.subagent ? `${subagentLabel(selected.subagent)}${selected.agent_name ? ` · ${agentLabel(selected.agent_name)}` : ""}` : "Main conversation"], ["Turn", selected.turn_id || "Not recorded"], ["Request kind", selected.request_kind || "Not recorded"], ["Agent thread", selected.thread_id || "Session thread"], ["Parent session", selected.parent_session_id || "None"]] as [label, value]}<div
             >
               <dt>{label}</dt>
               <dd>{value}</dd>

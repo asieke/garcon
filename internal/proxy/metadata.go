@@ -7,12 +7,16 @@ import (
 	"net/http"
 	"strings"
 	"unicode"
+
+	"garcon/internal/usage"
 )
 
 // requestMetadata extracts attribution only. It never changes the forwarded
 // bytes, rejects a request, or persists prompts or the full metadata.user_id.
 // Headers work for any harness; body adapters cover clients without headers.
-func requestMetadata(r *http.Request, harness string) (session, model string) {
+// The call details (turn, thread, subagent, effort) come from the same
+// narrow body decoding that Codex account routing uses.
+func requestMetadata(r *http.Request, harness string) (session, model string, call usage.Call) {
 	route, _ := ParseRoute(r.URL.Path)
 	realtime := isCodexRealtime(route)
 	if realtime {
@@ -26,6 +30,8 @@ func requestMetadata(r *http.Request, harness string) (session, model string) {
 			session = metadataID(r.Header.Get(name))
 		}
 	}
+	// Headers alone still carry Codex's turn metadata when the body is unreadable.
+	call = usage.RequestBody{}.Call(r.Header)
 	if r.Body == nil || r.Body == http.NoBody {
 		return
 	}
@@ -39,27 +45,18 @@ func requestMetadata(r *http.Request, harness string) (session, model string) {
 	if err != nil || len(b) > limit {
 		return
 	}
-	var payload struct {
-		Model   string `json:"model"`
-		Session struct {
-			Model string `json:"model"`
-		} `json:"session"`
-		CacheKey       string                     `json:"prompt_cache_key"`
-		Metadata       map[string]json.RawMessage `json:"metadata"`
-		ClientMetadata map[string]json.RawMessage `json:"client_metadata"`
-	}
-	if json.Unmarshal(b, &payload) != nil {
+	payload, err := usage.ParseRequest(b)
+	if err != nil {
 		return
 	}
+	call = payload.Call(r.Header)
 	if payload.Model != "" {
 		model = metadataID(payload.Model)
 	} else if realtime && payload.Session.Model != "" {
 		model = metadataID(payload.Session.Model)
 	}
 	value := func(m map[string]json.RawMessage, key string) string {
-		var s string
-		_ = json.Unmarshal(m[key], &s)
-		return metadataID(s)
+		return metadataID(usage.StringValue(m, key))
 	}
 	for _, m := range []map[string]json.RawMessage{payload.ClientMetadata, payload.Metadata} {
 		for _, key := range []string{"session_id", "thread_id"} {
@@ -98,5 +95,6 @@ func metadataID(s string) string {
 
 // RequestMetadata reads session attribution while preserving the request body.
 func RequestMetadata(r *http.Request, harness string) (string, string) {
-	return requestMetadata(r, harness)
+	session, model, _ := requestMetadata(r, harness)
+	return session, model
 }
