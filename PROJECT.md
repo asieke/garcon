@@ -4,7 +4,7 @@ type: local
 status: active
 visibility: public
 owner: asieke
-merge: owner
+merge: agent
 deploy: local:macbook:~/apps/garcon
 refresh: none
 sources: []
