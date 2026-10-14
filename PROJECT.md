@@ -22,7 +22,7 @@ People running several coding-agent subscriptions on one machine who need to kno
 ## Goals and success
 - Every Codex conversation lands on a healthy account with quota and stays there; a failed request is never replayed on another account.
 - Requests, sessions, usage and limits are visible at http://127.0.0.1:4141 without storing prompts, responses or OAuth tokens.
-- Every merge to `main` publishes a working `ai-garcon` release to npm, and `garcon update` or `scripts/deploy.sh` brings an install up to date.
+- Every merge to `main` publishes a working `ai-garcon` release to npm, and `garcon update`, `scripts/deploy-macos.sh` or `scripts/deploy.sh` brings an install up to date.
 
 ## Context
 - Constraints: runs only on the local machine (loopback by default, no app login); data stays in `~/.local/share/garcon`; the repository is public, so credentials, host paths and private notes stay out of it.

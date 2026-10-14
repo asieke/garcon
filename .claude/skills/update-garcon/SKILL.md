@@ -14,6 +14,11 @@ Two ways to install, so first find out which one is in use: `which garcon`. A pa
 garcon update
 ```
 
+**macOS deploy of `origin/main`** (the owner's Mac, or any Mac without Go): run
+`scripts/deploy-macos.sh` from a checkout. It installs the npm release tagged on the head of
+`origin/main`, relinks `~/.local/bin/garcon` to it and restarts the LaunchAgent. If it
+reports that no release exists yet, the Release workflow is still publishing; retry later.
+
 **Source build**, from the repository checkout:
 
 ```sh
