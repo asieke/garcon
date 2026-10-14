@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"garcon/internal/store"
+	"garcon/internal/usage"
 )
 
 func fixture(id, session string, output int, timestamp string) string {
@@ -201,3 +202,58 @@ func TestMuseAndAGYLocalImport(t *testing.T) {
 	}
 }
 
+
+func TestMuseHomeTimestampsAndReimport(t *testing.T) {
+	i, _ := setup(t)
+	t.Setenv("MUSE_HOME", "")
+	ctx := context.Background()
+	put(t, filepath.Join(i.Home, ".config/muse/auth.json"), `{"providers":{"meta":{"user_email":"muse@example.com"}}}`)
+	session := filepath.Join(i.Home, ".muse/sessions/2026/10/14/sess-root")
+	// Millisecond timestamps, float counters, camelCase usage and a subagent
+	// log; content fields must never be stored.
+	put(t, filepath.Join(session, "session.jsonl"),
+		`{"id":"evt-ms","stream":{"kind":"session","id":"sess-root"},"recorded_at":1791903248148,"payload_type":"runtime.session","payload":{"kind":"run","event":{"kind":"model_completed","model":"muse-large-2","duration_ms":1200.0,"usage":{"input_tokens":1000.0,"output_tokens":20,"cached_tokens":400}}}}`+"\n"+
+			`{"id":"evt-text","stream":{"kind":"session","id":"sess-root"},"recorded_at":1791903248149,"payload_type":"runtime.session","payload":{"kind":"run","event":{"kind":"text_delta","text":"PRIVATE CONVERSATION"}}}`+"\n")
+	put(t, filepath.Join(session, "subagent/child-1/session.jsonl"),
+		`{"id":"evt-child","stream":{"kind":"session","id":"child-1"},"recorded_at":1791903249000000,"payload_type":"runtime.session","payload":{"kind":"run","event":{"kind":"model_completed","model_id":"muse-small-1","usage":{"inputTokens":300,"outputTokens":5,"cacheReadTokens":100}}}}`+"\n")
+
+	i.Scan(ctx)
+	rows := i.Store.All()
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 Muse rows from ~/.muse, got %+v", rows)
+	}
+	byModel := map[string]usage.Record{}
+	for _, r := range rows {
+		byModel[r.Model] = r
+		if r.SessionID != "sess-root" || r.Harness != "muse" || r.Time < 1791903248000 || r.Time > 1791903250000 {
+			t.Fatalf("unexpected Muse row: %+v", r)
+		}
+	}
+	if r := byModel["muse-large-2"]; r.Input != 600 || r.CacheRead != 400 || r.Output != 20 || r.Ms != 1200 {
+		t.Fatalf("root usage: %+v", r)
+	}
+	if r := byModel["muse-small-1"]; r.Input != 200 || r.CacheRead != 100 || r.Output != 5 {
+		t.Fatalf("subagent usage: %+v", r)
+	}
+	var raw string
+	if err := i.Store.DB.QueryRow(`SELECT group_concat(record) FROM requests`).Scan(&raw); err != nil || strings.Contains(raw, "PRIVATE") {
+		t.Fatalf("Muse content retained: %v", err)
+	}
+
+	// A file consumed by the previous reader (parser 0) is read again, and a
+	// corrected time replaces the implausible one stored before.
+	bad := byModel["muse-large-2"]
+	bad.Time = 1791903248
+	if err := i.Store.SaveRecord(bad); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := i.Store.DB.Exec(`UPDATE claude_import_files SET checkpoint=json_remove(checkpoint,'$.Parser')`); err != nil {
+		t.Fatal(err)
+	}
+	i.Scan(ctx)
+	for _, r := range i.Store.All() {
+		if r.Model == "muse-large-2" && r.Time != 1791903248148 {
+			t.Fatalf("re-import did not correct time: %+v", r)
+		}
+	}
+}

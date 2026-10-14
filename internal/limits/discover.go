@@ -1,6 +1,7 @@
 package limits
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -270,11 +271,115 @@ func discoverAGY(_ context.Context, home string) []source {
 	return []source{s}
 }
 
+func museBinary(home string) string {
+	if bin := os.Getenv("MUSE_BIN"); bin != "" {
+		return bin
+	}
+	// A login service often has a minimal PATH, so check the usual install
+	// locations before PATH.
+	for _, candidate := range []string{
+		filepath.Join(home, ".local", "bin", "muse"),
+		filepath.Join(home, ".muse", "bin", "muse"),
+		"/opt/homebrew/bin/muse",
+		"/usr/local/bin/muse",
+	} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate
+		}
+	}
+	if p, err := exec.LookPath("muse"); err == nil {
+		return p
+	}
+	return ""
+}
+
+// museServeUsage asks a short-lived `muse serve` host for the subscription
+// windows it last observed (MSP usage/read). The host answers from its own
+// cache and does not spend a prompt. Only the usage member is decoded.
+func museServeUsage(ctx context.Context, bin string) (*museUsage, error) {
+	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, bin, "serve")
+	cmd.WaitDelay = 2 * time.Second
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err = cmd.Start(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		stdin.Close()
+		cancel()
+		_ = cmd.Wait()
+	}()
+	lines := bufio.NewScanner(stdout)
+	lines.Buffer(make([]byte, 64<<10), 4<<20)
+	send := func(v any) error {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		_, err = stdin.Write(append(b, '\n'))
+		return err
+	}
+	await := func(id int) (json.RawMessage, error) {
+		for lines.Scan() {
+			var msg struct {
+				ID     *int            `json:"id"`
+				Result json.RawMessage `json:"result"`
+				Error  *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if json.Unmarshal(lines.Bytes(), &msg) != nil || msg.ID == nil || *msg.ID != id {
+				continue // notifications and unrelated frames
+			}
+			if msg.Error != nil {
+				return nil, errors.New("Muse rejected the usage request")
+			}
+			return msg.Result, nil
+		}
+		if runCtx.Err() != nil {
+			return nil, errors.New("Muse did not answer the usage request in time")
+		}
+		return nil, errors.New("Muse exited before reporting usage")
+	}
+	if err = send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]string{"name": "garcon", "version": "1"}}}); err != nil {
+		return nil, err
+	}
+	if _, err = await(1); err != nil {
+		return nil, err
+	}
+	if err = send(map[string]any{"jsonrpc": "2.0", "method": "initialized"}); err != nil {
+		return nil, err
+	}
+	if err = send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "usage/read"}); err != nil {
+		return nil, err
+	}
+	raw, err := await(2)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Usage *museUsage `json:"usage"`
+	}
+	if json.Unmarshal(raw, &result) != nil {
+		return nil, errors.New("Unrecognized Muse usage response")
+	}
+	return result.Usage, nil
+}
+
 func discoverMuse(_ context.Context, home string) []source {
 	paths := []string{filepath.Join(home, ".config", "muse", "auth.json")}
 	if env := os.Getenv("MUSE_AUTH_PATH"); env != "" {
 		paths = append(paths, env)
 	}
+	bin := museBinary(home)
 	seen := map[string]bool{}
 	out := []source{}
 	for _, p := range paths {
@@ -290,7 +395,6 @@ func discoverMuse(_ context.Context, home string) []source {
 		var data struct {
 			Providers map[string]struct {
 				Mechanism    string     `json:"mechanism"`
-				Storage      string     `json:"storage"`
 				SubsActive   bool       `json:"subs_active"`
 				SubsTierName string     `json:"subs_tier_name"`
 				UserFullName string     `json:"user_full_name"`
@@ -326,10 +430,33 @@ func discoverMuse(_ context.Context, home string) []source {
 		}
 		if !meta.SubsActive && meta.SubsUsage == nil && meta.UserEmail == "" {
 			s.problem = "Login needs refresh"
-		} else {
-			usageSnap := meta.SubsUsage
-			s.localFetch = func(context.Context) (string, string, []Window, error) {
-				return meta.UserEmail, plan, parseMuseWindows(usageSnap), nil
+			out = append(out, s)
+			continue
+		}
+		snapshot := meta.SubsUsage
+		s.localFetch = func(ctx context.Context) (string, string, []Window, error) {
+			// Prefer the live host; fall back to the snapshot in auth.json.
+			var hostErr error
+			if bin != "" {
+				u, err := museServeUsage(ctx, bin)
+				if ws := parseMuseWindows(u); err == nil && len(ws) > 0 {
+					if meta.SubsTierName == "" && u.Tier != "" && len(u.Tier) <= 64 {
+						return meta.UserEmail, u.Tier, ws, nil
+					}
+					return meta.UserEmail, plan, ws, nil
+				}
+				hostErr = err
+			}
+			if ws := parseMuseWindows(snapshot); len(ws) > 0 {
+				return meta.UserEmail, plan, ws, nil
+			}
+			switch {
+			case bin == "":
+				return meta.UserEmail, plan, nil, errors.New("Muse CLI not found; set MUSE_BIN or install muse on PATH")
+			case hostErr != nil:
+				return meta.UserEmail, plan, nil, hostErr
+			default:
+				return meta.UserEmail, plan, nil, errors.New("Muse has not reported usage yet; send a Muse prompt, then refresh")
 			}
 		}
 		out = append(out, s)
