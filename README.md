@@ -128,13 +128,12 @@ See [Contributing](CONTRIBUTING.md) for the repository layout, review workflow, 
 Source builds need Go 1.27+ and Node 22+; versions are in `.mise.toml`.
 
 ```sh
-bash scripts/dev.sh              # build and run on 4242
-cd web && npm run dev:frontend    # hot reload; API comes from 4141
+bash scripts/dev.sh              # build the dashboard and serve it on 4242; API comes from 4141
 ```
 
-Production stays on **4141**; development uses **4242**. Keep your tools pointed at 4141. Both development modes use real local data, so dashboard edits affect your settings. Set `GARCON_BACKEND_URL` to choose a different backend for frontend work.
+Production stays on **4141**; development uses **4242**. Keep your tools pointed at 4141. The development dashboard uses real local data, so dashboard edits affect your settings. Set `GARCON_BACKEND_URL` to choose a different backend.
 
-Run `scripts/check.sh` before pushing; it includes `go test ./...` and, from `web/`, `npm run check && npm test && npm run build`. Rebuild and install explicitly to update production; a frontend dev server doesn't update the installed binary.
+Run `scripts/check.sh` before pushing; it includes `go test ./...` and, from `web/`, `npm run check && npm test && npm run build`. Rebuild and install explicitly to update production; the development dashboard doesn't update the installed binary.
 
 ### Architecture
 

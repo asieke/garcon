@@ -41,7 +41,7 @@ garcon doctor --wait 10s</code></pre></div>
 <p>macOS logs: <code>~/Library/Logs/garcon.log</code>. Linux logs: <code>journalctl --user -u garcon</code>.</p>
 <h3 id="source">From source</h3>
 <p>Use Go 1.27+ and Node 22+, then run <code>scripts/install.sh --service</code>. Later, <code>scripts/install.sh --update</code> pulls and rebuilds a clean checkout.</p>
-<p>Production uses <strong>4141</strong>. <code>bash scripts/dev.sh</code> builds and runs development on <strong>4242</strong>. For frontend hot reload, run <code>npm run dev:frontend</code> from <code>web/</code>; it uses the installed backend. Both modes use real local data. Development builds don't update production.</p>
+<p>Production uses <strong>4141</strong>. <code>bash scripts/dev.sh</code> builds the dashboard and serves it on <strong>4242</strong>, using the installed backend on 4141. It uses real local data. Development builds don't update production.</p>
 <h3 id="uninstall">Remove it</h3>
 <p>Restore your tools' original provider URLs first. Then run <code>garcon service uninstall</code> and <code>npm uninstall -g ai-garcon</code>. Your usage and settings remain.</p>
 <p>Keep the default loopback binding. Garcon has no app login; <code>-allow-remote</code> opens its dashboard and relay to the network.</p>
