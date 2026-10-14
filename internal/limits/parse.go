@@ -280,26 +280,56 @@ func parseAGY(raw []byte) ([]Window, error) {
 	return ws, nil
 }
 
+// museWindow accepts Muse's protocol (camelCase) and stored (snake_case)
+// spellings of one subscription window. Percentages are verbatim and may
+// exceed 100 when the account is over quota.
 type museWindow struct {
-	UsedPercent        *float64 `json:"used_percent"`
-	WindowDurationMins int64    `json:"window_duration_mins"`
-	ResetsAt           any      `json:"resets_at"`
+	UsedPercent       *float64 `json:"used_percent"`
+	UsedPercentCamel  *float64 `json:"usedPercent"`
+	DurationMins      float64  `json:"window_duration_mins"`
+	DurationMinsCamel float64  `json:"windowDurationMins"`
+	ResetsAt          any      `json:"resets_at"`
+	ResetsAtMs        any      `json:"resets_at_ms"`
+	ResetsAtMsCamel   any      `json:"resetsAtMs"`
 }
 
 type museUsage struct {
+	Tier   string      `json:"tier"`
 	Window *museWindow `json:"window"`
 	Weekly *museWindow `json:"weekly"`
 }
 
+func (w *museWindow) used() *float64 {
+	if w.UsedPercentCamel != nil {
+		return validPercent(w.UsedPercentCamel)
+	}
+	return validPercent(w.UsedPercent)
+}
+
+func (w *museWindow) reset() int64 {
+	for _, v := range []any{w.ResetsAtMsCamel, w.ResetsAtMs, w.ResetsAt} {
+		if ms := parseMuseReset(v); ms > 0 {
+			return ms
+		}
+	}
+	return 0
+}
+
+func (w *museWindow) seconds(fallback int64) int64 {
+	for _, mins := range []float64{w.DurationMinsCamel, w.DurationMins} {
+		if mins > 0 && mins < 60*24*31 {
+			return int64(mins) * 60
+		}
+	}
+	return fallback
+}
+
+// parseMuseReset normalizes an epoch in seconds, milliseconds or
+// microseconds, or an RFC 3339 string, to milliseconds.
 func parseMuseReset(v any) int64 {
 	switch x := v.(type) {
 	case float64:
-		if x > 1e12 {
-			return int64(x)
-		}
-		if x > 0 {
-			return int64(x * 1000)
-		}
+		return epochMillis(int64(x))
 	case string:
 		if t, err := time.Parse(time.RFC3339Nano, x); err == nil && !t.IsZero() {
 			return t.UnixMilli()
@@ -308,43 +338,35 @@ func parseMuseReset(v any) int64 {
 	return 0
 }
 
+func epochMillis(v int64) int64 {
+	switch {
+	case v <= 0:
+		return 0
+	case v >= 1e17:
+		return v / 1e6
+	case v >= 1e14:
+		return v / 1e3
+	case v >= 1e11:
+		return v
+	default:
+		return v * 1000
+	}
+}
+
+// parseMuseWindows returns no windows when Muse has not reported usage; a
+// blank window must never look like an observed zero.
 func parseMuseWindows(u *museUsage) []Window {
 	if u == nil {
-		return []Window{
-			{ID: "muse:weekly", Label: "Weekly", WindowSeconds: 604800},
-			{ID: "muse:5h", Label: "5-hour", WindowSeconds: 18000},
-		}
+		return nil
 	}
 	ws := []Window{}
-	if u.Window != nil {
-		sec := int64(18000)
-		if u.Window.WindowDurationMins > 0 {
-			sec = u.Window.WindowDurationMins * 60
-		}
-		ws = append(ws, Window{
-			ID:            "muse:5h",
-			Label:         durationLabel(sec),
-			UsedPercent:   validPercent(u.Window.UsedPercent),
-			WindowSeconds: sec,
-			ResetsAt:      parseMuseReset(u.Window.ResetsAt),
-		})
+	if u.Window != nil && (u.Window.used() != nil || u.Window.reset() > 0) {
+		sec := u.Window.seconds(18000)
+		ws = append(ws, Window{ID: "muse:window", Label: durationLabel(sec), UsedPercent: u.Window.used(), WindowSeconds: sec, ResetsAt: u.Window.reset()})
 	}
-	if u.Weekly != nil {
-		ws = append(ws, Window{
-			ID:            "muse:weekly",
-			Label:         "Weekly",
-			UsedPercent:   validPercent(u.Weekly.UsedPercent),
-			WindowSeconds: 604800,
-			ResetsAt:      parseMuseReset(u.Weekly.ResetsAt),
-		})
-	}
-	if len(ws) == 0 {
-		return []Window{
-			{ID: "muse:weekly", Label: "Weekly", WindowSeconds: 604800},
-			{ID: "muse:5h", Label: "5-hour", WindowSeconds: 18000},
-		}
+	if u.Weekly != nil && (u.Weekly.used() != nil || u.Weekly.reset() > 0) {
+		ws = append(ws, Window{ID: "muse:weekly", Label: "Weekly", UsedPercent: u.Weekly.used(), WindowSeconds: 604800, ResetsAt: u.Weekly.reset()})
 	}
 	sortWindows(ws)
 	return ws
 }
-
