@@ -19,9 +19,3 @@ dist/
 build/
 *.log
 .DS_Store
-
-# build/ above would also hide the placeholder that lets `go:embed all:build` compile before the
-# dashboard is built, so re-include it here (negations must follow the pattern they override).
-!/internal/dashboard/build/
-/internal/dashboard/build/*
-!/internal/dashboard/build/.gitkeep
