@@ -1,6 +1,8 @@
 # Pull requests get the exact build a release runs, with a read-only token and nothing
 # published: secret scan of new commits, scripts/check.sh (repository boundaries, dashboard
 # check and build, Go tests, npm shim tests), then the four cross-builds and a dry-run pack.
+# On a push to main the Release workflow tests and builds that commit for real, so this job
+# only scans and runs scripts/check.sh there.
 # Actions are pinned to commits; the comment names the release. Branch protection requires
 # the `check` job (asieke/workspace scripts/configure-github.sh).
 name: ci
@@ -48,4 +50,8 @@ jobs:
         with:
           node-version: ${{ steps.tools.outputs.node }}
       - run: scripts/check.sh
-      - run: scripts/release.sh 9.9.9 --dry-run
+      # scripts/check.sh just ran the tests, so the dry run only adds the cross-builds and pack.
+      - if: github.event_name == 'pull_request'
+        env:
+          RELEASE_SKIP_TESTS: 1
+        run: scripts/release.sh 9.9.9 --dry-run

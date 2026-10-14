@@ -3,6 +3,7 @@
 #   scripts/release.sh 0.1.2            publish ai-garcon@0.1.2 from this machine (npm login first)
 #   scripts/release.sh 0.1.2 --pack     build and write npm/ai-garcon/ai-garcon-0.1.2.tgz; publish nothing
 #   scripts/release.sh 0.1.2 --dry-run  build and show what would be packed
+# RELEASE_SKIP_TESTS=1 skips the tests, for CI jobs that just ran them in scripts/check.sh.
 # Merging into main runs --pack from .github/workflows/release.yml in a job without
 # credentials, and a second job publishes the tarball. Publish by hand only to repair a
 # release. The version in npm/ai-garcon/package.json is a placeholder; this script stamps
@@ -10,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 V="${1:-}"; MODE="${2:-}"
-usage() { sed -n '2,9p' "$0"; exit 2; }
+usage() { sed -n '2,10p' "$0"; exit 2; }
 [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
 case "$MODE" in ""|--pack|--dry-run) ;; *) usage ;; esac
 if [ "$MODE" != --dry-run ]; then
@@ -25,9 +26,13 @@ goarch() { case "$1" in x64) echo amd64 ;; arm64) echo arm64 ;; esac; }
 
 # The dashboard first: the Go packages embed its build output, so a fresh checkout cannot even compile without it.
 # Nothing in the build needs a package's lifecycle script, so none gets to run.
-echo "== dashboard"; (cd web && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && npm run check && npm test && npm run build >/dev/null)
-go test ./...
-node --test npm/ai-garcon/test/*.test.js
+echo "== dashboard"; (cd web && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error)
+if [ "${RELEASE_SKIP_TESTS:-}" != 1 ]; then
+	(cd web && npm run check && npm test)
+	go test ./...
+	node --test npm/ai-garcon/test/*.test.js
+fi
+(cd web && npm run build >/dev/null)
 # Only files from this build can end up in the package.
 rm -rf npm/ai-garcon/dist npm/ai-garcon/ai-garcon-*.tgz
 for t in $TARGETS; do

@@ -153,13 +153,15 @@ Garcon's account pools. See [architecture, auth boundaries, setup and validation
 
 ## Test
 
-- `scripts/check.sh` runs the repository-boundary check, the dashboard check, tests and build, `go vet ./...`, `go test ./...` and the npm package tests. CI runs it on every pull request, after scanning new commits for secrets, and then runs `scripts/release.sh 9.9.9 --dry-run` (the four cross-builds and a dry-run pack).
+- `scripts/check.sh` runs the repository-boundary check, the dashboard check, tests and build, `go vet ./...`, `go test ./...` and the npm package tests. CI runs it on every pull request and push to `main`, after scanning new commits for secrets. On pull requests it then runs `scripts/release.sh 9.9.9 --dry-run` without repeating the tests (the four cross-builds and a dry-run pack); on `main` the Release workflow runs the real build instead.
 - Tests need no `.env` file and no real accounts.
 - Smoke test after deploy: `curl -fsS http://127.0.0.1:4141/api/usage`
 
 ## Deploy
 
 Every merge into `main` publishes a new `ai-garcon` release to npm (see [Work on Garcon](#work-on-garcon)). npm installs pick it up with `garcon update`.
+
+The public site at https://asieke.github.io/garcon/ is GitHub Pages serving `docs/` from `main`. GitHub rebuilds it on every push, so edits to the `.html` pages in `docs/` go live when they merge; there is no separate deploy step.
 
 The owner's live install is a source build:
 
