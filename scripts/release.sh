@@ -24,15 +24,15 @@ fi
 TARGETS="linux-x64 linux-arm64 darwin-x64 darwin-arm64"
 goarch() { case "$1" in x64) echo amd64 ;; arm64) echo arm64 ;; esac; }
 
-# The dashboard first: the Go packages embed its build output, so a fresh checkout cannot even compile without it.
-# Nothing in the build needs a package's lifecycle script, so none gets to run.
+# The dashboard first: the Go packages embed its build output, so a fresh checkout cannot even compile
+# (or run go test) without it. Nothing in the build needs a package's lifecycle script, so none gets to run.
 echo "== dashboard"; (cd web && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error)
+[ "${RELEASE_SKIP_TESTS:-}" = 1 ] || (cd web && npm run check && npm test)
+(cd web && npm run build >/dev/null)
 if [ "${RELEASE_SKIP_TESTS:-}" != 1 ]; then
-	(cd web && npm run check && npm test)
 	go test ./...
 	node --test npm/ai-garcon/test/*.test.js
 fi
-(cd web && npm run build >/dev/null)
 # Only files from this build can end up in the package.
 rm -rf npm/ai-garcon/dist npm/ai-garcon/ai-garcon-*.tgz
 for t in $TARGETS; do
