@@ -12,9 +12,11 @@ export type LimitAccount = {
 	email: string;
 	workspace?: string;
 	plan?: string;
-	status: 'fresh' | 'stale' | 'needs_login' | 'unavailable';
+	status: 'fresh' | 'idle' | 'stale' | 'needs_login' | 'unavailable';
 	error?: string;
 	fetched_at: number;
+	// When the provider itself took the reading (Muse); an idle account keeps showing it.
+	observed_at?: number;
 	windows: LimitWindow[];
 	reset_credits?: {
 		available_count: number | null;
@@ -48,9 +50,15 @@ export function countdown(reset: number, now: number): string {
 }
 export function accountStatus(account: LimitAccount, now: number): string {
 	if (account.status === 'needs_login') return 'Login needs refresh';
+	if (account.status === 'idle') return 'Last reading';
 	if (account.status === 'stale' || (account.fetched_at > 0 && now - account.fetched_at > 600_000)) return 'Stale snapshot';
 	if (account.status === 'unavailable') return 'Limits unavailable';
 	return 'Up to date';
+}
+// An idle account (Muse between sessions) shows a real, dated reading; it needs no action.
+export function needsAttention(account: LimitAccount, now: number): boolean {
+	const status = accountStatus(account, now);
+	return status !== 'Up to date' && status !== 'Last reading';
 }
 export function overviewWindow(account: LimitAccount): LimitWindow | undefined {
 	return account.windows.find(w => w.label === 'Weekly') ?? account.windows[0];
@@ -96,21 +104,23 @@ export function widgetProviderGroups(accounts: LimitAccount[]): { key: string; l
 	})).filter(group => group.accounts.length > 0);
 }
 
-export function widgetAccountCells(account: LimitAccount): {
-	fiveHour: LimitWindow | null;
-	weekly: LimitWindow | null;
-	extra: LimitWindow | null;
-	extraLabel: string;
+// The widget draws one bar per account (the weekly allowance, or the only window
+// reported) and lists every other window as short text beneath it.
+export function widgetUsage(account: LimitAccount): {
+	primary: LimitWindow | null;
+	extras: { label: string; window: LimitWindow }[];
 } {
-	const fiveHour = account.windows.find(w => w.label === '5-hour') ?? null;
-	const weekly = account.windows.find(w => w.label === 'Weekly') ?? null;
-	const others = account.windows.filter(w => w !== fiveHour && w !== weekly);
-	const extra = others.find(w => w.label.endsWith(' · Weekly')) ?? others[0] ?? null;
-	let extraLabel = '';
-	if (extra) {
-		extraLabel = extra.label.replace(/ · Weekly$/, '').replace(/ · 5-hour$/, '').replace(/^Claude & GPT$/, '3P');
-	}
-	return { fiveHour, weekly, extra, extraLabel };
+	const primary = account.windows.find(w => w.label === 'Weekly') ?? account.windows[0] ?? null;
+	const rank = (w: LimitWindow) => w.label === '5-hour' ? 0 : w.label.endsWith(' · 5-hour') ? 2 : 1;
+	const extras = account.windows.filter(w => w !== primary)
+		.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
+		.map(window => ({ label: widgetShortLabel(window.label), window }));
+	return { primary, extras };
+}
+
+export function widgetShortLabel(label: string): string {
+	return label.replace(/^Claude & GPT/, '3P').replace(/ · Weekly$/, '').replace(/ · 5-hour$/, ' 5h')
+		.replace(/^5-hour$/, '5h').replace(/^Weekly$/, 'Week');
 }
 
 export function widgetWindows(account: LimitAccount): (LimitWindow | null)[] {

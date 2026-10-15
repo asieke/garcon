@@ -294,9 +294,10 @@ type museWindow struct {
 }
 
 type museUsage struct {
-	Tier   string      `json:"tier"`
-	Window *museWindow `json:"window"`
-	Weekly *museWindow `json:"weekly"`
+	ObservedAtMs int64       `json:"observedAtMs"`
+	Tier         string      `json:"tier"`
+	Window       *museWindow `json:"window"`
+	Weekly       *museWindow `json:"weekly"`
 }
 
 func (w *museWindow) used() *float64 {

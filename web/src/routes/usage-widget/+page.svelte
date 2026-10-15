@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import type { Routing } from '$lib/console/model';
 	import RequestTicker from '$lib/RequestTicker.svelte';
-	import ResetCredits from '$lib/charts/ResetCredits.svelte';
 	import AccountNickname from '$lib/charts/AccountNickname.svelte';
 	import codexLogo from '$lib/assets/providers/openai-app.png';
 	import claudeLogo from '$lib/assets/providers/claude-app.png';
@@ -13,13 +12,14 @@
 		barPercent,
 		elapsedPercent,
 		expired,
+		needsAttention,
 		resetCreditInfo,
-		widgetAccountCells,
 		widgetGroups,
 		widgetProviderGroups,
 		widgetReset,
+		widgetShortLabel,
+		widgetUsage,
 		type LimitAccount,
-		type LimitWindow,
 		type LimitsSnapshot
 	} from '$lib/limits';
 
@@ -78,7 +78,21 @@
 	const groupColors = ['#22b66b', '#3c82eb', '#db4b9e', '#a67add', '#d99b30', '#21a2b5'];
 	const accountColors = $derived(Object.fromEntries(accountGroups.map((group, i) => [group.key, groupColors[i % groupColors.length]])));
 	const checkedAt = $derived(snapshot?.updated_at ?? 0);
-	const staleAccounts = $derived(snapshot?.accounts.filter(a => accountStatus(a, now) !== 'Up to date').length ?? 0);
+	const staleAccounts = $derived(snapshot?.accounts.filter(a => needsAttention(a, now)).length ?? 0);
+	const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+	const day = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' });
+	// Text for a secondary window: "5h 15% · 3h 14m". Near-exhausted windows are flagged,
+	// since a 5-hour or model limit can block work while the weekly bar looks fine.
+	function extraText(window: LimitAccount['windows'][number]) {
+		const used = window.used_percent;
+		const reset = widgetReset(window, now);
+		return {
+			value: used == null ? '—' : `${Math.round(used)}%`,
+			reset: reset.text === '—' ? '' : reset.text,
+			description: `${window.label}: ${used == null ? 'usage not reported' : `${Number(used.toFixed(1))}% used`}; ${reset.description}`,
+			hot: used != null && used >= 80
+		};
+	}
 	const stale = $derived(Boolean(error || snapshot?.error || staleAccounts || (checkedAt > 0 && now - checkedAt > 600_000)));
 
 	async function load() {
@@ -112,32 +126,8 @@
 	});
 </script>
 
-<svelte:head><title>Usage widget · Garcon</title><meta name="description" content="Live Codex, Claude, Google AGY, and Facebook Muse account usage in a compact table." /></svelte:head>
+<svelte:head><title>Usage widget · Garcon</title><meta name="description" content="Live Codex, Claude, Google AGY, and Facebook Muse account usage at a glance." /></svelte:head>
 <svelte:window onkeydown={shortcut} />
-
-{#snippet windowCell(account: LimitAccount, window: LimitWindow | null, scope = '')}
-	{@const isExpired = window ? expired(window, now) : false}
-	{@const elapsed = window ? elapsedPercent(window, now) : null}
-	{@const used = window?.used_percent ?? null}
-	{@const reset = widgetReset(window, now)}
-	<div class="cell window-cell {account.provider}" class:expired={isExpired}>
-		{#if window}
-			<div class="cell-top">
-				<span class="figure">
-					{#if scope}<span class="scope-tag" title={window.label}>{scope}</span>{/if}
-					{#if used == null}<span class="cell-dash" role="img" aria-label="Usage not reported"></span>{:else}<strong>{Math.round(used)}%</strong>{/if}
-				</span>
-				<span class="reset" class:quiet={reset.text === '—'} title={reset.description} aria-label={reset.description}>{reset.text}</span>
-			</div>
-			<div class="track" role="img" aria-label="{account.email}, {account.provider}, {window.label}: {used == null ? 'usage unavailable' : `${used}% used`}{elapsed == null ? '' : `; ${Math.round(elapsed)}% of period elapsed`}{isExpired ? '; expired snapshot' : ''}">
-				<span class="fill" style:width={`${barPercent(used)}%`}></span>
-				{#if elapsed != null}<span class="pace" style:left={`${elapsed}%`} title="{Math.round(elapsed)}% of period elapsed"></span>{/if}
-			</div>
-		{:else}
-			<span class="cell-dash" role="img" aria-label="Not reported" title="Not reported for this account"></span>
-		{/if}
-	</div>
-{/snippet}
 
 <div class="widget-shell">
 <main class="widget-page">
@@ -147,7 +137,7 @@
 			<div class="summary">
 				<span>{snapshot?.accounts.length ?? 0} profiles</span>
 				<span class:stale title={checkedAt > 0 ? `Last provider check: ${new Date(checkedAt).toLocaleString()}` : undefined}>
-					{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'awaiting usage'}
+					{busy ? 'refreshing…' : !snapshot ? 'connecting…' : checkedAt > 0 ? `checked ${clock(checkedAt)}` : 'awaiting usage'}
 				</span>
 				{#if staleAccounts}<span class="stale">{staleAccounts} {staleAccounts === 1 ? 'needs' : 'need'} attention</span>{/if}
 				<button onclick={refresh} disabled={busy} aria-keyshortcuts="R"><kbd>R</kbd> refresh</button>
@@ -158,16 +148,10 @@
 		{#if routingError || routing?.error}<p class="notice" role="status">{routingError || routing?.error}</p>{/if}
 
 		{#if sections.length}
-			<div class="table-scroll" style:--rows={sections.reduce((n, s) => n + s.accounts.length, 0)} style:--sections={sections.length}>
-				<div class="table-head" aria-hidden="true">
-					<span class="col-account">Account</span>
-					<span>5-hour</span>
-					<span>Weekly</span>
-					<span><span class="wide-label">Scoped · Credits</span><span class="narrow-label">Other</span></span>
-				</div>
+			<div class="accounts">
 				{#each sections as section (section.key)}
 					<section class="provider-group" aria-label={section.label}>
-						<h2 class="section-heading">
+						<h2>
 							<img class="section-logo" src={section.logo} width="16" height="16" alt="" aria-hidden="true" />
 							<span>{section.label}</span>
 							<small>{section.accounts.length} {section.accounts.length === 1 ? 'account' : 'accounts'}</small>
@@ -178,52 +162,64 @@
 							{@const isPinned = !!route && routing?.pinned_account === route.id}
 							{@const isNext = !!route && routing?.next_account === route.id}
 							{@const color = accountColors[account.email.toLowerCase() || account.id]}
-							{@const cells = widgetAccountCells(account)}
-							<div class="account-row" class:up-next={isNext} style:--account-color={color} aria-label={account.email || 'Account identity unavailable'}>
-								<div class="cell account-cell">
-									<div class="account-line">
-										<AccountNickname email={account.email || 'Account identity unavailable'} accountKey={account.provider === 'codex' && account.workspace ? `codex:${account.workspace}` : undefined} {color} />
-										{#if account.provider === 'codex' && route && routing?.pinned_account !== undefined}
-											<button
-												class="pin-control" class:pinned={isPinned}
-												aria-pressed={isPinned}
-												aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${account.email} for new Codex conversations`}
-												title={isPinned ? 'Unpin to resume automatic routing for new conversations' : !route.enrolled ? 'Add this account to the Codex pool to pin it' : isNext ? 'Next for a new conversation; click to pin' : 'Pin new Codex conversations to this account'}
-												disabled={pinning || (!isPinned && (!route.enrolled || route.status === 'Saved login missing'))}
-												onclick={() => pinAccount(isPinned ? '' : route.id)}
-											>
-												<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="m5 2 6 0-1 4 2 3H4l2-3-1-4ZM8 9v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
-												{isPinned ? 'Pinned' : 'Pin'}
-											</button>
-										{/if}
-									</div>
-									{#if status !== 'Up to date'}
+							{@const usage = widgetUsage(account)}
+							{@const primary = usage.primary}
+							{@const credits = account.provider === 'codex' ? resetCreditInfo(account, now) : null}
+							<article class="account {account.provider}" class:up-next={isNext} style:--account-color={color} aria-label={account.email || 'Account identity unavailable'}>
+								<div class="account-line">
+									<AccountNickname email={account.email || 'Account identity unavailable'} accountKey={account.provider === 'codex' && account.workspace ? `codex:${account.workspace}` : undefined} {color} />
+									{#if account.provider === 'codex' && route && routing?.pinned_account !== undefined}
+										<button
+											class="pin-control" class:pinned={isPinned}
+											aria-pressed={isPinned}
+											aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${account.email} for new Codex conversations`}
+											title={isPinned ? 'Unpin to resume automatic routing for new conversations' : !route.enrolled ? 'Add this account to the Codex pool to pin it' : isNext ? 'Next for a new conversation; click to pin' : 'Pin new Codex conversations to this account'}
+											disabled={pinning || (!isPinned && (!route.enrolled || route.status === 'Saved login missing'))}
+											onclick={() => pinAccount(isPinned ? '' : route.id)}
+										>
+											<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="m5 2 6 0-1 4 2 3H4l2-3-1-4ZM8 9v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /></svg>
+											{isPinned ? 'Pinned' : 'Pin'}
+										</button>
+									{/if}
+									{#if status !== 'Up to date' && status !== 'Last reading'}
 										<span class="account-meta account-status" role="status" title={account.error || status}>{status}</span>
 									{:else if isNext && !isPinned}
 										<span class="account-meta up-next-label" title="Automatic routing would choose this account for a new Codex conversation">Up next</span>
 									{/if}
 								</div>
 
-								{@render windowCell(account, cells.fiveHour)}
-								{@render windowCell(account, cells.weekly)}
-
-								{#if cells.extra}
-									{@render windowCell(account, cells.extra, cells.extraLabel)}
-								{:else if account.provider === 'codex'}
-									<div class="cell extra-cell">
-										<span class="scope-tag">Credits</span>
-										{#if resetCreditInfo(account, now).count === 0}
-											<span class="quiet" title="No Codex reset credits available">none</span>
-										{:else}
-											<ResetCredits {account} {now} compact />
-										{/if}
+								{#if primary}
+									{@const isExpired = expired(primary, now)}
+									{@const elapsed = elapsedPercent(primary, now)}
+									{@const used = primary.used_percent}
+									{@const reset = widgetReset(primary, now)}
+									<div class="bar-line" class:expired={isExpired}>
+										<strong class="pct">{#if primary.label !== 'Weekly'}<span class="bar-label">{widgetShortLabel(primary.label)}</span>{/if}{used == null ? '—' : `${Math.round(used)}%`}</strong>
+										<div class="track" role="img" aria-label="{account.email}, {primary.label}: {used == null ? 'usage unavailable' : `${used}% used`}{elapsed == null ? '' : `; ${Math.round(elapsed)}% of period elapsed`}{isExpired ? '; expired snapshot' : ''}">
+											<span class="fill" style:width={`${barPercent(used)}%`}></span>
+											{#if elapsed != null}<span class="pace" style:left={`${elapsed}%`} title="{Math.round(elapsed)}% of the week elapsed"></span>{/if}
+										</div>
+										<span class="reset" class:quiet={reset.text === '—'} title={reset.description}>{reset.text}</span>
 									</div>
 								{:else}
-									<div class="cell extra-cell">
-										{#if account.plan}<span class="plan-pill" title="Plan">{account.plan}</span>{:else}<span class="cell-dash" role="img" aria-label="Not reported"></span>{/if}
-									</div>
+									<p class="bar-line empty-line" title={account.error}>{account.error || 'No usage reported yet'}</p>
 								{/if}
-							</div>
+
+								{#if usage.extras.length || credits?.count || (account.status === 'idle' && account.observed_at)}
+									<p class="extras">
+										{#each usage.extras as extra (extra.window.id)}
+											{@const text = extraText(extra.window)}
+											<span class="extra" class:hot={text.hot} title={text.description}><span class="extra-label">{extra.label}</span> {text.value}{#if text.reset}<span class="extra-reset">{` · ${text.reset}`}</span>{/if}</span>
+										{/each}
+										{#if credits?.count}
+											<span class="extra" class:quiet={credits.stale} title={credits.expirations.map(e => e ? `Reset credit expires ${new Date(e).toLocaleString()}` : 'Reset credit; expiration not reported').join('\n')}><span class="extra-label">{credits.count === 1 ? 'credit' : 'credits'}</span> {credits.expirations.length ? credits.expirations.map(e => e ? day(e) : '?').join(' · ') : credits.count}</span>
+										{/if}
+										{#if account.status === 'idle' && account.observed_at}
+											<span class="extra quiet" title={account.error}>as of {now - account.observed_at > 86_400_000 ? day(account.observed_at) : clock(account.observed_at)}</span>
+										{/if}
+									</p>
+								{/if}
+							</article>
 						{/each}
 					</section>
 				{/each}
@@ -242,22 +238,19 @@
 	.widget {
 		--widget-bg: #fff;
 		--widget-head: #f8fafc;
-		--widget-track: #e6ebf0;
+		--widget-track: #e4e9ef;
 		--widget-border: #dce2e9;
 		--widget-rule: #edf0f4;
 		--widget-text: #26313e;
 		--widget-muted: #68778a;
-		--widget-quiet: #b3bdc9;
+		--widget-quiet: #a3aebb;
 		--widget-warn: #b95030;
 		--codex-color: #475569;
 		--claude-color: #c0603e;
 		--google-color: #2563eb;
 		--facebook-color: #1877f2;
-		/* One column template for the header and every row keeps cells aligned. */
-		--cols: minmax(170px, 1.3fr) repeat(3, minmax(0, 1fr));
-		--col-gap: clamp(12px, 2.2vw, 34px);
 		--pad-x: clamp(10px, 1.6vw, 22px);
-		/* The card fills the window above the ticker; the table scrolls when it is short. */
+		/* The card fills the window above the ticker; accounts scroll only when it is short. */
 		height: calc(100svh - var(--request-ticker-height) - 2 * var(--page-gap) - env(safe-area-inset-bottom));
 		min-height: 220px;
 		max-width: 1600px;
@@ -296,79 +289,47 @@
 	button:disabled { opacity: .65; cursor: default; }
 	kbd { font: inherit; }
 
-	.table-scroll { container: table / size; flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
-	.table-head, .account-row {
-		display: grid;
-		grid-template-columns: var(--cols);
-		column-gap: var(--col-gap);
-		padding-inline: calc(var(--pad-x) - 4px) var(--pad-x);
-		border-left: 4px solid transparent;
-	}
-	.table-head {
-		position: sticky;
-		top: 0;
-		z-index: 2;
-		flex-shrink: 0;
-		padding-block: 7px;
-		background: var(--widget-head);
-		border-bottom: 1px solid var(--widget-border);
-		color: var(--widget-muted);
-		font-size: 11px;
-		letter-spacing: .1em;
-		text-transform: uppercase;
-		white-space: nowrap;
-	}
-	.table-head > span { overflow: hidden; text-overflow: ellipsis; }
-	.narrow-label { display: none; }
-
-	/* Rows sit directly in the scrolling column so they share spare height evenly. */
+	.accounts { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+	/* Account blocks sit directly in the scrolling column so they share spare height. */
 	.provider-group { display: contents; }
-	.section-heading {
+	h2 {
 		flex-shrink: 0;
 		margin: 0;
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: clamp(5px, .8svh, 9px) var(--pad-x);
+		padding: 5px var(--pad-x);
 		background: var(--widget-head);
 		border-bottom: 1px solid var(--widget-border);
 		font-size: 12px;
 		font-weight: 600;
 		letter-spacing: .04em;
 	}
-	.provider-group:not(:first-of-type) .section-heading { border-top: 1px solid var(--widget-border); margin-top: -1px; }
+	.provider-group:not(:first-child) h2 { border-top: 1px solid var(--widget-border); margin-top: -1px; }
 	.section-logo { display: block; width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
-	.section-heading small { margin-left: auto; color: var(--widget-muted); font-weight: 400; font-size: 11px; letter-spacing: 0; }
+	h2 small { margin-left: auto; color: var(--widget-muted); font-weight: 400; font-size: 11px; letter-spacing: 0; }
 
-	.account-row {
-		/* --row-h approximates each row's share of the table height (the scroller is a
-		   size container); --grow is how far past compact it is. Type, bars and gaps scale
-		   with --grow, flex fills the remainder, and the cap stops a lone row ballooning. */
-		--row-min: 56px;
-		--row-max: 200px;
-		--row-h: clamp(var(--row-min), calc((100cqh - 40px - var(--sections, 1) * 38px) / var(--rows, 1)), var(--row-max));
-		--grow: calc(var(--row-h) - var(--row-min));
-		--pct-cap: 3.4cqw;
-		--reset-cap: 2.2cqw;
+	.account {
+		--fill: var(--codex-color);
 		flex: 1 0 auto;
-		min-height: var(--row-h);
-		max-height: var(--row-max);
-		align-items: center;
-		align-content: center;
-		row-gap: calc(6px + var(--grow) * .04);
-		padding-block: 8px;
-		border-left-color: var(--account-color, var(--codex-color));
+		max-height: 120px;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 3px;
+		padding: 5px var(--pad-x) 5px calc(var(--pad-x) - 4px);
+		border-left: 4px solid var(--account-color, var(--codex-color));
 		border-bottom: 1px solid var(--widget-rule);
 	}
-	.account-row:last-child { border-bottom-color: var(--widget-border); }
-	.account-row.up-next { background: color-mix(in srgb, var(--account-color) 7%, var(--widget-bg)); }
+	.account.claude { --fill: var(--claude-color); }
+	.account.agy { --fill: var(--google-color); }
+	.account.muse { --fill: var(--facebook-color); }
+	.account.up-next { background: color-mix(in srgb, var(--account-color) 7%, var(--widget-bg)); }
 
-	.cell { min-width: 0; }
-	.account-cell { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
-	.account-line { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: clamp(12px, calc(12px + var(--grow) * .035), 14.5px); }
+	.account-line { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; line-height: 1.25; }
 	.account-line :global(.nickname) { flex: 0 1 auto; flex-wrap: nowrap; min-width: 0; }
 	.account-line :global(.nickname .label) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
-	.account-meta { font-size: clamp(11px, calc(11px + var(--grow) * .015), 12px); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; }
+	.account-meta { margin-left: auto; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
 	.account-status { color: var(--widget-warn); }
 	.up-next-label { color: var(--widget-muted); }
 	.up-next-label::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--account-color); vertical-align: 1px; }
@@ -377,7 +338,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		padding: 2px 7px;
+		padding: 1px 7px;
 		border: 1px solid var(--widget-border);
 		border-radius: 999px;
 		color: var(--widget-muted);
@@ -387,53 +348,43 @@
 		flex-shrink: 0;
 	}
 	.pin-control:focus-visible { outline: 2px solid var(--account-color, #3c82eb); outline-offset: 2px; }
-	.pin-control.pinned {
-		color: var(--widget-text);
-		background: color-mix(in srgb, var(--account-color) 18%, var(--widget-bg));
-		border-color: var(--account-color);
-	}
+	.pin-control.pinned { color: var(--widget-text); background: color-mix(in srgb, var(--account-color) 18%, var(--widget-bg)); border-color: var(--account-color); }
 
-	.window-cell { --fill: var(--codex-color); display: flex; flex-direction: column; gap: calc(5px + var(--grow) * .035); }
-	.window-cell.claude { --fill: var(--claude-color); }
-	.window-cell.agy { --fill: var(--google-color); }
-	.window-cell.muse { --fill: var(--facebook-color); }
-	.cell-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; line-height: 1.1; min-width: 0; }
-	.figure { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; }
-	.figure strong { font-size: clamp(13px, min(calc(14px + var(--grow) * .13), var(--pct-cap)), 27px); font-weight: 650; letter-spacing: -.01em; }
-	.scope-tag { color: var(--widget-muted); font-size: clamp(10px, calc(10px + var(--grow) * .02), 12px); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; }
-	.reset { color: var(--widget-muted); font-size: clamp(11px, min(calc(11.5px + var(--grow) * .035), var(--reset-cap)), 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
-	.reset.quiet { color: var(--widget-quiet); }
-	.track { position: relative; height: clamp(6px, calc(7px + var(--grow) * .075), 16px); border-radius: 999px; background: var(--widget-track); }
+	.bar-line { display: grid; grid-template-columns: 4.5ch minmax(0, 1fr) 7.5ch; align-items: center; gap: 10px; margin: 0; padding-left: 16px; line-height: 1.25; }
+	.pct { font-size: 14px; font-weight: 650; white-space: nowrap; }
+	.bar-label { margin-right: 4px; color: var(--widget-muted); font-size: 10px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+	.track { position: relative; height: 9px; border-radius: 999px; background: var(--widget-track); }
 	.fill { display: block; height: 100%; border-radius: inherit; background: var(--fill); }
 	.pace { position: absolute; top: -3px; bottom: -3px; width: 2px; transform: translateX(-1px); border-radius: 1px; background: var(--widget-text); box-shadow: 0 0 0 1.5px var(--widget-bg); }
+	.reset { color: var(--widget-muted); font-size: 12px; text-align: right; white-space: nowrap; }
+	.reset.quiet { color: var(--widget-quiet); }
 	.expired .track { opacity: .4; }
 	.expired .reset { color: var(--widget-warn); }
+	.empty-line { display: block; color: var(--widget-muted); font-size: 12px; line-height: 1.35; }
 
-	.extra-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: clamp(11px, min(calc(11.5px + var(--grow) * .025), var(--reset-cap)), 14px); }
-	.extra-cell :global(.reset-credits) { gap: 4px; }
-	.plan-pill { padding: 2px 9px; border: 1px solid var(--widget-border); border-radius: 999px; color: var(--widget-muted); font-size: 11px; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-	.quiet { color: var(--widget-quiet); }
-	.window-cell > .cell-dash { align-self: flex-start; margin-block: 6px; }
-	.cell-dash { display: inline-block; flex-shrink: 0; align-self: center; width: 16px; height: 2px; border-radius: 1px; background: var(--widget-quiet); vertical-align: middle; }
+	.extras { display: flex; flex-wrap: wrap; gap: 0 14px; margin: 0; padding-left: 16px; color: var(--widget-muted); font-size: 12px; line-height: 1.3; }
+	.extra { white-space: nowrap; }
+	.extra-label { color: var(--widget-quiet); }
+	.extra.hot, .extra.hot .extra-label { color: var(--widget-warn); }
+	.quiet, .extra.quiet { color: var(--widget-quiet); }
 
 	.notice { color: var(--widget-warn); font-size: 12px; padding: 6px var(--pad-x); margin: 0; border-bottom: 1px solid var(--widget-border); }
 	.stale { color: var(--widget-warn); }
 	.empty { padding: 24px var(--pad-x); color: var(--widget-muted); margin: 0; }
 
-	/* Narrow windows: the account spans the row and its three usage cells sit below it. */
-	@container widget (max-width: 600px) {
-		.table-head, .account-row { --cols: repeat(3, minmax(0, 1fr)); --col-gap: 12px; }
-		.col-account { display: none; }
-		.wide-label { display: none; }
-		.narrow-label { display: inline; }
-		.account-row { --row-min: 80px; --row-max: 216px; --pct-cap: 5.4cqw; --reset-cap: 3.4cqw; }
-		.account-cell { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }
-		.account-meta { padding-left: 0; flex-shrink: 0; }
+	/* Wide windows: name, bar and the other limits share one line per account. */
+	@container widget (min-width: 720px) {
+		.account { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.6fr) minmax(200px, 1.4fr); align-items: center; column-gap: clamp(16px, 2.4vw, 36px); max-height: 96px; }
+		.bar-line, .extras { padding-left: 0; }
+		.account-line { flex-wrap: wrap; row-gap: 2px; }
+		.account-meta { flex-basis: 100%; margin-left: 0; padding-left: 16px; }
+		.pct { font-size: 15px; }
+		.track { height: 10px; }
 	}
 	@container widget (max-width: 420px) {
 		.summary { font-size: 11px; gap: 3px 12px; }
 		.summary > :not(:first-child)::before { content: none; }
-		.table-head { font-size: 10px; letter-spacing: .06em; }
+		.extras { gap: 2px 10px; }
 	}
 
 	@media (prefers-color-scheme: dark) {
@@ -445,7 +396,7 @@
 			--widget-rule: #1c232e;
 			--widget-text: #e5e8ef;
 			--widget-muted: #929eaf;
-			--widget-quiet: #4a5566;
+			--widget-quiet: #5d6878;
 			--widget-warn: #df805d;
 			--codex-color: #d5dbe4;
 			--claude-color: #df805d;

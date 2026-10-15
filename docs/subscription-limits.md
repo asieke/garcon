@@ -12,7 +12,7 @@ Missing data stays unknown. Snapshots older than ten minutes become stale; past 
 
 ## Use the widget
 
-The widget is one table with a section per provider that has a login (Codex, Claude, Google, Facebook) and a row per account, with 5-hour, weekly and scoped-limit or reset-credit columns. It fills the window above the request ticker: rows grow and their text and bars scale up in a tall window, and the table scrolls in a short one. Narrow windows put the account name above its three usage cells. Press **R** to refresh. Extra widgets don't add provider polling.
+The widget has a section per provider that has a login (Codex, Claude, Google, Facebook) and a block per account: the account name with its Pin control and status, one bar for the weekly allowance (percentage used, a marker for how much of the week has passed, and the time to reset), and a line of text for everything else: the 5-hour window, model-scoped limits such as Fable or AGY's Claude & GPT pool, Codex reset credits, and the time of Muse's last reading (Garcon probes Muse hourly with one minimal prompt, since Muse reports usage only after a model call). A secondary limit at 80% or more turns the warning color, since it can block work while the weekly bar looks fine. Blocks share the window's height above the request ticker and scroll only when it is too short; wide windows put each account on one line. Press **R** to refresh. Extra widgets don't add provider polling.
 
 Click an account email to give it a nickname. Nicknames are stored in local SQLite; older browser nicknames migrate on first use. Save a blank name to restore the email.
 

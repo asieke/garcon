@@ -12,20 +12,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"garcon/internal/claude"
+
+	"github.com/google/uuid"
 )
 
 // source exists only during a refresh. Access tokens never enter snapshots.
 type source struct {
-	account    Account
-	token      string
-	selected   string
-	expires    int64
-	problem    string
-	localFetch func(context.Context) (string, string, []Window, error)
+	account  Account
+	token    string
+	selected string
+	expires  int64
+	problem  string
+	// localFetch returns the email, plan, windows and, when the provider stamps
+	// its reading, when it observed them (Unix milliseconds).
+	localFetch func(context.Context) (string, string, []Window, int64, error)
 }
 
 func readFile(path string) ([]byte, error) {
@@ -235,7 +241,7 @@ func discoverAGY(_ context.Context, home string) []source {
 		s.problem = "AGY CLI binary not found"
 		return []source{s}
 	}
-	s.localFetch = func(ctx context.Context) (string, string, []Window, error) {
+	s.localFetch = func(ctx context.Context) (string, string, []Window, int64, error) {
 		runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		tmpLog, err := os.CreateTemp("", "garcon-agy-*.log")
@@ -260,15 +266,58 @@ func discoverAGY(_ context.Context, home string) []source {
 			}
 		}
 		if err != nil {
-			return email, "Antigravity", nil, errors.New("Could not query AGY CLI usage")
+			return email, "Antigravity", nil, 0, errors.New("Could not query AGY CLI usage")
 		}
 		ws, err := parseAGY(out)
 		if err != nil {
-			return email, "Antigravity", nil, err
+			return email, "Antigravity", nil, 0, err
 		}
-		return email, "Antigravity", ws, nil
+		return email, "Antigravity", ws, 0, nil
 	}
 	return []source{s}
+}
+
+// Muse keeps subscription usage only in a host's memory, learns it only from
+// the credential mint behind a model call, and writes none of it to disk. So
+// Garcon sends one minimal prompt from a private, memory-only session to read
+// it: hourly, or on a manual refresh at most every five minutes. Between
+// probes the account shows the last reading.
+const (
+	museProbeInterval       = time.Hour
+	museManualProbeInterval = 5 * time.Minute
+	museProbePrompt         = "Reply with OK."
+)
+
+var errMuseIdle = errors.New("Muse is checked hourly with a minimal prompt; showing its last reading")
+
+var museProbes = struct {
+	sync.Mutex
+	last time.Time
+	now  func() time.Time
+}{now: time.Now}
+
+type manualRefreshKey struct{}
+
+// withManualRefresh marks a refresh the user asked for, which may probe Muse sooner.
+func withManualRefresh(ctx context.Context) context.Context {
+	return context.WithValue(ctx, manualRefreshKey{}, true)
+}
+
+// museProbeDue claims the next probe slot. A failed probe also waits out the
+// interval, so an outage never turns into a prompt every refresh.
+func museProbeDue(ctx context.Context) bool {
+	museProbes.Lock()
+	defer museProbes.Unlock()
+	interval := museProbeInterval
+	if manual, _ := ctx.Value(manualRefreshKey{}).(bool); manual {
+		interval = museManualProbeInterval
+	}
+	now := museProbes.now()
+	if !museProbes.last.IsZero() && now.Sub(museProbes.last) < interval {
+		return false
+	}
+	museProbes.last = now
+	return true
 }
 
 func museBinary(home string) string {
@@ -293,13 +342,33 @@ func museBinary(home string) string {
 	return ""
 }
 
-// museServeUsage asks a short-lived `muse serve` host for the subscription
-// windows it last observed (MSP usage/read). The host answers from its own
-// cache and does not spend a prompt. Only the usage member is decoded.
-func museServeUsage(ctx context.Context, bin string) (*museUsage, error) {
-	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+// museProbeDir holds the probe's Muse data and workspace, apart from the
+// user's sessions, so probes never appear in Muse history or Garcon's import.
+func museProbeDir(home string) string {
+	dir := os.Getenv("XDG_CACHE_HOME")
+	switch {
+	case dir != "":
+	case runtime.GOOS == "darwin":
+		dir = filepath.Join(home, "Library", "Caches")
+	default:
+		dir = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(dir, "garcon", "muse-probe")
+}
+
+// museProbeUsage runs one minimal turn on a memory-only `muse serve` host and
+// returns the subscription usage the host observes, stopping as soon as it
+// arrives (about ten seconds) rather than waiting for the turn to wind down.
+func museProbeUsage(ctx context.Context, bin, dir string) (*museUsage, error) {
+	workspace := filepath.Join(dir, "workspace")
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		return nil, err
+	}
+	runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, bin, "serve")
+	cmd := exec.CommandContext(runCtx, bin, "serve", "--no-session-log")
+	cmd.Dir = workspace
+	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+filepath.Join(dir, "data"))
 	cmd.WaitDelay = 2 * time.Second
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -317,61 +386,151 @@ func museServeUsage(ctx context.Context, bin string) (*museUsage, error) {
 		cancel()
 		_ = cmd.Wait()
 	}()
-	lines := bufio.NewScanner(stdout)
-	lines.Buffer(make([]byte, 64<<10), 4<<20)
-	send := func(v any) error {
-		b, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		_, err = stdin.Write(append(b, '\n'))
-		return err
+	usage, err := museProbeSession(&msp{w: stdin, lines: bufio.NewScanner(stdout)}, workspace)
+	if err != nil && runCtx.Err() != nil {
+		return nil, errors.New("Muse did not report usage in time")
 	}
-	await := func(id int) (json.RawMessage, error) {
-		for lines.Scan() {
-			var msg struct {
-				ID     *int            `json:"id"`
-				Result json.RawMessage `json:"result"`
-				Error  *struct {
-					Message string `json:"message"`
-				} `json:"error"`
-			}
-			if json.Unmarshal(lines.Bytes(), &msg) != nil || msg.ID == nil || *msg.ID != id {
-				continue // notifications and unrelated frames
-			}
-			if msg.Error != nil {
-				return nil, errors.New("Muse rejected the usage request")
-			}
-			return msg.Result, nil
-		}
-		if runCtx.Err() != nil {
-			return nil, errors.New("Muse did not answer the usage request in time")
-		}
-		return nil, errors.New("Muse exited before reporting usage")
-	}
-	if err = send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]string{"name": "garcon", "version": "1"}}}); err != nil {
+	return usage, err
+}
+
+func museProbeSession(c *msp, workspace string) (*museUsage, error) {
+	c.lines.Buffer(make([]byte, 64<<10), 4<<20)
+	if _, err := c.call("initialize", map[string]any{"clientInfo": map[string]string{"name": "garcon", "version": "1"}}); err != nil {
 		return nil, err
 	}
-	if _, err = await(1); err != nil {
+	if err := c.send(map[string]any{"jsonrpc": "2.0", "method": "initialized"}); err != nil {
 		return nil, err
 	}
-	if err = send(map[string]any{"jsonrpc": "2.0", "method": "initialized"}); err != nil {
-		return nil, err
-	}
-	if err = send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "usage/read"}); err != nil {
-		return nil, err
-	}
-	raw, err := await(2)
+	raw, err := c.call("session/start", map[string]any{"commandId": uuidV7(), "workspaceRoot": workspace})
 	if err != nil {
 		return nil, err
 	}
-	var result struct {
-		Usage *museUsage `json:"usage"`
+	var started struct {
+		Session struct {
+			SessionID string `json:"sessionId"`
+		} `json:"session"`
 	}
-	if json.Unmarshal(raw, &result) != nil {
-		return nil, errors.New("Unrecognized Muse usage response")
+	if json.Unmarshal(raw, &started) != nil || started.Session.SessionID == "" {
+		return nil, errors.New("Unrecognized Muse session response")
 	}
-	return result.Usage, nil
+	if _, err = c.call("turn/start", map[string]any{
+		"commandId": uuidV7(), "sessionId": started.Session.SessionID, "reasoningEffort": "none",
+		"input": []map[string]string{{"type": "text", "text": museProbePrompt}},
+	}); err != nil {
+		return nil, err
+	}
+	// The reading lands shortly after the model answers; the turn itself winds
+	// down a minute later, so stop at the answer and poll briefly.
+	for c.usage == nil {
+		method, err := c.next()
+		if err != nil {
+			return nil, err
+		}
+		if method == "turn/foregroundCompleted" || method == "turn/completed" || method == "turn/failed" {
+			break
+		}
+	}
+	for i := 0; c.usage == nil && i < 10; i++ {
+		raw, err := c.call("usage/read", nil)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Usage *museUsage `json:"usage"`
+		}
+		if json.Unmarshal(raw, &result) == nil && len(parseMuseWindows(result.Usage)) > 0 {
+			c.usage = result.Usage
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if c.usage == nil {
+		return nil, errors.New("Muse did not report usage")
+	}
+	return c.usage, nil
+}
+
+// msp is a minimal MSP client: newline-delimited JSON-RPC that remembers the
+// last usage/changed notification it reads.
+type msp struct {
+	w     io.Writer
+	lines *bufio.Scanner
+	id    int
+	usage *museUsage
+}
+
+func (c *msp) send(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = c.w.Write(append(b, '\n'))
+	return err
+}
+
+// next reads one frame and returns its notification method, if any.
+func (c *msp) next() (string, error) {
+	if !c.lines.Scan() {
+		return "", errors.New("Muse exited before reporting usage")
+	}
+	var frame struct {
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	if json.Unmarshal(c.lines.Bytes(), &frame) != nil {
+		return "", nil
+	}
+	c.observe(frame.Method, frame.Params)
+	return frame.Method, nil
+}
+
+func (c *msp) observe(method string, params json.RawMessage) {
+	var u museUsage
+	if method == "usage/changed" && json.Unmarshal(params, &u) == nil && len(parseMuseWindows(&u)) > 0 {
+		c.usage = &u
+	}
+}
+
+func (c *msp) call(method string, params any) (json.RawMessage, error) {
+	c.id++
+	req := map[string]any{"jsonrpc": "2.0", "id": c.id, "method": method}
+	if params != nil {
+		req["params"] = params
+	}
+	if err := c.send(req); err != nil {
+		return nil, err
+	}
+	for c.lines.Scan() {
+		var msg struct {
+			ID     *int            `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+			Result json.RawMessage `json:"result"`
+			Error  *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(c.lines.Bytes(), &msg) != nil {
+			continue
+		}
+		c.observe(msg.Method, msg.Params)
+		if msg.ID == nil || *msg.ID != c.id {
+			continue // notifications and unrelated frames
+		}
+		if msg.Error != nil {
+			return nil, fmt.Errorf("Muse rejected %s", method)
+		}
+		return msg.Result, nil
+	}
+	return nil, errors.New("Muse exited before reporting usage")
+}
+
+func uuidV7() string {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return uuid.NewString()
+	}
+	return id.String()
 }
 
 func discoverMuse(_ context.Context, home string) []source {
@@ -380,6 +539,7 @@ func discoverMuse(_ context.Context, home string) []source {
 		paths = append(paths, env)
 	}
 	bin := museBinary(home)
+	probeDir := museProbeDir(home)
 	seen := map[string]bool{}
 	out := []source{}
 	for _, p := range paths {
@@ -434,30 +594,22 @@ func discoverMuse(_ context.Context, home string) []source {
 			continue
 		}
 		snapshot := meta.SubsUsage
-		s.localFetch = func(ctx context.Context) (string, string, []Window, error) {
-			// Prefer the live host; fall back to the snapshot in auth.json.
-			var hostErr error
-			if bin != "" {
-				u, err := museServeUsage(ctx, bin)
-				if ws := parseMuseWindows(u); err == nil && len(ws) > 0 {
-					if meta.SubsTierName == "" && u.Tier != "" && len(u.Tier) <= 64 {
-						return meta.UserEmail, u.Tier, ws, nil
-					}
-					return meta.UserEmail, plan, ws, nil
-				}
-				hostErr = err
-			}
+		s.localFetch = func(ctx context.Context) (string, string, []Window, int64, error) {
+			// Older Muse releases stored a snapshot in auth.json.
 			if ws := parseMuseWindows(snapshot); len(ws) > 0 {
-				return meta.UserEmail, plan, ws, nil
+				return meta.UserEmail, plan, ws, snapshot.ObservedAtMs, nil
 			}
-			switch {
-			case bin == "":
-				return meta.UserEmail, plan, nil, errors.New("Muse CLI not found; set MUSE_BIN or install muse on PATH")
-			case hostErr != nil:
-				return meta.UserEmail, plan, nil, hostErr
-			default:
-				return meta.UserEmail, plan, nil, errors.New("Muse has not reported usage yet; send a Muse prompt, then refresh")
+			if bin == "" {
+				return meta.UserEmail, plan, nil, 0, errors.New("Muse CLI not found; set MUSE_BIN or install muse on PATH")
 			}
+			if !museProbeDue(ctx) {
+				return meta.UserEmail, plan, nil, 0, errMuseIdle
+			}
+			u, err := museProbeUsage(ctx, bin, probeDir)
+			if err != nil {
+				return meta.UserEmail, plan, nil, 0, err
+			}
+			return meta.UserEmail, plan, parseMuseWindows(u), u.ObservedAtMs, nil
 		}
 		out = append(out, s)
 	}

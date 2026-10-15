@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetProviderGroups, widgetAccountCells, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo } from '../src/lib/limits.ts';
+import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetProviderGroups, widgetUsage, widgetShortLabel, needsAttention, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo } from '../src/lib/limits.ts';
 
 const reset = Date.UTC(2030, 0, 8);
 const week = { id: 'week', label: 'Weekly', used_percent: 32, window_seconds: 604800, resets_at: reset, expired: false };
@@ -27,6 +27,10 @@ test('overview chooses weekly window and status flags stale credentials and snap
 	assert.equal(accountStatus(a, reset), 'Stale snapshot');
 	assert.equal(accountStatus({ ...a, status: 'needs_login' }, reset), 'Login needs refresh');
 	assert.equal(accountStatus({ ...a, fetched_at: reset }, reset), 'Up to date');
+	// A Muse reading kept between sessions is dated, not an error.
+	assert.equal(accountStatus({ ...a, status: 'idle' }, reset), 'Last reading');
+	assert.equal(needsAttention({ ...a, status: 'idle' }, reset), false);
+	assert.equal(needsAttention(a, reset), true);
 });
 
 test('widget groups by email without combining separate provider allowances or workspace seats', () => {
@@ -79,12 +83,15 @@ test('provider widget groups order Codex, Claude, Google, and Facebook and map c
  assert.deepEqual(groups.map(group => group.label), ['Codex', 'Claude', 'Google', 'Facebook']);
  assert.deepEqual(groups[1].accounts.map(account => account.id), ['claude-a1', 'claude-a2', 'claude-b']);
  assert.equal(groups[1].accounts[0], accounts[5]);
- const claudeCells = widgetAccountCells(accounts[2]);
- assert.equal(claudeCells.fiveHour.label, '5-hour');
- assert.equal(claudeCells.weekly.label, 'Weekly');
- assert.equal(claudeCells.extraLabel, 'Fable');
- const agyCells = widgetAccountCells(accounts[1]);
- assert.equal(agyCells.extraLabel, '3P');
+ // One bar for the weekly allowance; every other window becomes short text, 5-hour first.
+ const claude = widgetUsage(accounts[2]);
+ assert.equal(claude.primary.label, 'Weekly');
+ assert.deepEqual(claude.extras.map(e => e.label), ['5h', 'Fable']);
+ const agy = widgetUsage({ ...accounts[1], windows: [...accounts[1].windows, { ...week, id: '3p5', label: 'Claude & GPT · 5-hour' }, { ...week, id: 'g5', label: '5-hour' }] });
+ assert.deepEqual(agy.extras.map(e => e.label), ['5h', '3P', '3P 5h']);
+ assert.equal(widgetUsage({ ...accounts[0], windows: [{ ...week, label: '5-hour' }] }).primary.label, '5-hour');
+ assert.deepEqual(widgetUsage({ ...accounts[0], windows: [] }), { primary: null, extras: [] });
+ assert.equal(widgetShortLabel('Weekly'), 'Week');
  assert.deepEqual(widgetProviderGroups([]), []);
  assert.deepEqual(widgetProviderGroups([accounts[2]]).map(group => group.key), ['claude']);
 });

@@ -182,7 +182,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		// One bounded refresh continues if the browser disconnects.
 		if old, ok := s.beginRefresh(); ok {
-			go s.collect(context.Background(), old)
+			go s.collect(withManualRefresh(context.Background()), old)
 		}
 		w.WriteHeader(http.StatusAccepted)
 	} else if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -275,8 +275,9 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 		a := src.account
 		a.Windows = []Window{}
 		if prev, ok := old[id]; ok {
-			a.Windows = prev.Windows
+			a.Windows = reportedWindows(prev.Windows)
 			a.FetchedAt = prev.FetchedAt
+			a.ObservedAt = prev.ObservedAt
 			a.ResetCredits = prev.ResetCredits
 			if a.Email == "" {
 				a.Email = prev.Email
@@ -309,7 +310,7 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 				a.Status = "stale"
 			}
 		case src.localFetch != nil:
-			email, plan, ws, err := src.localFetch(ctx)
+			email, plan, ws, observed, err := src.localFetch(ctx)
 			if email != "" {
 				a.Email = email
 			}
@@ -319,10 +320,18 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 			if err == nil {
 				a.Windows = ws
 				a.FetchedAt = s.now().UnixMilli()
+				a.ObservedAt = observed
 				a.Status = "fresh"
 				if len(ws) == 0 {
 					a.Status = "unavailable"
 					a.Error = "No subscription limits reported"
+				}
+			} else if errors.Is(err, errMuseIdle) {
+				a.Error = err.Error()
+				if len(a.Windows) > 0 {
+					a.Status = "idle"
+				} else {
+					a.Error = "No Muse reading yet; Garcon checks Muse hourly"
 				}
 			} else {
 				a.Error = err.Error()
@@ -509,4 +518,16 @@ func (s *Service) persist(c Snapshot) error {
 		return err
 	}
 	return os.Rename(name, s.path)
+}
+
+// reportedWindows drops windows that carry neither a percentage nor a reset;
+// older releases cached such placeholders, and they read as observed zeros.
+func reportedWindows(ws []Window) []Window {
+	out := []Window{}
+	for _, w := range ws {
+		if w.UsedPercent != nil || w.ResetsAt > 0 {
+			out = append(out, w)
+		}
+	}
+	return out
 }

@@ -411,20 +411,39 @@ func TestAGYAndMuseLimits(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(museDir, "auth.json"), []byte(museAuth), 0600); err != nil {
 		t.Fatal(err)
 	}
-	// A fake `muse serve` host: newline-delimited JSON-RPC with a
-	// notification before each answer, as a real host may send.
+	// A fake `muse serve`: newline-delimited JSON-RPC with notifications
+	// between answers, as a real host sends. The reading becomes readable
+	// once the model has answered. Each run is counted.
+	runs := filepath.Join(home, "muse-runs")
 	fakeMuse := filepath.Join(binDir, "muse")
 	museScript := `#!/bin/sh
-[ "$1" = serve ] || exit 2
+[ "$1" = serve ] && [ "$2" = --no-session-log ] || exit 2
+echo run >> '` + runs + `'
 while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*) printf '%s\n' '{"jsonrpc":"2.0","method":"session/listChanged","params":{}}' '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"muse"}}}' ;;
-    *'"method":"usage/read"'*) printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"usage":{"observedAtMs":1893456000000,"tier":"plus","window":{"usedPercent":42,"windowDurationMins":300,"resetsAtMs":1893474000000},"weekly":{"usedPercent":7,"resetsAtMs":1894060800000}}}}' ;;
+    *'"method":"session/start"'*) printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"session":{"sessionId":"s1"}}}' ;;
+    *'"method":"turn/start"'*) printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{"status":"accepted"}}' '{"jsonrpc":"2.0","method":"turn/started","params":{}}' '{"jsonrpc":"2.0","method":"turn/foregroundCompleted","params":{}}' ;;
+    *'"method":"usage/read"'*) printf '%s\n' '{"jsonrpc":"2.0","id":4,"result":{"usage":{"observedAtMs":1893456000000,"tier":"27681631238169137","window":{"usedPercent":42,"windowDurationMins":300,"resetsAtMs":1893474000000},"weekly":{"usedPercent":7,"resetsAtMs":1894060800000}}}}' ;;
   esac
 done
 `
 	if err := os.WriteFile(fakeMuse, []byte(museScript), 0700); err != nil {
 		t.Fatal(err)
+	}
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
+	clock := time.Unix(1800000000, 0)
+	museProbes.Lock()
+	museProbes.last, museProbes.now = time.Time{}, func() time.Time { return clock }
+	museProbes.Unlock()
+	t.Cleanup(func() {
+		museProbes.Lock()
+		museProbes.last, museProbes.now = time.Time{}, time.Now
+		museProbes.Unlock()
+	})
+	probes := func() int {
+		b, _ := os.ReadFile(runs)
+		return strings.Count(string(b), "run")
 	}
 
 	s := testService(t, nil, nil)
@@ -438,14 +457,49 @@ done
 		t.Fatalf("unexpected agy account: %+v", snap.Accounts[0])
 	}
 	muse := snap.Accounts[1]
-	if muse.Provider != "muse" || muse.Email != "user@example.com" || muse.Status != "fresh" || muse.Plan != "plus" || len(muse.Windows) != 2 {
+	// The tier is an opaque id, so the plan stays the readable default.
+	if muse.Provider != "muse" || muse.Email != "user@example.com" || muse.Status != "fresh" || muse.Plan != "Muse Code" || muse.ObservedAt != 1893456000000 || len(muse.Windows) != 2 {
 		t.Fatalf("unexpected muse account: %+v", muse)
 	}
 	if muse.Windows[0].Label != "Weekly" || *muse.Windows[0].UsedPercent != 7 || muse.Windows[1].Label != "5-hour" || *muse.Windows[1].UsedPercent != 42 || muse.Windows[1].ResetsAt != 1893474000000 {
 		t.Fatalf("unexpected muse windows: %+v", muse.Windows)
 	}
+	if _, err := os.Stat(filepath.Join(home, "cache", "garcon", "muse-probe", "workspace")); err != nil {
+		t.Fatalf("the probe must run in Garcon's own folder: %v", err)
+	}
 
-	// Without a host answer, an unreported window is unavailable, never a blank "fresh" row.
+	// Within the hour, refreshes keep the last reading as idle and spend no prompt.
+	s.discover = func(ctx context.Context) []source { return discoverMuse(ctx, home) }
+	clock = clock.Add(30 * time.Minute)
+	next(s)
+	if a := s.Snapshot().Accounts; len(a) != 2 || a[1].Status != "idle" || len(a[1].Windows) != 2 || a[1].ObservedAt != 1893456000000 || probes() != 1 {
+		t.Fatalf("Muse must not be probed again within the hour: %d probes, %+v", probes(), a)
+	}
+	// A manual refresh may probe after five minutes; the hourly schedule after an hour.
+	s.mu.Lock()
+	s.lastStart = time.Time{}
+	s.mu.Unlock()
+	s.Refresh(withManualRefresh(context.Background()))
+	if probes() != 2 || s.Snapshot().Accounts[1].Status != "fresh" {
+		t.Fatalf("a manual refresh must probe Muse: %d probes", probes())
+	}
+	clock = clock.Add(59 * time.Minute)
+	next(s)
+	clock = clock.Add(2 * time.Minute)
+	next(s)
+	if probes() != 3 {
+		t.Fatalf("the hourly probe must follow the last one: %d probes", probes())
+	}
+
+	// With no reading ever and no probe due, the account says so and is never a blank "fresh" row.
+	s = testService(t, nil, nil)
+	s.discover = func(ctx context.Context) []source { return discoverMuse(ctx, home) }
+	s.Refresh(context.Background())
+	if a := s.Snapshot().Accounts; len(a) != 1 || a[0].Status != "unavailable" || len(a[0].Windows) != 0 || !strings.Contains(a[0].Error, "No Muse reading yet") {
+		t.Fatalf("missing Muse reading must not look fresh: %+v", a)
+	}
+
+	// Without the CLI, nothing is probed.
 	if err := os.Remove(fakeMuse); err != nil {
 		t.Fatal(err)
 	}
@@ -453,8 +507,8 @@ done
 	s = testService(t, nil, nil)
 	s.discover = func(ctx context.Context) []source { return discoverMuse(ctx, home) }
 	s.Refresh(context.Background())
-	if a := s.Snapshot().Accounts; len(a) != 1 || a[0].Status != "unavailable" || len(a[0].Windows) != 0 || !strings.Contains(a[0].Error, "Muse CLI not found") {
-		t.Fatalf("missing Muse host must not look fresh: %+v", a)
+	if a := s.Snapshot().Accounts; len(a) != 1 || a[0].Status != "unavailable" || !strings.Contains(a[0].Error, "Muse CLI not found") {
+		t.Fatalf("missing Muse CLI: %+v", a)
 	}
 }
 
