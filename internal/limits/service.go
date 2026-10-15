@@ -182,7 +182,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		// One bounded refresh continues if the browser disconnects.
 		if old, ok := s.beginRefresh(); ok {
-			go s.collect(context.Background(), old)
+			go s.collect(withManualRefresh(context.Background()), old)
 		}
 		w.WriteHeader(http.StatusAccepted)
 	} else if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -331,7 +331,7 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 				if len(a.Windows) > 0 {
 					a.Status = "idle"
 				} else {
-					a.Error = "No Muse reading yet; Garcon reads usage while a Muse session is open"
+					a.Error = "No Muse reading yet; Garcon checks Muse hourly"
 				}
 			} else {
 				a.Error = err.Error()
