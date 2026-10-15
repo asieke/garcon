@@ -107,7 +107,7 @@ The ticker and request inspector also show task names. **Analytics** shows token
 
 Open [the compact widget](http://127.0.0.1:4141/usage-widget/) for Codex, Claude, Antigravity (AGY) and Muse allowances, reset times, and Codex reset credits. Press **R** to refresh. Provider limits include work done outside Garcon; missing data isn't counted as unused quota.
 
-Muse limits come from a short-lived `muse serve` process (`usage/read`), which reports the windows Muse last saw without spending a prompt; until Muse has seen them, the row says so instead of showing zero. Garcon looks for `muse` in `MUSE_BIN`, `~/.local/bin`, `~/.muse/bin`, Homebrew and `PATH`. Muse sessions are imported from `~/.muse/sessions` (or `MUSE_HOME`), including subagent logs, which count toward their top-level session.
+Muse keeps its subscription usage only in the memory of a running session and writes none to disk, so Garcon reads it (`usage/read` over the session's local socket in Muse's runtime folder) while a Muse session is open, without spending a prompt. Between sessions the widget keeps the last reading, marked "as of" its time, and doesn't count it as needing attention; before the first reading the row says so instead of showing zero. Muse sessions are imported from `~/.muse/sessions`, `~/.local/share/muse/sessions` (or `MUSE_HOME`), including subagent logs, which count toward their top-level session.
 
 On macOS, the small [Swift app](macos/usage-widget.swift) opens that same widget in a native window. Build it with Apple's Command Line Tools installed:
 

@@ -19,14 +19,17 @@ type Window struct {
 }
 
 type Account struct {
-	ID           string        `json:"id"`
-	Provider     string        `json:"provider"`
-	Email        string        `json:"email"`
-	Workspace    string        `json:"workspace,omitempty"`
-	Plan         string        `json:"plan,omitempty"`
-	Status       string        `json:"status"` // fresh, stale, needs_login, unavailable
-	Error        string        `json:"error,omitempty"`
-	FetchedAt    int64         `json:"fetched_at"`
+	ID        string `json:"id"`
+	Provider  string `json:"provider"`
+	Email     string `json:"email"`
+	Workspace string `json:"workspace,omitempty"`
+	Plan      string `json:"plan,omitempty"`
+	Status    string `json:"status"` // fresh, idle, stale, needs_login, unavailable
+	Error     string `json:"error,omitempty"`
+	FetchedAt int64  `json:"fetched_at"`
+	// ObservedAt is when the provider itself took the reading, when it says so
+	// (Muse); an idle account keeps showing that reading.
+	ObservedAt   int64         `json:"observed_at,omitempty"`
 	Windows      []Window      `json:"windows"`
 	ResetCredits *ResetCredits `json:"reset_credits,omitempty"`
 }

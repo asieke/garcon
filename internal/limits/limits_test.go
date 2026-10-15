@@ -1,12 +1,15 @@
 package limits
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -411,19 +414,50 @@ func TestAGYAndMuseLimits(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(museDir, "auth.json"), []byte(museAuth), 0600); err != nil {
 		t.Fatal(err)
 	}
-	// A fake `muse serve` host: newline-delimited JSON-RPC with a
-	// notification before each answer, as a real host may send.
-	fakeMuse := filepath.Join(binDir, "muse")
-	museScript := `#!/bin/sh
-[ "$1" = serve ] || exit 2
-while IFS= read -r line; do
-  case "$line" in
-    *'"method":"initialize"'*) printf '%s\n' '{"jsonrpc":"2.0","method":"session/listChanged","params":{}}' '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"muse"}}}' ;;
-    *'"method":"usage/read"'*) printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"usage":{"observedAtMs":1893456000000,"tier":"plus","window":{"usedPercent":42,"windowDurationMins":300,"resetsAtMs":1893474000000},"weekly":{"usedPercent":7,"resetsAtMs":1894060800000}}}}' ;;
-  esac
-done
-`
-	if err := os.WriteFile(fakeMuse, []byte(museScript), 0700); err != nil {
+	// A fake running Muse host: newline-delimited JSON-RPC on the session's
+	// runtime socket, with a notification before each answer as a real host
+	// may send. A lease for an exited process must be skipped.
+	data, err := os.MkdirTemp("", "muse") // unix socket paths are short
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(data) })
+	t.Setenv("XDG_DATA_HOME", data)
+	runtimeDir := museRuntimeDir(home)
+	if err := os.MkdirAll(runtimeDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(runtimeDir, "ms-test.sock")
+	listener, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				lines := bufio.NewScanner(conn)
+				for lines.Scan() {
+					switch line := lines.Text(); {
+					case strings.Contains(line, `"method":"initialize"`):
+						fmt.Fprint(conn, `{"jsonrpc":"2.0","method":"session/listChanged","params":{}}`+"\n"+`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"muse"}}}`+"\n")
+					case strings.Contains(line, `"method":"usage/read"`):
+						fmt.Fprint(conn, `{"jsonrpc":"2.0","id":2,"result":{"usage":{"observedAtMs":1893456000000,"tier":"plus","window":{"usedPercent":42,"windowDurationMins":300,"resetsAtMs":1893474000000},"weekly":{"usedPercent":7,"resetsAtMs":1894060800000}}}}`+"\n")
+					}
+				}
+			}()
+		}
+	}()
+	lease := fmt.Sprintf(`{"schema_version":1,"pid":%d}`, os.Getpid())
+	if err := os.WriteFile(sock+".lease", []byte(lease), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "ms-gone.sock.lease"), []byte(`{"pid":999999999}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -438,23 +472,28 @@ done
 		t.Fatalf("unexpected agy account: %+v", snap.Accounts[0])
 	}
 	muse := snap.Accounts[1]
-	if muse.Provider != "muse" || muse.Email != "user@example.com" || muse.Status != "fresh" || muse.Plan != "plus" || len(muse.Windows) != 2 {
+	if muse.Provider != "muse" || muse.Email != "user@example.com" || muse.Status != "fresh" || muse.Plan != "plus" || muse.ObservedAt != 1893456000000 || len(muse.Windows) != 2 {
 		t.Fatalf("unexpected muse account: %+v", muse)
 	}
 	if muse.Windows[0].Label != "Weekly" || *muse.Windows[0].UsedPercent != 7 || muse.Windows[1].Label != "5-hour" || *muse.Windows[1].UsedPercent != 42 || muse.Windows[1].ResetsAt != 1893474000000 {
 		t.Fatalf("unexpected muse windows: %+v", muse.Windows)
 	}
 
-	// Without a host answer, an unreported window is unavailable, never a blank "fresh" row.
-	if err := os.Remove(fakeMuse); err != nil {
-		t.Fatal(err)
+	// Once the session ends, the last reading stays visible as idle, not stale.
+	listener.Close()
+	os.Remove(sock + ".lease")
+	s.discover = func(ctx context.Context) []source { return discoverMuse(ctx, home) }
+	next(s)
+	if a := s.Snapshot().Accounts; len(a) != 2 || a[1].Status != "idle" || len(a[1].Windows) != 2 || a[1].ObservedAt != 1893456000000 {
+		t.Fatalf("an ended Muse session must keep its last reading: %+v", a)
 	}
-	t.Setenv("PATH", "")
+
+	// With no reading ever, the account is unavailable, never a blank "fresh" row.
 	s = testService(t, nil, nil)
 	s.discover = func(ctx context.Context) []source { return discoverMuse(ctx, home) }
 	s.Refresh(context.Background())
-	if a := s.Snapshot().Accounts; len(a) != 1 || a[0].Status != "unavailable" || len(a[0].Windows) != 0 || !strings.Contains(a[0].Error, "Muse CLI not found") {
-		t.Fatalf("missing Muse host must not look fresh: %+v", a)
+	if a := s.Snapshot().Accounts; len(a) != 1 || a[0].Status != "unavailable" || len(a[0].Windows) != 0 || !strings.Contains(a[0].Error, "No Muse reading yet") {
+		t.Fatalf("missing Muse reading must not look fresh: %+v", a)
 	}
 }
 
