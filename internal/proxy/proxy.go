@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"garcon/internal/accounts"
-	"garcon/internal/claude"
 	"garcon/internal/codexrouting"
 	"garcon/internal/usage"
 )
@@ -159,12 +158,6 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 		call.Apply(&rec)
 	}
 	capture()
-	if d := claude.Details(r); d.AccountID != "" {
-		rec.AccountID, rec.Account, rec.SessionID, rec.Model = d.AccountID, d.Account, d.Session, d.Model
-		if rec.ThreadID == rec.SessionID {
-			rec.ThreadID = ""
-		}
-	}
 	if !routed && rt.Provider == "chatgpt" {
 		rec.AccountID = metadataID(r.Header.Get("ChatGPT-Account-Id"))
 	}
@@ -227,12 +220,6 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
 		ModifyResponse: func(res *http.Response) error {
 			if rt.Harness == "claude" {
 				rec.UpstreamRequestID = metadataID(res.Header.Get("request-id"))
-			}
-			if d := claude.Details(r); d.AccountID != "" {
-				res.Header.Set("X-Garcon-Account-Id", d.AccountID)
-				if d.Observe != nil {
-					d.Observe(res)
-				}
 			}
 			if routed {
 				id := r.Header.Get("ChatGPT-Account-Id")

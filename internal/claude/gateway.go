@@ -17,9 +17,8 @@ import (
 )
 
 // Gateway is an optional loopback-only bridge for Desktop's static gateway key.
-// Authentication is independent of the optional session router.
+// Every request uses the configured profile's login.
 type Gateway struct {
-	Prepare func(*http.Request) (func(), error)
 	keyHash [32]byte
 	profile string
 	load    func(context.Context, string) (Credentials, error)
@@ -85,31 +84,16 @@ func (g *Gateway) Handler(next http.Handler) http.Handler {
 		}
 		out := r.Clone(r.Context())
 		out.URL.Path, out.URL.RawPath = "/claude"+path, ""
-		if g.Prepare != nil {
-			release, err := g.Prepare(out)
-			if err != nil {
-				status := http.StatusServiceUnavailable
-				if e, ok := err.(interface{ HTTPStatus() int }); ok {
-					status = e.HTTPStatus()
-				}
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(status)
-				json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"type": "garcon_routing_error", "message": err.Error()}})
-				return
-			}
-			defer release()
-		} else {
-			if _, err := g.renew(r.Context(), g.profile); err != nil {
-				http.Error(w, "Claude login renewal failed; sign in to the configured profile", http.StatusServiceUnavailable)
-				return
-			}
-			creds, err := g.load(r.Context(), g.profile)
-			if err != nil || creds.AccessToken == "" || creds.ExpiresAt > 0 && creds.ExpiresAt <= time.Now().UnixMilli() {
-				http.Error(w, "Claude login unavailable or expired; sign in to the configured profile", http.StatusServiceUnavailable)
-				return
-			}
-			out.Header.Set("Authorization", "Bearer "+creds.AccessToken)
+		if _, err := g.renew(r.Context(), g.profile); err != nil {
+			http.Error(w, "Claude login renewal failed; sign in to the configured profile", http.StatusServiceUnavailable)
+			return
 		}
+		creds, err := g.load(r.Context(), g.profile)
+		if err != nil || creds.AccessToken == "" || creds.ExpiresAt > 0 && creds.ExpiresAt <= time.Now().UnixMilli() {
+			http.Error(w, "Claude login unavailable or expired; sign in to the configured profile", http.StatusServiceUnavailable)
+			return
+		}
+		out.Header.Set("Authorization", "Bearer "+creds.AccessToken)
 		out.Header.Del("X-Api-Key")
 		out.Header.Del("Cookie")
 		beta := out.Header.Get("Anthropic-Beta")
@@ -130,21 +114,4 @@ func (g *Gateway) Handler(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, out)
 	})
-}
-
-// Profile is the configured legacy profile, also included during initial discovery.
-func (g *Gateway) Profile() string { return g.profile }
-
-type gatewayDetailKey struct{}
-type GatewayDetails struct {
-	Session, Model, Account, AccountID string
-	Observe                            func(*http.Response)
-}
-
-func WithGatewayDetails(req *http.Request, d GatewayDetails) {
-	*req = *req.WithContext(context.WithValue(req.Context(), gatewayDetailKey{}, d))
-}
-func Details(req *http.Request) GatewayDetails {
-	d, _ := req.Context().Value(gatewayDetailKey{}).(GatewayDetails)
-	return d
 }

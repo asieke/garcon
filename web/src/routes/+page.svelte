@@ -41,7 +41,6 @@
   let agyExpanded = $state(true);
   let museExpanded = $state(true);
   let routing = $state<Routing>({ enabled: false, accounts: [] });
-  let claudeRouting = $state<Routing | null>(null);
   let connections = $state<{ client: string; connected: boolean | null; mode?: string; profiles?: number; remote_control_at_startup?: boolean }[]>([]);
   let connectionsAvailable = $state(false);
 	let claudeImport = $state<{enabled:boolean; scanning:boolean; last_scan:number; files:number; records:number; failed_files:number; skipped_lines:number} | null>(null);
@@ -107,10 +106,9 @@
       description: "Search requests and service logs.",
     },
   ];
-  const claudeAccounts = $derived(claudeRouting?.accounts ?? claudeRows(limits.accounts, now));
+  const claudeAccounts = $derived(claudeRows(limits.accounts, now));
   const agyAccounts = $derived(agyRows(limits.accounts, now));
   const museAccounts = $derived(museRows(limits.accounts, now));
-  const claudeNext = $derived(claudeAccounts.find((a) => a.enrolled && a.status === "Ready"));
   const title = $derived(views.find((v) => v.id === view)!);
   const enrolled = $derived(routing.accounts.filter((a) => a.enrolled));
   const active = $derived(
@@ -248,9 +246,6 @@
     const limitsPoll = api("/api/limits").then((result) => {
       if (alive) { limits = result; limitsAvailable = true; }
     }).catch(() => { if (alive) limitsAvailable = false; });
-    const claudeRoutingPoll = api("/api/routing/claude").then((result) => {
-      if (alive) claudeRouting = result;
-    }).catch(() => { if (alive) claudeRouting = null; });
     const connectionPoll = api("/api/connections").then((result) => {
       if (alive) { connections = result; connectionsAvailable = true; }
     }).catch(() => { if (alive) connectionsAvailable = false; });
@@ -276,7 +271,7 @@
         loaded = true;
       }
     }
-    await Promise.all([connectionPoll, limitsPoll, claudeRoutingPoll, importPoll]);
+    await Promise.all([connectionPoll, limitsPoll, importPoll]);
   }
   onMount(() => {
     alive = true;
@@ -549,8 +544,8 @@
             >{/if}
         </div>
       </div>
-      {#if error || routing.error || claudeRouting?.error}<div class="alert" role="alert">
-          <Icon name="pulse" />{error || routing.error || claudeRouting?.error}<button
+      {#if error || routing.error}<div class="alert" role="alert">
+          <Icon name="pulse" />{error || routing.error}<button
             onclick={() => (error = "")}
             aria-label="Dismiss error"><Icon name="close" size={16} /></button
           >
@@ -641,7 +636,7 @@
               <span class="provider-chevron" class:open={claudeExpanded}><Icon name="chevron" size={16} /></span>
             </button>
             <div class="provider-actions">
-              <span class="provider-summary">{claudeAccounts.length} accounts <span>·</span> {claudeRouting?.enabled ? "Session pinned" : "Local profiles"}</span>
+              <span class="provider-summary">{claudeAccounts.length} accounts <span>·</span> Local profiles</span>
               <ProviderConnection launchBased provider="Claude Code" connection={connections.find((c) => c.client === "claude")} available={connected && connectionsAvailable} onclick={() => (modal = "claude")} />
             </div>
           </div>
@@ -652,8 +647,8 @@
               <h3>No accounts found</h3><p>Sign in to Claude Code with a local profile. Garcon will discover it automatically.</p>
               <button class="button primary" onclick={() => (modal = "claude-account")}>Add a Claude account <Icon name="arrow" size={16} /></button>
             </div>{/if}
-            <AccountTable accounts={claudeAccounts} provider="Claude Code" poolSupported={!!claudeRouting?.enabled} poolEditable={false} nextId={claudeNext?.id} />
-            <p class="provider-explanation">{#if claudeRouting?.enabled}New gateway sessions use the eligible account with the highest quota-per-hour score. Each session keeps its account across restarts. Model-specific limits can change which account is next.{:else}Profile launchers use their selected login. Configure the optional Desktop gateway to enable automatic account selection and session pinning.{/if}</p>
+            <AccountTable accounts={claudeAccounts} provider="Claude Code" poolSupported={false} />
+            <p class="provider-explanation">Claude Code uses the login selected in each local profile. Account pools and pinning are Codex only.</p>
             <button class="add-inline" onclick={() => (modal = "claude-account")}><Icon name="plus" size={16} /> Add another Claude account<span>Separate login. Same endpoint.</span></button>
           </div>{/if}
         </section>
@@ -673,7 +668,7 @@
               <span class="empty-icon"><Icon name="accounts" size={28} /></span>
               <h3>No accounts found</h3><p>Sign in with AGY CLI locally. Garcon will discover it and track usage automatically.</p>
             </div>{/if}
-            <AccountTable accounts={agyAccounts} provider="AGY CLI" poolSupported={false} poolEditable={false} />
+            <AccountTable accounts={agyAccounts} provider="AGY CLI" poolSupported={false} />
           </div>{/if}
         </section>
         <section class="provider-card" aria-label="Muse CLI accounts">
@@ -692,7 +687,7 @@
               <span class="empty-icon"><Icon name="accounts" size={28} /></span>
               <h3>No accounts found</h3><p>Sign in with Muse CLI locally. Garcon will discover it and track usage automatically.</p>
             </div>{/if}
-            <AccountTable accounts={museAccounts} provider="Muse CLI" poolSupported={false} poolEditable={false} />
+            <AccountTable accounts={museAccounts} provider="Muse CLI" poolSupported={false} />
           </div>{/if}
         </section>
         <div class="routing-notes">

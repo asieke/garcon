@@ -32,7 +32,7 @@ The sign-in instructions create a separate profile. Adding a login doesn't chang
 
 ### Optional Claude Desktop gateway (experimental)
 
-Desktop's third-party inference mode manages its own endpoint and ignores the ordinary `ANTHROPIC_BASE_URL` setting. Garcon can optionally accept a local static key and automatically select a Claude Code account for each new session.
+Desktop's third-party inference mode manages its own endpoint and ignores the ordinary `ANTHROPIC_BASE_URL` setting. Garcon can optionally accept a local static key and forward Desktop's requests with the login of one Claude Code profile.
 
 Create `~/.config/garcon/claude-gateway.json` with permissions `0600`, then restart the service:
 
@@ -43,13 +43,9 @@ Create `~/.config/garcon/claude-gateway.json` with permissions `0600`, then rest
 }
 ```
 
-In Desktop's **Developer → Configure Third-Party Inference**, choose **Gateway**, **Static API key**, base URL `http://127.0.0.1:4141/claude-gateway`, your configured key, and auth scheme **Bearer**. The key belongs to Garcon; it is replaced with the session's selected account credential before forwarding to Anthropic. `x-api-key` is also supported. Credential loading and renewal use the same machinery as the CLI launcher. An unavailable pinned account returns an error rather than moving the session or replaying its request. The profile setting is retained for compatibility and includes that directory in discovery; it no longer forces every gateway session to that account.
+In Desktop's **Developer → Configure Third-Party Inference**, choose **Gateway**, **Static API key**, base URL `http://127.0.0.1:4141/claude-gateway`, your configured key, and auth scheme **Bearer**. The key belongs to Garcon; it is replaced with the configured profile's credential before forwarding to Anthropic. `x-api-key` is also supported. Credential loading and renewal use the same machinery as the CLI launcher. If that login is unavailable or expired, the request returns an error. To use a different account, change `profile` and restart the service. Garcon has no Claude account pool or pinning; those are Codex only.
 
 The gateway is disabled when the configuration file is absent; remove that file and restart to disable it. Override its path with `-claude-gateway-config`. This route accepts only local application requests, even with `-allow-remote`; existing `/claude` requests keep their pass-through behavior. A simple key such as `test` can be used for a local trial. Model discovery, messages, token counting, and streaming are forwarded through normal usage logging.
-
-New gateway sessions use the same quota-per-hour formula as Codex: the most constrained applicable window sets the score. General and applicable model/OAuth-app limits are respected; stale, unknown, exhausted, or expired quota is ineligible. An explicitly unused Claude five-hour window with no reset is conservatively scored over its full five-hour duration. Model access and account identity are verified with Anthropic. The initial discovered account pool is saved once; subsequent new logins are not automatically enrolled.
-
-Requests use Claude's session header or metadata session ID. Assignments live in a separate SQLite table and survive restarts. Existing sessions in Garcon's request history retain their original account. Unknown continuations and completion requests without a stable session ID are rejected. Model discovery and sessionless token counting do not create assignments. View scores and pool membership in Accounts or the read-only `/api/routing/claude` endpoint. Ordinary `/claude` traffic and profile launchers retain their selected login.
 
 This is an experimental subscription-authentication bridge, not a guarantee of compatibility with every Desktop release. Verify a real Desktop request in Logs. Desktop's third-party mode also changes feature availability, including SSH, cloud sessions, and Remote Control; see [Anthropic's Desktop gateway documentation](https://code.claude.com/docs/en/llm-gateway-connect#desktop-app).
 
@@ -59,12 +55,12 @@ This is an experimental subscription-authentication bridge, not a guarantee of c
 | --- | --- |
 | Codex | Your enrolled Codex accounts; no OpenRouter fallback |
 | Pi | The Codex pool or OpenRouter, selected in Pi |
-| Claude Code | Gateway: quota-based selection pinned per session; `garcon claude`: selected profile |
+| Claude Code | The selected profile (`garcon claude` or the Desktop gateway's configured profile); no account pool |
 | Other compatible clients | Their configured provider and credentials |
 
 For a new Codex conversation, Garcon checks login health, quota, and model access. It automatically chooses the highest **remaining percentage ÷ hours until reset**. This compares percentages, not absolute token allowances.
 
-In the Usage widget, **Up next** marks the account automatic routing would select for a new conversation (model access can change the choice). Click **Pin** on a Codex account to assign new Codex conversations to that account until you **Unpin**. The pin survives restarts and never silently falls back if the account is unavailable. Claude and realtime voice routing are unchanged.
+In the Usage widget, **Up next** marks the account automatic routing would select for a new conversation (model access can change the choice). Click **Pin** on a Codex account to assign new Codex conversations to that account until you **Unpin**. The pin survives restarts and never silently falls back if the account is unavailable. Pinning and the account pool apply to Codex only; Claude and realtime voice routing are unchanged.
 
 From a terminal, run `garcon codex status` to list accounts, `garcon codex pin ACCOUNT` (an account ID or email) to pin one, and `garcon codex unpin` to resume automatic selection for new conversations. Add `--json` for scripting.
 

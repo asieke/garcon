@@ -3,14 +3,13 @@
   import AccountNickname from "../charts/AccountNickname.svelte";
   import { barPercent } from "../limits";
   import { duration, initials, tone, type Account } from "./model";
-  let { accounts, provider = "Codex", nextId, pinnedId, busy = false, poolSupported = true, poolEditable = true, ontoggle }: {
+  let { accounts, provider = "Codex", nextId, pinnedId, busy = false, poolSupported = true, ontoggle }: {
     accounts: Account[];
     provider?: string;
     nextId?: string;
     pinnedId?: string;
     busy?: boolean;
     poolSupported?: boolean;
-    poolEditable?: boolean;
     ontoggle?: (account: Account) => void;
   } = $props();
 </script>
@@ -85,7 +84,7 @@
           ><small>{poolSupported ? "% / hour" : "Client login"}</small>
         </div>
         <div>
-          {#if poolSupported && poolEditable}<button
+          {#if poolSupported}<button
             class="pool-check"
             class:checked={a.enrolled}
             aria-label={`${a.enrolled ? "Remove" : "Enroll"} ${a.email}`}
@@ -96,7 +95,7 @@
                 name="check"
                 size={13}
               />{:else}<Icon name="plus" size={13} />{/if}</button
-          >{:else if poolSupported}<span class="pool-check" class:checked={a.enrolled} aria-label={a.enrolled ? "In account pool" : "Not in account pool"} title={a.enrolled ? "In account pool" : "Not in account pool"}>{#if a.enrolled}<Icon name="check" size={13} />{:else}—{/if}</span>{:else}<span class="muted" aria-label="Account pool not supported" title="Claude Code uses the login selected in its local profile.">—</span>{/if}
+          >{:else}<span class="muted" aria-label="Account pool not supported" title="Claude Code uses the login selected in its local profile.">—</span>{/if}
         </div>
       </div>{/each}
   </div>
