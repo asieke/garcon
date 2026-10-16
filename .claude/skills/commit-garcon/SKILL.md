@@ -10,7 +10,8 @@ description: Commit, push, open and merge pull requests in the Garcon repository
 platform binaries and packs the npm tarball with a read-only token and no publishing
 identity; `publish` installs nothing, publishes that tarball to npm with provenance, tags the
 merge commit `vX.Y.Z` and creates a GitHub release with the tarball attached. Pull requests
-run the same build without publishing (`.github/workflows/ci.yml`). Actions are pinned to
+have no CI: `scripts/check.sh` runs the same build without publishing, and
+`scripts/check.sh --report` posts the `check` status that `main` requires. Actions are pinned to
 commits: bump the SHA and its version comment together. There is nothing to bump by hand.
 
 ## How the version is chosen
@@ -41,22 +42,22 @@ git commit -m "<imperative summary>"
 
 Do not commit `internal/dashboard/build/` (gitignored) or `npm/ai-garcon/dist/`. Docs
 live in `docs/` and `README.md`; update them in the same commit when behavior visible to
-users changes. `scripts/release.sh X.Y.Z --dry-run` runs the exact build the workflow
-will run, when a change touches the build, the npm package or the workflow itself.
+users changes. `scripts/check.sh` already runs `scripts/release.sh 9.9.9 --dry-run` (the exact
+build the workflow will run, without repeating the tests); run it on its own to see the package listing.
 
 ## 2. Push and merge (this is the release)
 
 ```sh
 git push -u origin <type>/<slug>
 gh pr create                     # fill in .github/pull_request_template.md; add [minor] or [major] to the title if the bump should not be a patch
-gh pr checks --watch             # the CI build; merge only when it is green
+scripts/check.sh --report        # posts the check status for the pushed head; merge only when it is green
 gh pr merge --merge --delete-branch <pr>   # merge commit, like the rest of the history
 git checkout main && git pull --ff-only
 ```
 
 `PROJECT.md` sets `merge: agent`: an agent may merge its own PR once the template is
-filled in and CI is green on the current head, without asking first. The merge publishes,
-so bring the branch up to date with `main` and wait for that run before merging. Then watch the run:
+filled in and the `check` status is green on the current head, without asking first. The merge publishes,
+so bring the branch up to date with `main` and run `scripts/check.sh --report` on that head before merging. Then watch the run:
 
 ```sh
 gh run watch --exit-status        # the Release workflow for the merge commit

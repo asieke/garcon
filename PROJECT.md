@@ -8,7 +8,7 @@ merge: agent
 deploy: local:macbook:~/apps/garcon
 refresh: none
 sources: []
-standard: 2026-10-14
+standard: 2026-10-16
 ---
 
 # Garcon

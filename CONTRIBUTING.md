@@ -33,11 +33,11 @@ Before publishing, inspect the complete outgoing diff and run:
 scripts/check.sh
 ```
 
-It starts with `.github/scripts/check-repository-boundaries.py`, which detects tracked local context and missing ignore rules, then runs the backend and frontend checks. The boundary check does not scan content for secrets or remove material from earlier commits; review the diff as well. CI runs `scripts/check.sh` on pull requests after scanning new commits for secrets with gitleaks.
+It starts with the standard gate (`scripts/gate.sh`: merge markers, private keys, large files and a gitleaks scan of commits not yet on `origin/main`), then `.github/scripts/check-repository-boundaries.py`, which detects tracked local context and missing ignore rules, then runs the backend and frontend checks and the release build in dry-run mode. The boundary check does not scan content for secrets or remove material from earlier commits; review the diff as well. There is no CI: after opening the PR, run `scripts/check.sh --report` to post the `check` status that merging requires.
 
 ## Verify and review
 
-Use the toolchain versions and development commands in [README.md](README.md#work-on-garcon). For application changes, run `scripts/check.sh`; PR CI also runs the release build in dry-run mode. For documentation changes, check links and review the rendered text.
+Use the toolchain versions and development commands in [README.md](README.md#work-on-garcon). For application changes, run `scripts/check.sh`, which also runs the release build in dry-run mode. For documentation changes, check links and review the rendered text.
 
 State what you verified and any remaining limitations. Passing tests, merging, publishing a release, and installing that release are separate outcomes. Merging to main triggers the release workflow; local installations require an explicit update. Preparing a PR does not restart the service.
 
