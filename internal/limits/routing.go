@@ -30,7 +30,7 @@ func Headroom(a Account, now time.Time, include func(Window) bool) (float64, str
 	return remaining, "Ready"
 }
 
-// QuotaScore is the shared Codex and Claude quota-per-hour selection formula.
+// QuotaScore is the Codex quota-per-hour selection formula.
 func QuotaScore(a Account, now time.Time, include func(Window) bool) (float64, float64) {
 	score, hours := math.Inf(1), 0.0
 	found := false

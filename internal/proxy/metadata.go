@@ -92,9 +92,3 @@ func metadataID(s string) string {
 	}
 	return strings.TrimSpace(s)
 }
-
-// RequestMetadata reads session attribution while preserving the request body.
-func RequestMetadata(r *http.Request, harness string) (string, string) {
-	session, model, _ := requestMetadata(r, harness)
-	return session, model
-}

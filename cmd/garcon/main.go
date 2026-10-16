@@ -28,7 +28,6 @@ import (
 
 	"garcon/internal/claude"
 	"garcon/internal/claudeimport"
-	"garcon/internal/clauderouting"
 	"garcon/internal/codexmetadata"
 	"garcon/internal/codexrouting"
 	"garcon/internal/connections"
@@ -151,15 +150,6 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/imports/claude", readOnly(localClaude.ServeHTTP))
-	if claudeGateway != nil {
-		claudeRouter, err := clauderouting.New(st.DB, li.Snapshot, claudeGateway.Profile())
-		if err != nil {
-			log.Fatal(err)
-		}
-		claudeGateway.Prepare = claudeRouter.Prepare
-		go claudeRouter.Run(shutdownCtx)
-		mux.Handle("/api/routing/claude", readOnly(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(claudeRouter.Status()) }))
-	}
 
 	claudeGatewayHandler := claudeGateway.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rt, ok := proxy.ParseRoute(r.URL.Path)
