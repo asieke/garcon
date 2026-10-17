@@ -19,3 +19,4 @@ dist/
 build/
 *.log
 .DS_Store
+.claude/worktrees/
