@@ -5,7 +5,7 @@ status: active
 visibility: public
 owner: asieke
 merge: agent
-deploy: local:macbook:~/apps/garcon
+deploy: local:Alexs-MacBook-Pro-92440:~/apps/garcon
 refresh: none
 sources: []
 standard: 2026-10-18.3

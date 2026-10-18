@@ -6,12 +6,13 @@
 # source build there cannot shadow it.
 #   scripts/deploy-macos.sh           deploy when the service is behind origin/main
 #   scripts/deploy-macos.sh --force   reinstall and restart even when up to date
+#   scripts/deploy-macos.sh --pending exit 0 if a deploy is due (or the release is not out yet), else 1
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MODE="${1:-}"
-case "$MODE" in ""|--force) ;; *) sed -n '7,8p' "$0"; exit 2 ;; esac
-[ "$(uname -s)" = Darwin ] || { echo "deploy-macos: macOS only; Linux uses scripts/deploy.sh" >&2; exit 1; }
+case "$MODE" in ""|--force|--pending) ;; *) sed -n '7,9p' "$0"; exit 2 ;; esac
+[ "$(uname -s)" = Darwin ] || { echo "deploy-macos: macOS only; Linux builds from source with scripts/install.sh" >&2; exit 1; }
 for tool in git npm curl; do
 	command -v "$tool" >/dev/null || { echo "deploy-macos: need $tool" >&2; exit 1; }
 done
@@ -26,6 +27,7 @@ head="$(git ls-remote origin refs/heads/main | cut -f1)"
 [ -n "$head" ] || { echo "deploy-macos: cannot read origin/main" >&2; exit 1; }
 version="$(git ls-remote --tags origin 'refs/tags/v*' | awk -v h="$head" '$1 == h { sub("refs/tags/v", "", $2); print $2 }' | sort -V | tail -n1)"
 if [ -z "$version" ]; then
+	[ "$MODE" != --pending ] || exit 0
 	echo "deploy-macos: origin/main (${head:0:7}) has no release yet; the Release workflow tags it a few minutes after the merge (gh run list --workflow=release.yml)" >&2
 	exit 1
 fi
@@ -33,9 +35,11 @@ fi
 installed="$("$SERVICE_BIN" version 2>/dev/null | awk '{print $2}' || true)"
 if [ "$MODE" != --force ] && [ "$installed" = "$version" ] && [ "$(readlink "$LINK" 2>/dev/null)" = "$NPM_BIN" ] &&
 	curl -fsS "$URL/api/usage" >/dev/null 2>&1; then
+	[ "$MODE" != --pending ] || exit 1
 	echo "deploy-macos: already at $version"
 	exit 0
 fi
+[ "$MODE" != --pending ] || exit 0
 
 echo "deploy-macos: ${installed:-no service binary} -> $version (origin/main ${head:0:7})"
 npm install --global --no-audit --no-fund --loglevel=error "ai-garcon@$version"
