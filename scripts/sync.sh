@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Sync to origin/main, then optionally run a command: scripts/sync.sh [command...]
-# Live checkout (CANONICAL_PATH in deploy.sh): runs deploy.sh; if that refuses, exits 1 and runs nothing.
+# Live checkout (this host's path in PROJECT.md's deploy field, as `scripts/deploy.sh --path` prints it):
+# runs deploy.sh; if that refuses, exits 1 and runs nothing.
 # Any other checkout, including a task worktree: reports how far it is behind origin/main.
 # Then both remove task worktrees whose pull request merged (scripts/worktree.sh --tidy) and link the
 # live .env into worktrees that lack it. Never stashes, resets, or deletes work.

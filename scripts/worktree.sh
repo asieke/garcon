@@ -4,6 +4,8 @@
 #                                       new branch from origin/main (or reopens the task's branch), links
 #                                       .env, and prints the path, so agents start a task with:
 #                                       dir=$(scripts/worktree.sh feat/12-add-login) && cd "$dir"
+#                                       A new <type>/<number>-<slug> branch is made on GitHub, linked to
+#                                       Issue #number (gh issue develop), which shows it under Development.
 #   scripts/worktree.sh --env           links the main checkout's .env files into worktrees that lack them
 #   scripts/worktree.sh --tidy          removes worktrees whose pull request merged, with their branches,
 #                                       and lists the rest
@@ -118,6 +120,18 @@ tidy() {
   git worktree prune
 }
 
+# linked BRANCH: for a new <type>/<number>-<slug> branch, have GitHub create it from main, linked to
+# Issue #number (gh issue develop), so the Issue shows who is on it under Development; then fetch it.
+# False without gh, or when GitHub refuses (no such Issue, say): the branch is then made here instead.
+linked() {
+  local n
+  [[ "$1" =~ ^[a-z]+/([0-9]+)- ]] && command -v gh >/dev/null || return 1
+  n=${BASH_REMATCH[1]}
+  GH_PROMPT_DISABLED=1 gh issue develop "$n" --name "$1" --base main >/dev/null 2>&1 \
+    && git fetch --quiet origin "+refs/heads/$1:refs/remotes/origin/$1" 2>/dev/null || return 1
+  echo "worktree: created $1 on GitHub, linked to Issue #$n" >&2
+}
+
 create() {
   local branch=$1 dir
   [[ "$branch" =~ ^(feat|fix|chore|docs)/[a-z0-9-]+$ ]] && [ ${#branch} -le 50 ] || {
@@ -136,7 +150,7 @@ create() {
     git fetch --quiet origin main
     if git show-ref --verify --quiet "refs/heads/$branch"; then
       git worktree add --quiet "$dir" "$branch"
-    elif git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null; then
+    elif git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null || linked "$branch"; then
       git worktree add --quiet --track -b "$branch" "$dir" "origin/$branch"
     else
       git worktree add --quiet --no-track -b "$branch" "$dir" origin/main
@@ -153,6 +167,6 @@ case "${1:-}" in
       [ "$st" = prunable ] || link_env "$wt"
     done 3< <(worktrees);;
   --tidy) tidy;;
-  ""|-*) sed -n '2,9p' "$0" >&2; exit 2;;
+  ""|-*) sed -n '2,11p' "$0" >&2; exit 2;;
   *) create "$1";;
 esac
