@@ -20,7 +20,7 @@ export type LimitAccount = {
 	windows: LimitWindow[];
 	reset_credits?: {
 		available_count: number | null;
-		credits: { expires_at: number }[];
+		credits: { expires_at: number; count?: number; limits?: string[] }[];
 		status: 'fresh' | 'stale' | 'unavailable';
 		fetched_at: number;
 		error?: string;
@@ -66,12 +66,28 @@ export function overviewWindow(account: LimitAccount): LimitWindow | undefined {
 
 export function resetCreditInfo(account: LimitAccount, now: number) {
 	const credits = account.reset_credits;
-	const expired = credits?.credits.filter(c => c.expires_at > 0 && c.expires_at <= now).length ?? 0;
+	const expired = credits?.credits.filter(c => c.expires_at > 0 && c.expires_at <= now).reduce((n, c) => n + (c.count ?? 1), 0) ?? 0;
 	return {
 		count: credits?.available_count == null ? null : Math.max(0, credits.available_count - expired),
 		expirations: credits?.credits.filter(c => !c.expires_at || c.expires_at > now).map(c => c.expires_at) ?? [],
 		stale: credits?.status === 'stale' || expired > 0 || Boolean(credits?.fetched_at && now - credits.fetched_at > 600_000)
 	};
+}
+
+// Claude grants can refill several windows and contain more than one reset.
+// Keep the grant together so its count, expiry and coverage remain associated.
+export function claudeResetDetails(account: LimitAccount, now: number) {
+	if (account.provider !== 'claude') return [];
+	const labels: Record<string, string> = {
+		five_hour: '5h', seven_day: 'week', seven_day_overage_included: 'included models',
+		seven_day_opus: 'Opus week', seven_day_sonnet: 'Sonnet week', seven_day_cowork: 'Cowork week',
+		seven_day_omelette: 'omelette week', seven_day_oauth_apps: 'OAuth apps week'
+	};
+	return account.reset_credits?.credits.filter(c => !c.expires_at || c.expires_at > now).map(c => ({
+		count: c.count ?? 1,
+		expiresAt: c.expires_at,
+		limits: c.limits?.map(limit => labels[limit]).filter(Boolean).join(' + ') || 'limits not reported'
+	})) ?? [];
 }
 
 export function widgetGroups(accounts: LimitAccount[]): { key: string; label: string; accounts: LimitAccount[] }[] {

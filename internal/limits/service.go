@@ -25,7 +25,7 @@ import (
 
 const (
 	codexURL   = "https://chatgpt.com/backend-api/wham/usage"
-	claudeURL  = "https://api.anthropic.com/api/oauth/usage"
+	claudeURL  = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"
 	profileURL = "https://api.anthropic.com/api/oauth/profile"
 )
 
@@ -286,7 +286,7 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 				a.Plan = prev.Plan
 			}
 		}
-		if a.Provider == "codex" {
+		if a.Provider == "codex" || a.Provider == "claude" {
 			a.ResetCredits = staleCredits(a.ResetCredits, "Awaiting reset credit refresh")
 		} else {
 			a.ResetCredits = nil
@@ -374,6 +374,13 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 					a.Status = "fresh"
 					if a.Provider == "codex" {
 						a.ResetCredits = s.collectCredits(ctx, usedSource, a.ResetCredits)
+					} else {
+						credits, creditErr := parseClaudeResets(raw, s.now())
+						if creditErr == nil {
+							a.ResetCredits = credits
+						} else {
+							a.ResetCredits = staleCredits(a.ResetCredits, creditErr.Error())
+						}
 					}
 					if plan != "" {
 						a.Plan = plan
@@ -410,7 +417,7 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 		if _, ok := groups[id]; !ok {
 			a.Status = "needs_login"
 			a.Error = "Local login unavailable; open the CLI to refresh it"
-			if a.Provider == "codex" {
+			if a.Provider == "codex" || a.Provider == "claude" {
 				a.ResetCredits = staleCredits(a.ResetCredits, "Login needs refresh")
 			}
 			accounts = append(accounts, a)
@@ -462,6 +469,9 @@ func (s *Service) fetch(ctx context.Context, endpoint string, src source) ([]byt
 	req.Header.Set("Accept", "application/json")
 	if src.account.Provider == "claude" {
 		req.Header.Set("Anthropic-Beta", "oauth-2025-04-20")
+		if endpoint == claudeURL {
+			claudeResetHeaders(req)
+		}
 	} else if src.selected != "" {
 		req.Header.Set("ChatGPT-Account-Id", src.selected)
 	}
