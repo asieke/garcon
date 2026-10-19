@@ -143,6 +143,114 @@ func TestIdleRenewalCancellation(t *testing.T) {
 	}
 }
 
+func TestIdleRenewalDoesNotBlockOtherProfiles(t *testing.T) {
+	first, second := t.TempDir(), t.TempDir()
+	started, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	var firstFresh, secondFresh atomic.Bool
+	r := NewRenewer()
+	r.load = func(_ context.Context, dir string) (Credentials, error) {
+		fresh := &firstFresh
+		if dir == second {
+			fresh = &secondFresh
+		}
+		expiry := time.Now().Add(-time.Minute)
+		if fresh.Load() {
+			expiry = time.Now().Add(time.Hour)
+		}
+		return Credentials{AccessToken: "login", RefreshToken: "grant", ExpiresAt: expiry.UnixMilli()}, nil
+	}
+	r.run = func(_ context.Context, dir, _ string) error {
+		if dir == first {
+			close(started)
+			<-release
+			firstFresh.Store(true)
+		} else {
+			secondFresh.Store(true)
+		}
+		return nil
+	}
+	firstDone := make(chan struct{})
+	go func() { defer close(firstDone); r.Refresh(context.Background(), first) }()
+	<-started
+	t.Cleanup(func() { <-firstDone })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	secondDone := make(chan error, 1)
+	go func() {
+		changed, err := r.Refresh(ctx, second)
+		if err == nil && !changed {
+			err = errors.New("second profile was not renewed")
+		}
+		secondDone <- err
+	}()
+	select {
+	case err := <-secondDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Cleanup(func() { <-secondDone })
+		t.Fatal("one profile's CLI renewal blocked another profile")
+	}
+}
+
+func TestIdleRenewalWaitersCancelAndReuseSavedLogin(t *testing.T) {
+	dir := t.TempDir()
+	started, release := make(chan struct{}), make(chan struct{})
+	var fresh atomic.Bool
+	var calls atomic.Int32
+	r := NewRenewer()
+	r.load = func(context.Context, string) (Credentials, error) {
+		expiry := time.Now().Add(-time.Minute)
+		if fresh.Load() {
+			expiry = time.Now().Add(time.Hour)
+		}
+		return Credentials{AccessToken: "login", RefreshToken: "grant", ExpiresAt: expiry.UnixMilli()}, nil
+	}
+	r.run = func(context.Context, string, string) error {
+		calls.Add(1)
+		close(started)
+		<-release
+		fresh.Store(true)
+		return nil
+	}
+	firstDone := make(chan struct{})
+	go func() { defer close(firstDone); r.Refresh(context.Background(), dir) }()
+	<-started
+	// A canceled waiter must return before the slow renewal finishes.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	canceled := make(chan error, 1)
+	go func() { _, err := r.Refresh(ctx, dir); canceled <- err }()
+	select {
+	case err := <-canceled:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("waiting cancellation lost: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("waiting request ignored cancellation")
+		t.Cleanup(func() { <-canceled })
+	}
+	const waiters = 8
+	var wg sync.WaitGroup
+	for range waiters {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := r.Refresh(context.Background(), dir); err != nil {
+				t.Errorf("renewal waiter failed: %v", err)
+			}
+		}()
+	}
+	close(release)
+	<-firstDone
+	wg.Wait()
+	if calls.Load() != 1 {
+		t.Fatalf("same profile renewed %d times", calls.Load())
+	}
+}
+
 func TestRenewalCommandCannotSubmitAPrompt(t *testing.T) {
 	cmd := renewalCommand(context.Background(), "claude", "/profile", "http://127.0.0.1:1234", "/empty")
 	b, err := io.ReadAll(cmd.Stdin)

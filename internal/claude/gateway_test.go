@@ -3,6 +3,7 @@ package claude
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -148,5 +150,102 @@ func TestGatewayOptIn(t *testing.T) {
 	g, err = LoadGateway(path)
 	if err != nil || g == nil || g.profile != "/selected/profile" {
 		t.Fatal("valid config rejected")
+	}
+}
+
+func gatewayModelsRequest() *http.Request {
+	r := httptest.NewRequest("GET", "http://localhost/claude-gateway/v1/models", nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	r.Header.Set("Authorization", "Bearer test")
+	return r
+}
+
+func TestGatewayUsesRotatedProfileLogin(t *testing.T) {
+	profile := t.TempDir()
+	g := testGateway()
+	g.profile, g.load = profile, LoadContext
+	renewer := NewRenewer()
+	renewer.run = func(context.Context, string, string) error { t.Fatal("unexpected CLI renewal"); return nil }
+	g.renew = renewer.Refresh
+	expiry := time.Now().Add(time.Hour).UnixMilli()
+	for _, tc := range []struct {
+		name, token string
+		expiresAt   int64
+		wantStatus  int
+	}{
+		{"initial", "initial-login", expiry, http.StatusOK},
+		{"rotated", "rotated-login", expiry, http.StatusOK},
+		{"expired", "expired-login", 1, http.StatusServiceUnavailable},
+		{"empty", "", 0, http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(map[string]Credentials{"claudeAiOauth": {AccessToken: tc.token, ExpiresAt: tc.expiresAt}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(profile, ".credentials.json"), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			forwarded := false
+			w := httptest.NewRecorder()
+			g.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				forwarded = true
+				if r.Header.Get("Authorization") != "Bearer "+tc.token {
+					t.Error("gateway did not use the current saved login")
+				}
+			})).ServeHTTP(w, gatewayModelsRequest())
+			if w.Code != tc.wantStatus || forwarded != (tc.wantStatus == http.StatusOK) {
+				t.Fatalf("status %d, forwarded %v", w.Code, forwarded)
+			}
+		})
+	}
+}
+
+func TestGatewaySlowCredentialReadDoesNotBlockOtherRequests(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	var reads atomic.Int32
+	renewer := NewRenewer()
+	renewer.load = func(context.Context, string) (Credentials, error) {
+		if reads.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		return Credentials{AccessToken: "fresh-login", RefreshToken: "refresh", ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}, nil
+	}
+	g := testGateway()
+	g.renew, g.load = renewer.Refresh, renewer.load
+	handler := g.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fresh-login" {
+			t.Error("unexpected forwarded login")
+		}
+	}))
+	firstDone := make(chan int, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, gatewayModelsRequest())
+		firstDone <- w.Code
+	}()
+	<-started
+	// Cleanup waits after release, so no request goroutine outlives the test.
+	t.Cleanup(func() {
+		if status := <-firstDone; status != http.StatusOK {
+			t.Errorf("slow request status: %d", status)
+		}
+	})
+	secondDone := make(chan int, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, gatewayModelsRequest())
+		secondDone <- w.Code
+	}()
+	select {
+	case status := <-secondDone:
+		if status != http.StatusOK {
+			t.Fatalf("concurrent request status: %d", status)
+		}
+	case <-time.After(time.Second):
+		t.Cleanup(func() { <-secondDone })
+		t.Fatal("a slow credential read blocked an independent gateway request")
 	}
 }
