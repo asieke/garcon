@@ -56,10 +56,10 @@ func (s *Store) timeline(r *http.Request) (Timeline, error) {
 		where += ` AND ` + harnessExpr + `=?`
 		args = append(args, out.Harness)
 	}
-	if err := s.DB.QueryRow("SELECT count(*) FROM requests WHERE "+where, args...).Scan(&out.Total); err != nil {
+	if err := s.DB.QueryRowContext(r.Context(), "SELECT count(*) FROM requests WHERE "+where, args...).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := s.DB.Query("SELECT sequence,record FROM requests WHERE "+where+" ORDER BY time DESC,sequence DESC LIMIT ?", append(args, maxTimeline)...)
+	rows, err := s.DB.QueryContext(r.Context(), "SELECT sequence,record FROM requests WHERE "+where+" ORDER BY time DESC,sequence DESC LIMIT ?", append(args, maxTimeline)...)
 	if err != nil {
 		return out, err
 	}

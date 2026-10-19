@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"garcon/internal/local"
@@ -23,9 +24,9 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/sessions":
 		var sessions []map[string]any
-		sessions, err = s.sessions()
+		sessions, err = s.sessionsContext(r.Context())
 		if err == nil && local.Host(r.RemoteAddr) && local.Host(r.Host) {
-			err = s.claudeSessionMetadata(sessions)
+			err = s.claudeSessionMetadata(r.Context(), sessions)
 		}
 		// Task titles and workspace paths are exposed only to local clients,
 		// even if the operator enables the remote usage dashboard.
@@ -99,10 +100,10 @@ func (s *Store) logs(r *http.Request) (any, error) {
 		where += ` AND (coalesce(json_extract(record,'$.input'),0)+coalesce(json_extract(record,'$.cache_read'),0)+coalesce(json_extract(record,'$.cache_write'),0)+coalesce(json_extract(record,'$.output'),0))>0`
 	}
 	var total int
-	if err := s.DB.QueryRow("SELECT count(*) FROM requests WHERE "+where, args...).Scan(&total); err != nil {
+	if err := s.DB.QueryRowContext(r.Context(), "SELECT count(*) FROM requests WHERE "+where, args...).Scan(&total); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.Query("SELECT sequence,record FROM requests WHERE "+where+" ORDER BY time DESC,sequence DESC LIMIT ? OFFSET ?", append(args, limit, offset)...)
+	rows, err := s.DB.QueryContext(r.Context(), "SELECT sequence,record FROM requests WHERE "+where+" ORDER BY time DESC,sequence DESC LIMIT ? OFFSET ?", append(args, limit, offset)...)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +123,7 @@ func (s *Store) logs(r *http.Request) (any, error) {
 	return map[string]any{"requests": out, "total": total, "offset": offset, "limit": limit}, rows.Err()
 }
 
-func (s *Store) claudeSessionMetadata(sessions []map[string]any) error {
+func (s *Store) claudeSessionMetadata(ctx context.Context, sessions []map[string]any) error {
 	byID := map[string]map[string]any{}
 	args := []any{}
 	for _, session := range sessions {
@@ -136,7 +137,7 @@ func (s *Store) claudeSessionMetadata(sessions []map[string]any) error {
 	if len(args) == 0 {
 		return nil
 	}
-	rows, err := s.DB.Query("SELECT session_id,cwd,entrypoint FROM claude_import_sessions WHERE session_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+")", args...)
+	rows, err := s.DB.QueryContext(ctx, "SELECT session_id,cwd,entrypoint FROM claude_import_sessions WHERE session_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+")", args...)
 	if err != nil {
 		return err
 	}
@@ -159,11 +160,11 @@ func (s *Store) claudeSessionMetadata(sessions []map[string]any) error {
 }
 func (s *Store) events(r *http.Request) (any, error) {
 	var total int
-	if err := s.DB.QueryRow("SELECT count(*) FROM events").Scan(&total); err != nil {
+	if err := s.DB.QueryRowContext(r.Context(), "SELECT count(*) FROM events").Scan(&total); err != nil {
 		return nil, err
 	}
 	limit, offset := page(r)
-	rows, err := s.DB.Query("SELECT id,time,message FROM events ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
+	rows, err := s.DB.QueryContext(r.Context(), "SELECT id,time,message FROM events ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +182,7 @@ func (s *Store) events(r *http.Request) (any, error) {
 }
 func (s *Store) analytics(r *http.Request) (any, error) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
-	rows, err := s.DB.Query(`SELECT model,coalesce(json_extract(record,'$.account'),''),time/3600000*3600000,
+	rows, err := s.DB.QueryContext(r.Context(), `SELECT model,coalesce(json_extract(record,'$.account'),''),time/3600000*3600000,
  count(*),sum(CASE WHEN status>=400 OR state IN ('failed','interrupted') THEN 1 ELSE 0 END),
  sum(coalesce(json_extract(record,'$.input'),0)),sum(coalesce(json_extract(record,'$.cache_read'),0)),
  sum(coalesce(json_extract(record,'$.cache_write'),0)),sum(coalesce(json_extract(record,'$.output'),0)),sum(coalesce(json_extract(record,'$.ms'),0))

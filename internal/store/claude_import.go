@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"garcon/internal/usage"
+	"strings"
 )
 
 func maxUsage(dst *usage.Record, src usage.Record) {
@@ -63,8 +64,23 @@ func reconcileClaude(tx *sql.Tx, r *usage.Record) (bool, error) {
 		where += `json_extract(record,'$.source')='claude-local'`
 	}
 	// Restrict the candidate set with indexed provider IDs or the session index.
-	where += ` AND ((?!='' AND json_extract(record,'$.message_id')=?) OR (?!='' AND json_extract(record,'$.upstream_request_id')=?) OR (?!='' AND session_id=?))`
-	args = append(args, r.MessageID, r.MessageID, r.UpstreamRequestID, r.UpstreamRequestID, r.SessionID, r.SessionID)
+	// Include only identifiers we have. Parameter guards inside each OR arm
+	// prevent SQLite from using its multi-index OR plan and force a ledger scan.
+	identifiers := []string{}
+	for _, candidate := range []struct{ column, value string }{
+		{"json_extract(record,'$.message_id')", r.MessageID},
+		{"json_extract(record,'$.upstream_request_id')", r.UpstreamRequestID},
+		{"session_id", r.SessionID},
+	} {
+		if candidate.value != "" {
+			identifiers = append(identifiers, candidate.column+"=?")
+			args = append(args, candidate.value)
+		}
+	}
+	if len(identifiers) == 0 {
+		return false, nil
+	}
+	where += " AND (" + strings.Join(identifiers, " OR ") + ")"
 	rows, err := tx.Query("SELECT sequence,record FROM requests WHERE "+where, args...)
 	if err != nil {
 		return false, err

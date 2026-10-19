@@ -120,6 +120,8 @@ Garcon must already be running on port 4141. The app loads the page directly fro
 
 Garcon stores request metadata, account assignments, preferences, and snapshots in `~/.local/share/garcon/usage.db`. It doesn't save prompts, response bodies, or OAuth tokens in the ledger. Provider CLIs own their logins. A saved OpenRouter key lives in a separate owner-only file.
 
+Request history is retained. Service events are limited to the newest 10,000 entries from the last 30 days; older events are removed on startup and as new events arrive. Dashboard reads use separate database connections so polling does not queue request recording behind those reads.
+
 Task titles and paths are read from Codex's local index without changing it. Data stays on this machine; there is no cross-device sync. Garcon has no app login, so keep its default loopback binding. `-allow-remote` exposes the dashboard and relay to the network.
 
 ## Update or troubleshoot
