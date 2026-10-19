@@ -47,6 +47,9 @@ func copyCredits(c *ResetCredits) *ResetCredits {
 	}
 	copy := *c
 	copy.Credits = append([]ResetCredit{}, c.Credits...)
+	for i := range copy.Credits {
+		copy.Credits[i].Limits = append([]string(nil), c.Credits[i].Limits...)
+	}
 	if c.AvailableCount != nil {
 		n := *c.AvailableCount
 		copy.AvailableCount = &n

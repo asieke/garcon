@@ -35,7 +35,9 @@ type Account struct {
 }
 
 type ResetCredit struct {
-	ExpiresAt int64 `json:"expires_at"` // Unix milliseconds; zero means not reported.
+	ExpiresAt int64    `json:"expires_at"`       // Unix milliseconds; zero means not reported.
+	Count     int      `json:"count,omitempty"`  // Claude grants may contain several resets; omitted means one.
+	Limits    []string `json:"limits,omitempty"` // Provider window names covered by a Claude reset.
 }
 
 type ResetCredits struct {
