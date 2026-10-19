@@ -103,7 +103,7 @@ The ticker and request inspector also show task names. **Analytics** shows token
 
 ## Limits and local data
 
-Open [the compact widget](http://127.0.0.1:4141/usage-widget/) for Codex, Claude, Antigravity (AGY) and Muse allowances, reset times, and Codex reset credits. Press **R** to refresh. Provider limits include work done outside Garcon; missing data isn't counted as unused quota.
+Open [the compact widget](http://127.0.0.1:4141/usage-widget/) for Codex, Claude, Antigravity (AGY) and Muse allowances, reset times, Codex reset credits and Claude saved resets. Claude resets show the count, expiry and limits they refill; Garcon only reads them and never spends one. See [subscription limits](docs/subscription-limits.md) for the experimental provider source. Press **R** to refresh. Provider limits include work done outside Garcon; missing data isn't counted as unused quota.
 
 Muse keeps its subscription usage in memory, learns it only from a model call, and writes none of it to disk, so Garcon reads it with a probe: once an hour (and on **R**, at most every five minutes) it sends one minimal prompt from a memory-only `muse serve` session in its own cache folder, which never appears in your Muse history. Each probe spends a little Muse allowance (about 26k input tokens, mostly Muse's own system prompt). Between probes the widget shows the last reading, marked "as of" its time, and doesn't count it as needing attention. Garcon looks for `muse` in `MUSE_BIN`, `~/.local/bin`, `~/.muse/bin`, Homebrew and `PATH`. Muse sessions are imported from `~/.muse/sessions`, `~/.local/share/muse/sessions` (or `MUSE_HOME`), including subagent logs, which count toward their top-level session.
 

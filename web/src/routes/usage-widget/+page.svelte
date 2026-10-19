@@ -10,6 +10,7 @@
 	import {
 		accountStatus,
 		barPercent,
+		claudeResetDetails,
 		elapsedPercent,
 		expired,
 		needsAttention,
@@ -164,7 +165,7 @@
 							{@const color = accountColors[account.email.toLowerCase() || account.id]}
 							{@const usage = widgetUsage(account)}
 							{@const primary = usage.primary}
-							{@const credits = account.provider === 'codex' ? resetCreditInfo(account, now) : null}
+							{@const credits = account.provider === 'codex' || account.provider === 'claude' ? resetCreditInfo(account, now) : null}
 							<article class="account {account.provider}" class:up-next={isNext} style:--account-color={color} aria-label={account.email || 'Account identity unavailable'}>
 								<div class="account-line">
 									<AccountNickname email={account.email || 'Account identity unavailable'} accountKey={account.provider === 'codex' && account.workspace ? `codex:${account.workspace}` : undefined} {color} />
@@ -211,7 +212,11 @@
 											{@const text = extraText(extra.window)}
 											<span class="extra" class:hot={text.hot} title={text.description}><span class="extra-label">{extra.label}</span> {text.value}{#if text.reset}<span class="extra-reset">{` · ${text.reset}`}</span>{/if}</span>
 										{/each}
-										{#if credits?.count}
+										{#if credits?.count && account.provider === 'claude'}
+											{#each claudeResetDetails(account, now) as reset}
+												<span class="extra" class:quiet={credits.stale} title={`${reset.count} saved Claude ${reset.count === 1 ? 'reset' : 'resets'}; ${reset.expiresAt ? `expires ${new Date(reset.expiresAt).toLocaleString()}` : 'expiry not reported'}; refills ${reset.limits}${credits.stale ? '; stale, awaiting refresh' : ''}`}><span class="extra-label">{reset.count} {reset.count === 1 ? 'reset' : 'resets'}</span> {reset.expiresAt ? day(reset.expiresAt) : '?'} · {reset.limits}{#if credits.stale} · stale{/if}</span>
+											{/each}
+										{:else if credits?.count}
 											<span class="extra" class:quiet={credits.stale} title={credits.expirations.map(e => e ? `Reset credit expires ${new Date(e).toLocaleString()}` : 'Reset credit; expiration not reported').join('\n')}><span class="extra-label">{credits.count === 1 ? 'credit' : 'credits'}</span> {credits.expirations.length ? credits.expirations.map(e => e ? day(e) : '?').join(' · ') : credits.count}</span>
 										{/if}
 										{#if account.status === 'idle' && account.observed_at}

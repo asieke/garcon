@@ -20,6 +20,8 @@ The footer shows newly completed requests, checking every two seconds. Reloading
 
 Codex reset credits appear with their expiration dates. Unknown counts aren't shown as zero, and expired credits stop counting as available. Garcon only reads credits; it never buys or redeems them. A failed credit lookup can retain older credit data while quota updates continue.
 
+Claude saved resets appear on the same text line with their count, expiration date and covered limits, for example **1 reset Oct 22 · 5h + week + included models**. Each grant stays separate when it covers different limits or expires on a different day. Expired, paused or not-yet-started grants are excluded. A reset that requires reaching a limit still counts as saved. Missing expiration or coverage stays unknown; missing or ineligible offers show nothing and do not require attention. Garcon never claims a Claude reset; use Claude's **Settings → Usage → Resets** to spend one.
+
 ## Where accounts come from
 
 Garcon scans at startup and every five minutes:
@@ -49,6 +51,8 @@ Independent directories prevent overwrites; provider sessions can still expire.
 
 Codex quota comes from `/backend-api/wham/usage` on `chatgpt.com`; credits use `/backend-api/wham/rate-limit-reset-credits`. Claude uses `/api/oauth/profile` and `/api/oauth/usage` on `api.anthropic.com`.
 
+Claude's existing usage GET adds `?cedar_ember=1&skip_spend=1` to include saved resets; the normal limit windows remain in that response. There is no second reset request, so resets share the five-minute refresh and usage backoff. `skip_spend` omits spending data that Garcon does not use. The optional `cedar_ember` block is an unpublished, unstable API: grants report `resets_left`, `starts_at`, `ends_at` and `clears`. To receive it, this one read sends Claude Code compatibility headers (`x-app: cli`, a random session ID, JSON content type and `claude-cli/2.1.303 (external, cli)` as User-Agent). The version is the protocol checked against a live response, not a claim about the installed CLI. Provider changes can remove access. A malformed optional block retains dated reset data without breaking quota windows; an absent or ineligible block clears old offers. The separate `/limit-reset` experiment is not polled or displayed.
+
 Garcon sends tokens only to the fixed provider endpoints, with timeouts, response-size limits, and rate-limit backoff. SQLite stores the latest normalized snapshots, not tokens or quota history. A failed refresh preserves the previous values and their original timestamp.
 
 Once a minute, Garcon checks idle Claude logins. Near expiry, an isolated Claude process renews its own credentials; empty input and a loopback relay block model traffic. Attempts have a 45-second timeout and back off after failure. This relies on Claude CLI behavior and may need adjustment after upgrades. Missing or revoked grants require signing in again. Codex logins are also renewed every minute when near expiry, including accounts outside the inference pool. This keeps usage-only accounts refreshing without enrolling them. The routing guide describes the renewal flow.
@@ -58,4 +62,4 @@ Once a minute, Garcon checks idle Claude logins. Near expiry, an isolated Claude
 - `GET /api/limits` returns cached snapshots immediately, plus `refreshing`, `updated_at`, and any error. Each window has `id`, `label`, nullable `used_percent`, `window_seconds`, `resets_at`, and `expired`.
 - `POST /api/limits/refresh` requests a background refresh and returns 202. Refreshes coalesce, with a 30-second minimum interval and provider backoff. Requires local Host and matching Origin.
 
-Timestamps are Unix milliseconds; zero means unknown where supported. Codex `reset_credits` has an independent status and fetch time, a nullable count, and expiration dates. Responses contain neither credentials nor redemption controls.
+Timestamps are Unix milliseconds; zero means unknown where supported. `reset_credits` has a status and fetch time, a nullable count, and expiration dates. Claude entries additionally carry `count` (resets in that grant) and `limits` (provider window names it covers); an omitted count means one for existing Codex credits. Grant IDs and experiment metadata are not stored. Responses contain neither credentials nor redemption controls.
