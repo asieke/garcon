@@ -40,6 +40,7 @@ import (
 	"garcon/internal/proxy"
 	"garcon/internal/service"
 	"garcon/internal/store"
+	"garcon/internal/telemetry"
 )
 
 // version is stamped at build time: go build -ldflags "-X main.version=1.2.3".
@@ -55,13 +56,14 @@ type config struct {
 	Version   string            `json:"version"`
 	Providers map[string]string `json:"providers"`
 	Implicit  map[string]string `json:"implicit_harnesses"`
+	Telemetry telemetry.Config  `json:"telemetry"`
 }
 
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
-			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-claude-gateway-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon delegate [--help] < prompt.txt\n       garcon codex status|pin|unpin [--help]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
+			fmt.Println("usage: garcon [-listen ADDR] [-allow-remote] [-data FILE] [-claude-gateway-config FILE] [-telemetry-config FILE]\n       garcon setup [--no-service] | doctor [--url URL]\n       garcon claude [rc] [--config-dir DIR] [--url URL] [-- claude arguments]\n       garcon delegate [--help] < prompt.txt\n       garcon codex status|pin|unpin [--help]\n       garcon update (npm installs)\n       garcon service install|uninstall|restart|status\n       garcon version")
 			return
 		case "setup", "doctor":
 			onboarding.Main(os.Args[1], os.Args[2:], version)
@@ -100,6 +102,7 @@ func main() {
 	data := flag.String("data", filepath.Join(home, ".local/share/garcon/usage.db"), "local SQLite database (legacy .jsonl paths are migrated)")
 	importClaude := flag.Bool("claude-import", true, "import usage metadata from local Claude Code transcripts")
 	claudeGatewayConfig := flag.String("claude-gateway-config", filepath.Join(home, ".config/garcon/claude-gateway.json"), "optional Claude Desktop gateway key/profile configuration (absent disables the gateway)")
+	telemetryConfig := flag.String("telemetry-config", filepath.Join(home, ".config/garcon/telemetry.json"), "optional telemetry blocking configuration (absent disables blocking)")
 	flag.Parse()
 	if flag.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "unknown command %q; run garcon --help\n", flag.Arg(0))
@@ -118,6 +121,10 @@ func main() {
 	defer stopSignals()
 
 	claudeGateway, err := claude.LoadGateway(*claudeGatewayConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+	telemetryPolicy, err := telemetry.Load(*telemetryConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -140,12 +147,20 @@ func main() {
 	}
 	st.Tasks = codexmetadata.New()
 	log.SetOutput(io.MultiWriter(os.Stderr, st.DB))
+	stopTelemetry, err := telemetry.Start(shutdownCtx, telemetryPolicy)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stopTelemetry()
+	if telemetryPolicy.Enabled {
+		log.Printf("telemetry blocking enabled; local HTTP proxy at %s", telemetryPolicy.Address())
+	}
 	li := limits.New(st.Dir(), st.DB)
 	go li.Run(shutdownCtx)
 	started := time.Now()
 	routing := codexrouting.New(st.Dir(), li.Snapshot, st.DB)
 	go routing.Run(shutdownCtx)
-	px := &proxy.Proxy{Save: st.Save, Start: st.Save, Codex: routing}
+	px := &proxy.Proxy{Save: st.Save, Start: st.Save, Codex: routing, Telemetry: telemetryPolicy}
 	static := own(dashboard.Handler(), false)
 
 	mux := http.NewServeMux()
@@ -195,7 +210,7 @@ func main() {
 			size = fi.Size()
 		}
 		json.NewEncoder(w).Encode(config{Listen: *listen, Data: st.Path(), Rows: st.Len(), Bytes: size, Started: started.UnixMilli(),
-			Version: version, Providers: hosts, Implicit: proxy.ImplicitProvider})
+			Version: version, Providers: hosts, Implicit: proxy.ImplicitProvider, Telemetry: telemetryPolicy.Config})
 	}))
 
 	if *allowRemote {

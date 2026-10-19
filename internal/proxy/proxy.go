@@ -15,6 +15,7 @@ import (
 
 	"garcon/internal/accounts"
 	"garcon/internal/codexrouting"
+	"garcon/internal/telemetry"
 	"garcon/internal/usage"
 )
 
@@ -105,14 +106,20 @@ func isCodexImage(rt Route) bool {
 
 // Proxy forwards routed requests and hands each completion's Record to Save.
 type Proxy struct {
-	Save     func(usage.Record)
-	Start    func(usage.Record)
-	Accounts accounts.Resolver
-	Codex    *codexrouting.Router
+	Save      func(usage.Record)
+	Start     func(usage.Record)
+	Accounts  accounts.Resolver
+	Codex     *codexrouting.Router
+	Telemetry *telemetry.Policy
 }
 
 // Serve proxies one routed request.
 func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, rt Route) {
+	if p.Telemetry.Reject(rt.Harness, rt.Target.Hostname(), "/"+rt.Rest) {
+		w.Header().Set("X-Garcon-Telemetry-Blocked", "true")
+		http.Error(w, "Garcon blocked this host by the local telemetry policy", http.StatusForbidden)
+		return
+	}
 	start := time.Now()
 	rec := usage.Record{RequestID: fmt.Sprintf("%x", randomID()), Time: start.UnixMilli(), Harness: rt.Harness, Provider: rt.Provider, Method: r.Method, Path: r.URL.Path, Kind: "request", State: "streaming"}
 	if IsCompletion(rt.Rest) {
