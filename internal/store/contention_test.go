@@ -85,6 +85,7 @@ func TestRequestTotalTracksLifecycleReconciliationRollbackAndRestart(t *testing.
 		t.Fatal("expected deferred constraint failure on commit")
 	}
 	assertRequestTotal(t, s, 7)
+	save(usage.Record{RequestID: "after-failure"}, 8)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestRequestTotalTracksLifecycleReconciliationRollbackAndRestart(t *testing.
 		t.Fatal(err)
 	}
 	s = reopened
-	assertRequestTotal(t, s, 7)
+	assertRequestTotal(t, s, 8)
 	if len(s.Recent()) != 0 {
 		t.Fatal("restart must not put historical requests in the ticker")
 	}
@@ -193,6 +194,39 @@ func TestRequestFeedDoesNotWaitForWriterAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertRequestTotal(t, s, 1)
+}
+
+func TestCanceledDashboardRequestsDoNotWaitForReadPool(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "usage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for range s.DB.Readers.Stats().MaxOpenConnections {
+		conn, err := s.DB.Readers.Conn(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, path := range []string{"/api/sessions", "/api/logs", "/api/analytics", "/api/events", "/api/sessions/timeline?session_id=test"} {
+		done := make(chan int, 1)
+		go func() {
+			response := httptest.NewRecorder()
+			s.ServeHTTP(response, httptest.NewRequest("GET", path, nil).WithContext(ctx))
+			done <- response.Code
+		}()
+		select {
+		case status := <-done:
+			if status != http.StatusInternalServerError {
+				t.Fatalf("%s: canceled query returned %d", path, status)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s: canceled request kept waiting for a reader", path)
+		}
+	}
 }
 
 // The polling case deliberately polls continuously to expose contention; the
