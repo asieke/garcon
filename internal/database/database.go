@@ -3,8 +3,10 @@ package database
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	_ "modernc.org/sqlite"
 	"net/url"
@@ -16,7 +18,10 @@ import (
 
 type DB struct {
 	*sql.DB
-	Path string
+	// Reads never borrow the single writer connection. In WAL mode a long
+	// dashboard snapshot can coexist with request and routing commits.
+	Readers *sql.DB
+	Path    string
 }
 
 func Open(path string) (*DB, error) {
@@ -46,8 +51,35 @@ func Open(path string) (*DB, error) {
 		db.Close()
 		return nil, err
 	}
+	readers, err := sql.Open("sqlite", u.String()+"?mode=ro&_pragma=busy_timeout(5000)&_pragma=query_only(1)&_pragma=foreign_keys(1)")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	readers.SetMaxOpenConns(4)
+	readers.SetMaxIdleConns(4)
+	if err = readers.Ping(); err != nil {
+		readers.Close()
+		db.Close()
+		return nil, err
+	}
+	d.Readers = readers
 	return d, nil
 }
+
+func (d *DB) Query(query string, args ...any) (*sql.Rows, error) {
+	return d.Readers.Query(query, args...)
+}
+func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return d.Readers.QueryContext(ctx, query, args...)
+}
+func (d *DB) QueryRow(query string, args ...any) *sql.Row {
+	return d.Readers.QueryRow(query, args...)
+}
+func (d *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return d.Readers.QueryRowContext(ctx, query, args...)
+}
+func (d *DB) Close() error { return errors.Join(d.Readers.Close(), d.DB.Close()) }
 
 func (d *DB) migrate(legacy string) error {
 	tx, err := d.Begin()
@@ -73,6 +105,7 @@ func (d *DB) migrate(legacy string) error {
  key TEXT PRIMARY KEY, session_id TEXT NOT NULL DEFAULT '', account_id TEXT NOT NULL,
  account TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, message TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS events_time ON events(time);
  `)
 	if err != nil {
 		return err
@@ -141,6 +174,29 @@ func (d *DB) migrate(legacy string) error {
 	}
 	// A stream that ended with the process has an explicit terminal state.
 	_, err = tx.Exec(`UPDATE requests SET state='interrupted', record=json_set(record,'$.state','interrupted','$.error','Garcon restarted before this request completed') WHERE state='streaming'`)
+	if err != nil {
+		return err
+	}
+	// Bootstrap once per open, after legacy import, then maintain the total in
+	// the same transaction as inserts/deletes (upserts and rollbacks included).
+	// The recent feed and recording never need a full-ledger COUNT.
+	_, err = tx.Exec(`
+ CREATE TABLE IF NOT EXISTS request_totals (id INTEGER PRIMARY KEY CHECK(id=1), total INTEGER NOT NULL);
+ INSERT INTO request_totals(id,total) VALUES(1,(SELECT count(*) FROM requests))
+ ON CONFLICT(id) DO UPDATE SET total=excluded.total;
+ CREATE TRIGGER IF NOT EXISTS requests_count_insert AFTER INSERT ON requests BEGIN
+   UPDATE request_totals SET total=total+1 WHERE id=1;
+ END;
+ CREATE TRIGGER IF NOT EXISTS requests_count_delete AFTER DELETE ON requests BEGIN
+   UPDATE request_totals SET total=total-1 WHERE id=1;
+ END;
+ CREATE TRIGGER IF NOT EXISTS events_retention AFTER INSERT ON events BEGIN
+   DELETE FROM events WHERE id<=NEW.id-10000;
+   DELETE FROM events WHERE time<NEW.time-2592000000;
+ END;
+ DELETE FROM events WHERE id<=(SELECT coalesce(max(id),0)-10000 FROM events);
+ DELETE FROM events WHERE time<?;
+ `, time.Now().Add(-30*24*time.Hour).UnixMilli())
 	if err != nil {
 		return err
 	}

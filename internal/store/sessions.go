@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"garcon/internal/usage"
 )
@@ -14,7 +15,11 @@ import (
 // subagent) never replace the conversation's model. Child agent threads in the
 // same session are counted as subagents and are only a fallback for the model.
 func (s *Store) sessions() ([]map[string]any, error) {
-	rows, err := s.DB.Query(`WITH tagged AS (
+	return s.sessionsContext(context.Background())
+}
+
+func (s *Store) sessionsContext(ctx context.Context) ([]map[string]any, error) {
+	rows, err := s.DB.QueryContext(ctx, `WITH tagged AS (
  SELECT r.*,coalesce(nullif(json_extract(record,'$.harness'),''),
    CASE WHEN EXISTS (SELECT 1 FROM sessions s WHERE s.session_id=r.session_id AND s.session_id!='') THEN 'codex' ELSE '' END) AS harness,
  coalesce(json_extract(record,'$.subagent'),'') AS subagent,coalesce(json_extract(record,'$.thread_id'),'') AS thread
