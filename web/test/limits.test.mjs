@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetProviderGroups, widgetUsage, widgetShortLabel, needsAttention, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo } from '../src/lib/limits.ts';
+import { elapsedPercent, expired, barPercent, countdown, accountStatus, overviewWindow, widgetGroups, widgetProviderGroups, widgetUsage, widgetShortLabel, needsAttention, widgetWindows, widgetWindowLabel, widgetReset, resetCreditInfo, claudeResetDetails } from '../src/lib/limits.ts';
 
 const reset = Date.UTC(2030, 0, 8);
 const week = { id: 'week', label: 'Weekly', used_percent: 32, window_seconds: 604800, resets_at: reset, expired: false };
@@ -68,6 +68,23 @@ test('compact reset display preserves unknown, pending, and active states', () =
  assert.equal(widgetReset({ ...week, expired: true }, reset - 1000).text, 'Pending');
  assert.equal(widgetReset(week, reset - 90000000).text, '1d 1h');
  assert.equal(widgetReset(week, reset - 1).description, `Resets ${new Date(reset).toLocaleString()}`);
+});
+
+test('Claude saved resets keep count, expiry and coverage together without attention for missing offers', () => {
+	const a = { provider: 'claude', status: 'fresh', fetched_at: reset, reset_credits: {
+		available_count: 4, status: 'fresh', fetched_at: reset,
+		credits: [{ count: 2, expires_at: reset, limits: ['five_hour'] }, { count: 1, expires_at: reset + 1000, limits: ['five_hour', 'seven_day', 'seven_day_overage_included'] }, { count: 1, expires_at: 0 }]
+	} };
+	assert.equal(resetCreditInfo(a, reset - 1).count, 4);
+	assert.equal(resetCreditInfo(a, reset).count, 2);
+	assert.deepEqual(claudeResetDetails(a, reset), [
+		{ count: 1, expiresAt: reset + 1000, limits: '5h + week + included models' },
+		{ count: 1, expiresAt: 0, limits: 'limits not reported' }
+	]);
+	assert.deepEqual(claudeResetDetails({ ...a, reset_credits: undefined }, reset), []);
+	assert.equal(needsAttention({ ...a, reset_credits: undefined }, reset), false);
+	assert.deepEqual(claudeResetDetails({ ...a, provider: 'codex' }, reset), []);
+	assert.deepEqual(claudeResetDetails({ ...a, reset_credits: { ...a.reset_credits, available_count: 0, credits: [] } }, reset), []);
 });
 
 test('provider widget groups order Codex, Claude, Google, and Facebook and map compact cells', () => {
