@@ -13,11 +13,12 @@ import (
 )
 
 type Store struct {
-	DB       *database.DB
-	Tasks    *codexmetadata.Reader
-	mu       sync.Mutex
-	recent   []RecentRecord
-	baseline int
+	DB      *database.DB
+	Tasks   *codexmetadata.Reader
+	writeMu sync.Mutex // orders commits and publication of their recent records
+	mu      sync.Mutex // protects only the in-memory feed; never held during SQL
+	recent  []RecentRecord
+	total   int
 }
 
 func Open(path string) (*Store, error) {
@@ -26,7 +27,10 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{DB: db, recent: []RecentRecord{}}
-	s.baseline = s.Len()
+	if err = db.QueryRow("SELECT total FROM request_totals WHERE id=1").Scan(&s.total); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return s, nil
 }
 func (s *Store) Close() error { return s.DB.Close() }
@@ -44,8 +48,8 @@ func (s *Store) SaveRecord(r usage.Record) error {
 	if r.State == "" {
 		r.State = "complete"
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
@@ -55,29 +59,35 @@ func (s *Store) SaveRecord(r usage.Record) error {
 	if err != nil {
 		return err
 	}
-	if skip {
-		return tx.Commit()
-	}
-	b, err := json.Marshal(r)
-	if err != nil {
-		return err
-	}
-	var id any
-	if r.RequestID != "" {
-		id = r.RequestID
-	}
 	var seq int
-	err = tx.QueryRow(`INSERT INTO requests(request_id,time,account_id,session_id,model,status,kind,state,record) VALUES(?,?,?,?,?,?,?,?,?)
+	if !skip {
+		b, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		var id any
+		if r.RequestID != "" {
+			id = r.RequestID
+		}
+		err = tx.QueryRow(`INSERT INTO requests(request_id,time,account_id,session_id,model,status,kind,state,record) VALUES(?,?,?,?,?,?,?,?,?)
  ON CONFLICT(request_id) DO UPDATE SET time=excluded.time,account_id=excluded.account_id,session_id=excluded.session_id,model=excluded.model,status=excluded.status,state=excluded.state,record=excluded.record
  RETURNING sequence`, id, r.Time, r.AccountID, r.SessionID, r.Model, r.Status, r.Kind, r.State, string(b)).Scan(&seq)
-	if err != nil {
+		if err != nil {
+			return err
+		}
+	}
+	var total int
+	if err = tx.QueryRow("SELECT total FROM request_totals WHERE id=1").Scan(&total); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.total = total
 	// Backfills and local log updates belong in analytics, never the live feed.
-	if r.Source == "claude-local" || r.Source == "muse-local" || r.Source == "agy-local" {
+	if skip || r.Source == "claude-local" || r.Source == "muse-local" || r.Source == "agy-local" {
 		return nil
 	}
 	found := false
@@ -97,9 +107,9 @@ func (s *Store) SaveRecord(r usage.Record) error {
 	return nil
 }
 func (s *Store) Len() int {
-	var n int
-	s.DB.QueryRow("SELECT count(*) FROM requests").Scan(&n)
-	return n
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.total
 }
 func (s *Store) All() []usage.Record {
 	out := []usage.Record{}
@@ -136,5 +146,5 @@ func (s *Store) RequestFeed() RequestFeed {
 	for i := range rows {
 		rows[i].Account = accounts.DisplayLabel(rows[i].Account)
 	}
-	return RequestFeed{rows, s.Len()}
+	return RequestFeed{rows, s.total}
 }
