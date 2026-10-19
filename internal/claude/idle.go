@@ -27,6 +27,7 @@ type renewalAttempt struct {
 type Renewer struct {
 	mu         sync.Mutex
 	attempts   map[string]renewalAttempt
+	renewing   map[string]chan struct{}
 	now        func() time.Time
 	load       func(context.Context, string) (Credentials, error)
 	run        func(context.Context, string, string) error
@@ -34,26 +35,66 @@ type Renewer struct {
 }
 
 func NewRenewer() *Renewer {
-	return &Renewer{attempts: map[string]renewalAttempt{}, now: time.Now, load: LoadContext, run: runIdleRenewal}
+	return &Renewer{attempts: map[string]renewalAttempt{}, renewing: map[string]chan struct{}{}, now: time.Now, load: LoadContext, run: runIdleRenewal}
 }
 
 // Refresh checks one profile. A changed login bypasses failure backoff. No login,
 // no refresh grant, and tokens with unknown expiry are left alone.
 func (r *Renewer) Refresh(ctx context.Context, dir string) (bool, error) {
+	for {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		// Keychain reads may block. Healthy logins never wait for other reads or
+		// CLI renewals, even when they use this same profile.
+		creds, err := r.load(ctx, dir)
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		if err != nil || creds.RefreshToken == "" || !needsRenewal(creds.ExpiresAt, r.now()) {
+			r.clearAttempt(dir)
+			return false, nil
+		}
+		fingerprint := sha256.Sum256([]byte(creds.AccessToken + "\x00" + creds.RefreshToken))
+		r.mu.Lock()
+		if done := r.renewing[dir]; done != nil {
+			r.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return false, ctx.Err()
+			case <-done:
+				// Reread the CLI's saved login after the in-flight renewal.
+				continue
+			}
+		}
+		previous := r.attempts[dir]
+		if previous.fingerprint == fingerprint && r.now().Before(previous.next) {
+			r.mu.Unlock()
+			return false, nil
+		}
+		done := make(chan struct{})
+		r.renewing[dir] = done
+		r.mu.Unlock()
+		changed, err := r.refresh(ctx, dir, previous)
+		r.mu.Lock()
+		delete(r.renewing, dir)
+		close(done)
+		r.mu.Unlock()
+		return changed, err
+	}
+}
+
+func (r *Renewer) clearAttempt(dir string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	delete(r.attempts, dir)
+	r.mu.Unlock()
+}
+
+// refresh has one caller per profile, but never holds the state mutex across
+// credential reads, the cross-process profile lock, or the CLI subprocess.
+func (r *Renewer) refresh(ctx context.Context, dir string, previous renewalAttempt) (bool, error) {
 	if ctx.Err() != nil {
 		return false, ctx.Err()
-	}
-	creds, err := r.load(ctx, dir)
-	if err != nil || creds.RefreshToken == "" || !needsRenewal(creds.ExpiresAt, r.now()) {
-		delete(r.attempts, dir)
-		return false, nil
-	}
-	fingerprint := sha256.Sum256([]byte(creds.AccessToken + "\x00" + creds.RefreshToken))
-	previous := r.attempts[dir]
-	if previous.fingerprint == fingerprint && r.now().Before(previous.next) {
-		return false, nil
 	}
 	release, ok := lock(dir)
 	if !ok {
@@ -69,10 +110,10 @@ func (r *Renewer) Refresh(ctx context.Context, dir string) (bool, error) {
 		return false, nil
 	}
 	if !needsRenewal(latest.ExpiresAt, r.now()) {
-		delete(r.attempts, dir)
+		r.clearAttempt(dir)
 		return true, nil
 	}
-	fingerprint = sha256.Sum256([]byte(latest.AccessToken + "\x00" + latest.RefreshToken))
+	fingerprint := sha256.Sum256([]byte(latest.AccessToken + "\x00" + latest.RefreshToken))
 	child, cancel := context.WithTimeout(ctx, renewTimeout)
 	defer cancel()
 	// Empty input intentionally exits nonzero. Only a fresh persisted login proves
@@ -80,7 +121,7 @@ func (r *Renewer) Refresh(ctx context.Context, dir string) (bool, error) {
 	_ = r.run(child, dir, r.executable)
 	after, err := r.load(ctx, dir)
 	if err == nil && after.AccessToken != "" && after.ExpiresAt > latest.ExpiresAt && !needsRenewal(after.ExpiresAt, r.now()) {
-		delete(r.attempts, dir)
+		r.clearAttempt(dir)
 		return true, nil
 	}
 	if ctx.Err() != nil {
@@ -94,10 +135,12 @@ func (r *Renewer) Refresh(ctx context.Context, dir string) (bool, error) {
 		failures = 5
 	}
 	delay := time.Minute * 2 * time.Duration(1<<(failures-1))
+	r.mu.Lock()
 	if len(r.attempts) >= 1024 {
 		clear(r.attempts)
 	}
 	r.attempts[dir] = renewalAttempt{fingerprint, r.now().Add(delay), failures}
+	r.mu.Unlock()
 	return false, errors.New("Claude CLI could not renew its saved login; retrying with backoff (check CLI installation or sign in again if revoked)")
 }
 
