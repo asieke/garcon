@@ -179,7 +179,7 @@ func (d *DB) migrate(legacy string) error {
 	}
 	// Bootstrap once per open, after legacy import, then maintain the total in
 	// the same transaction as inserts/deletes (upserts and rollbacks included).
-	// Polling and recording never need a full-ledger COUNT.
+	// The recent feed and recording never need a full-ledger COUNT.
 	_, err = tx.Exec(`
  CREATE TABLE IF NOT EXISTS request_totals (id INTEGER PRIMARY KEY CHECK(id=1), total INTEGER NOT NULL);
  INSERT INTO request_totals(id,total) VALUES(1,(SELECT count(*) FROM requests))
