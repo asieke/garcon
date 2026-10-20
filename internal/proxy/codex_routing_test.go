@@ -92,13 +92,22 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 	if started.State != "streaming" || record.State != "complete" || started.RequestID == "" || started.RequestID != record.RequestID || record.SessionID != "conversation" || record.AccountID != "b" {
 		t.Fatalf("lost request lifecycle %+v %+v", started, record)
 	}
+	// Included allowance can run out mid-conversation while usage credits
+	// still pay for the original account's requests.
+	exhausted, balance := 100.0, 1234.5
+	snapshot.Accounts[1].Windows[0].UsedPercent = &exhausted
+	snapshot.Accounts[1].UsageCredits = &limits.UsageCredits{HasCredits: true, Balance: &balance}
+	w = call()
+	if w.Code != 200 || calls != 2 || record.AccountID != "b" || w.Header().Get("X-Garcon-Account-Id") != "b" {
+		t.Fatalf("credit-backed continuation did not reach its account: %d %+v", w.Code, record)
+	}
 	upstreamStatus = 429
 	w = call()
-	if w.Code != 429 || calls != 2 {
+	if w.Code != 429 || calls != 3 {
 		t.Fatal("replayed a rejected request")
 	}
 	w = call()
-	if w.Code != 503 || calls != 2 || record.Status != 503 || record.State != "failed" {
+	if w.Code != 503 || calls != 3 || record.Status != 503 || record.State != "failed" {
 		t.Fatal("rerouted an unavailable pinned conversation")
 	}
 	// A manual pin cannot move an unavailable existing conversation.
@@ -106,14 +115,14 @@ func TestCodexRoutingForwardsSelectedIdentityAndDoesNotReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	w = call()
-	if w.Code != 503 || calls != 2 {
+	if w.Code != 503 || calls != 3 {
 		t.Fatal("manual pin moved an existing conversation")
 	}
 	// New conversations use the manual pin and attribute the forwarded identity.
 	session = "new-conversation"
 	expectedAccount, upstreamStatus = "a", 200
 	w = call()
-	if w.Code != 200 || calls != 3 || record.AccountID != "a" || record.Account != "a@example.com" || w.Header().Get("X-Garcon-Account-Id") != "a" {
+	if w.Code != 200 || calls != 4 || record.AccountID != "a" || record.Account != "a@example.com" || w.Header().Get("X-Garcon-Account-Id") != "a" {
 		t.Fatalf("new-conversation pin did not reach upstream: %d %+v", w.Code, record)
 	}
 }

@@ -147,6 +147,7 @@ func (s *Service) Snapshot() Snapshot {
 		a := &c.Accounts[i]
 		a.Windows = append([]Window{}, a.Windows...)
 		a.ResetCredits = copyCredits(a.ResetCredits)
+		a.UsageCredits = copyUsageCredits(a.UsageCredits)
 		if credits := a.ResetCredits; credits != nil && credits.Status == "fresh" && s.now().UnixMilli()-credits.FetchedAt > 2*refreshSeconds*1000 {
 			credits.Status = "stale"
 		}
@@ -279,6 +280,7 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 			a.FetchedAt = prev.FetchedAt
 			a.ObservedAt = prev.ObservedAt
 			a.ResetCredits = prev.ResetCredits
+			a.UsageCredits = prev.UsageCredits
 			if a.Email == "" {
 				a.Email = prev.Email
 			}
@@ -363,13 +365,15 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 			if err == nil {
 				var ws []Window
 				var plan string
+				var usageCredits *UsageCredits
 				if a.Provider == "codex" {
-					plan, ws, err = parseCodex(raw)
+					plan, ws, usageCredits, err = parseCodex(raw)
 				} else {
 					ws, err = parseClaude(raw)
 				}
 				if err == nil {
 					a.Windows = ws
+					a.UsageCredits = usageCredits
 					a.FetchedAt = s.now().UnixMilli()
 					a.Status = "fresh"
 					if a.Provider == "codex" {
@@ -385,7 +389,7 @@ func (s *Service) collect(ctx context.Context, old map[string]Account) {
 					if plan != "" {
 						a.Plan = plan
 					}
-					if len(ws) == 0 {
+					if len(ws) == 0 && !HasUsageCredits(a, s.now()) {
 						a.Status = "unavailable"
 						a.Error = "No subscription limits reported"
 					}

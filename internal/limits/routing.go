@@ -7,7 +7,7 @@ import (
 
 // Headroom validates freshness and returns the tightest relevant allowance.
 func Headroom(a Account, now time.Time, include func(Window) bool) (float64, string) {
-	if a.Status != "fresh" || a.FetchedAt <= 0 || now.UnixMilli()-a.FetchedAt > 600000 {
+	if !fresh(a, now) {
 		return 0, "Waiting for fresh usage limits"
 	}
 	remaining, found := 100.0, false

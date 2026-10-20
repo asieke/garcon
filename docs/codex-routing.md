@@ -29,13 +29,17 @@ Garcon passes realtime WebSocket upgrades through bidirectionally when the clien
 
 ## How an account is chosen
 
-An account needs a usable login, fresh quota, and access to the requested model. Garcon selects across the enrolled eligible accounts using:
+An account needs a usable login, fresh allowance or usage credits, and access to the requested model. Garcon selects across the enrolled eligible accounts using:
 
 ```text
 score = remaining quota percentage / hours until reset
 ```
 
-For multiple general quota windows, the lowest window score wins. Active request counts don't change it. Percentages compare headroom, not absolute tokens across different plans. Missing, expired, stale, or exhausted limits make an account ineligible. The provider can still reject a request, including for a model-specific limit.
+For multiple general quota windows, the lowest window score wins. Active request counts don't change it. Percentages compare headroom, not absolute tokens across different plans.
+
+Fresh usage credits keep an account eligible when included allowance is exhausted, or when a credit-only account reports no general allowance windows. Garcon reads the usage response's credit availability, unlimited flag and optional balance separately from reset credits. An explicitly zero balance is unavailable unless credits are unlimited; a hidden balance relies on the provider's availability flag. Credit-backed accounts have score zero, so automatic routing prefers eligible accounts with included allowance. Existing conversations and manual pins can continue on their account using credits.
+
+Stale snapshots, unknown or expired reported windows, invalid credits, login/model failures and upstream cooldowns still prevent routing. Missing or exhausted limits without available credits are ineligible. OpenAI decides the actual charge and may still reject a request, including for a model-specific limit or spending control. Garcon neither purchases credits nor redeems reset credits.
 
 ## Why a conversation stays put
 
@@ -81,7 +85,7 @@ Garcon checks authentication for all discovered Codex logins every minute, inclu
 
 Sessions shows task titles, projects, account assignments, and model traffic. Task titles, paths, and archive flags come from Codex's `state_*.sqlite` files, read without modification. Missing or incompatible indexes fall back to IDs. Task metadata stays local and isn't saved in Garcon's database.
 
-`GET /api/routing/codex` returns account health, quota, scores, assignment counts, `pinned_account`, and `next_account` (empty when no eligible account is available). `PUT` accepts `accounts` to select enrolled IDs. Omit it to preserve the pool, or send an empty array to remove all accounts. `PUT` also accepts `pinned_account` with an enrolled local account ID, or `""` to unpin. Omitting it preserves the current pin; pool and pin changes are saved together. Legacy `enabled` and `priorities` fields remain accepted for compatibility but do not disable routing or influence account selection.
+`GET /api/routing/codex` returns account health, quota, scores, assignment counts, `uses_credits` for credit-backed allowance, `pinned_account`, and `next_account` (empty when no eligible account is available). `GET /api/limits` includes normalized `usage_credits` separately from `reset_credits`; usage credits share their account snapshot's freshness. `PUT` accepts `accounts` to select enrolled IDs. Omit it to preserve the pool, or send an empty array to remove all accounts. `PUT` also accepts `pinned_account` with an enrolled local account ID, or `""` to unpin. Omitting it preserves the current pin; pool and pin changes are saved together. Legacy `enabled` and `priorities` fields remain accepted for compatibility but do not disable routing or influence account selection.
 
 Routed calls and configuration changes require a local client and matching Origin when supplied. Successful pooled responses include `X-Garcon-Account-Id`. Pooled coding requests support HTTP streaming; their WebSocket upgrades and bodies over 32 MiB are rejected. Realtime voice bypasses the pool and retains the client's credentials as described above.
 

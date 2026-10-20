@@ -61,11 +61,12 @@ type codexBucket struct {
 	Secondary *codexWindow `json:"secondary_window"`
 }
 
-func parseCodex(raw []byte) (string, []Window, error) {
+func parseCodex(raw []byte) (string, []Window, *UsageCredits, error) {
 	var data struct {
-		Plan       string       `json:"plan_type"`
-		Rate       *codexBucket `json:"rate_limit"`
-		Review     *codexBucket `json:"code_review_rate_limit"`
+		Plan       string          `json:"plan_type"`
+		Rate       *codexBucket    `json:"rate_limit"`
+		Review     *codexBucket    `json:"code_review_rate_limit"`
+		Credits    json.RawMessage `json:"credits"`
 		Additional []struct {
 			Name    string       `json:"limit_name"`
 			ID      string       `json:"limit_id"`
@@ -74,7 +75,7 @@ func parseCodex(raw []byte) (string, []Window, error) {
 		} `json:"additional_rate_limits"`
 	}
 	if err := json.Unmarshal(raw, &data); err != nil {
-		return "", nil, errors.New("Unrecognized provider response")
+		return "", nil, nil, errors.New("Unrecognized provider response")
 	}
 	ws := []Window{}
 	add := func(id, label string, b *codexBucket) {
@@ -109,7 +110,7 @@ func parseCodex(raw []byte) (string, []Window, error) {
 		add(id, name, b.Rate)
 	}
 	sortWindows(ws)
-	return data.Plan, ws, nil
+	return data.Plan, ws, parseUsageCredits(data.Credits), nil
 }
 
 func parseClaude(raw []byte) ([]Window, error) {
