@@ -15,6 +15,13 @@
 # (exported: the commit the checkout was on before this run). A deploy.sh that can have work pending
 # when nothing changed (such as an iPhone install that waited for the phone) defines deploy_pending
 # before sourcing this, returning true while that work is pending.
+# A project whose live checkouts deploy only on request sets DEPLOY_ON_REQUEST=1 (that line, alone) before
+# sourcing this. Run by scripts/sync.sh (which sets DEPLOY_SYNC=1), it then fetches and reports how far
+# origin/main is ahead of what is live, after the same refusals, and changes nothing; run directly, it
+# deploys as usual.
+# Every deploy attempt appends one line to the deploy record, `deploys` in the live checkout's git
+# directory (.git/deploys): its UTC time, the commit, and ok (deploy.sh's install, restart, and smoke
+# test passed) or failed. What is live on this host is the commit of its last ok line.
 # Identical in every project: copy it from asieke/workspace templates/local/scripts/live.sh; do not edit.
 # deploy.sh must not set its own EXIT trap: this one logs each deploy that succeeds.
 
@@ -57,6 +64,15 @@ if [ -n "${DEPLOY_UPDATED:-}" ]; then
 else
   git fetch --quiet origin main
   DEPLOY_FROM=$(git rev-parse HEAD)
+  if [ "${DEPLOY_SYNC:-}" = 1 ] && [ "${DEPLOY_ON_REQUEST:-}" = 1 ]; then
+    # A sync (or a cron job through it) of a project that deploys only on request: report, change nothing.
+    git merge-base --is-ancestor HEAD origin/main \
+      || { echo "deploy: local commits not on origin/main, refusing; push them to a branch and open a PR" >&2; exit 1; }
+    live_behind=$(git rev-list --count HEAD..origin/main)
+    [ "$live_behind" -eq 0 ] \
+      || echo "deploy: origin/main is $live_behind commit(s) ahead of $(git rev-parse --short HEAD) on $HOST, which deploys only on request: run scripts/deploy.sh to deploy it"
+    exit 0
+  fi
   if [ "$DEPLOY_FROM" = "$(git rev-parse origin/main)" ]; then
     # Nothing new: deploy only when asked to (any argument) or when deploy.sh has work pending.
     [ $# -gt 0 ] || { declare -F deploy_pending >/dev/null && deploy_pending; } || exit 0
@@ -72,4 +88,19 @@ else
   fi
 fi
 export DEPLOY_FROM
-trap 'live_rc=$?; [ $live_rc -ne 0 ] || echo "deploy: $(date -u +%FT%TZ) $(git -C "$CANONICAL_PATH" rev-parse --short HEAD) on $HOST"; exit $live_rc' EXIT
+# The deploy record (see above), written when deploy.sh ends: ok only once its smoke test has passed.
+live_record=$(cd "$(git rev-parse --git-path deploys | sed 's|/deploys$||')" && pwd -P)/deploys
+live_end() {
+  local rc=$1 at head
+  at=$(date -u +%FT%TZ) head=$(git -C "$CANONICAL_PATH" rev-parse HEAD)
+  if [ "$rc" -eq 0 ]; then
+    echo "$at $head ok" >>"$live_record"
+    echo "deploy: $at $(git -C "$CANONICAL_PATH" rev-parse --short HEAD) on $HOST"
+    if declare -F deploy_pending >/dev/null && deploy_pending; then
+      echo "deploy: part of this deploy is still pending; a later scripts/deploy.sh finishes it"
+    fi
+  else
+    echo "$at $head failed" >>"$live_record"
+  fi
+}
+trap 'live_rc=$?; live_end "$live_rc" || :; exit $live_rc' EXIT
