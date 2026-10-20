@@ -8,7 +8,7 @@ merge: agent
 deploy: local:Alexs-MacBook-Pro-92440:~/apps/garcon
 refresh: none
 sources: []
-standard: 2026-10-18.3
+standard: 2026-10-20
 ---
 
 # Garcon

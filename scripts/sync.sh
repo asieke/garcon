@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Sync to origin/main, then optionally run a command: scripts/sync.sh [command...]
 # Live checkout (this host's path in PROJECT.md's deploy field, as `scripts/deploy.sh --path` prints it):
-# runs deploy.sh; if that refuses, exits 1 and runs nothing.
+# runs deploy.sh; if that refuses, exits 1 and runs nothing. In a project whose deploy.sh sets
+# DEPLOY_ON_REQUEST=1, that run only fetches and reports what origin/main has that is not live yet.
 # Any other checkout, including a task worktree: reports how far it is behind origin/main.
 # Then both remove task worktrees whose pull request merged (scripts/worktree.sh --tidy) and link the
 # live .env into worktrees that lack it. Never stashes, resets, or deletes work.
@@ -15,6 +16,8 @@ start="$PWD"
 here="$(cd "$(dirname "$0")/.." && pwd -P)"
 cd "$here"
 live="$(cd "$(scripts/deploy.sh --path)" 2>/dev/null && pwd -P || true)"
+# Whether the live checkouts deploy only on request (read from deploy.sh, never by running it).
+on_request=; ! grep -qx 'DEPLOY_ON_REQUEST=1' scripts/deploy.sh 2>/dev/null || on_request=1
 
 inspect() {
   local branch dirty ahead behind why=
@@ -30,6 +33,8 @@ inspect() {
     [ "$ahead" -eq 0 ] || why="${why:+$why, }commits not on origin/main"
     if [ -n "$why" ]; then
       echo "sync: a full sync would REFUSE ($why). Live-app operations and scheduled jobs are blocked until the owner resolves it; reviewing a pull request is not."
+    elif [ "$behind" -gt 0 ] && [ -n "$on_request" ]; then
+      echo "sync: origin/main is $behind commit(s) ahead of the live app, which deploys only on request: a full sync reports it, and scripts/deploy.sh deploys it."
     elif [ "$behind" -gt 0 ]; then
       echo "sync: a full sync would deploy $behind commit(s) from origin/main."
     else
@@ -48,13 +53,17 @@ if [ "${1:-}" = --inspect ]; then
   exit 0
 fi
 if [ "$here" = "$live" ]; then
-  if ! out=$(scripts/deploy.sh 2>&1); then
+  if ! out=$(DEPLOY_SYNC=1 scripts/deploy.sh 2>&1); then
     printf '%s\n' "$out" "sync: REFUSED: $here could not be synced to origin/main. STOP: do not run, edit, stash, reset, commit, or delete anything here; report this output to the owner." >&2
     git status --short --branch >&2
     exit 1
   fi
   [ -z "$out" ] || echo "$out"
-  echo "sync: $here is at origin/main ($(git rev-parse --short HEAD)). OK to proceed."
+  if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+    echo "sync: $here is at origin/main ($(git rev-parse --short HEAD)). OK to proceed."
+  else
+    echo "sync: $here stays at $(git rev-parse --short HEAD), what is live, since it deploys only on request. OK to proceed."
+  fi
 elif git fetch --quiet origin main 2>/dev/null; then
   behind=$(git rev-list --count HEAD..origin/main)
   if [ "$behind" -eq 0 ]; then echo "sync: up to date with origin/main."
