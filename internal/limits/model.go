@@ -32,6 +32,14 @@ type Account struct {
 	ObservedAt   int64         `json:"observed_at,omitempty"`
 	Windows      []Window      `json:"windows"`
 	ResetCredits *ResetCredits `json:"reset_credits,omitempty"`
+	UsageCredits *UsageCredits `json:"usage_credits,omitempty"` // Shares the account's freshness.
+}
+
+// UsageCredits pay for requests beyond included allowance; they are not resets.
+type UsageCredits struct {
+	HasCredits bool     `json:"has_credits"`
+	Unlimited  bool     `json:"unlimited"`
+	Balance    *float64 `json:"balance"` // nil when the provider does not disclose it.
 }
 
 type ResetCredit struct {

@@ -48,11 +48,11 @@ func next(s *Service) {
 }
 
 func TestProviderWindows(t *testing.T) {
-	plan, ws, err := parseCodex([]byte(codexFixture))
+	plan, ws, _, err := parseCodex([]byte(codexFixture))
 	if err != nil || plan != "pro" || len(ws) != 1 || ws[0].Label != "Weekly" || *ws[0].UsedPercent != 32 || ws[0].ResetsAt != 1900000000000 {
 		t.Fatalf("codex: %s %+v %v", plan, ws, err)
 	}
-	_, ws, err = parseCodex([]byte(`{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":18000},"secondary_window":{"used_percent":null,"limit_window_seconds":604800}},"additional_rate_limits":[{"limit_name":"Special model","rate_limit":{"primary_window":{"used_percent":45,"limit_window_seconds":3600}}}]}`))
+	_, ws, _, err = parseCodex([]byte(`{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":18000},"secondary_window":{"used_percent":null,"limit_window_seconds":604800}},"additional_rate_limits":[{"limit_name":"Special model","rate_limit":{"primary_window":{"used_percent":45,"limit_window_seconds":3600}}}]}`))
 	if err != nil || len(ws) != 3 || ws[0].UsedPercent != nil || ws[1].UsedPercent == nil || *ws[1].UsedPercent != 0 {
 		t.Fatalf("missing vs zero: %+v %v", ws, err)
 	}
@@ -530,4 +530,3 @@ func TestMuseUsageShapes(t *testing.T) {
 		}
 	}
 }
-

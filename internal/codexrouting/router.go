@@ -49,6 +49,7 @@ type Account struct {
 	Enrolled      bool            `json:"enrolled"`
 	Status        string          `json:"status"`
 	Remaining     *float64        `json:"remaining_percent"`
+	UsesCredits   bool            `json:"uses_credits,omitempty"`
 	Active        int             `json:"active_requests"`
 	Conversations int             `json:"conversations"`
 }
@@ -364,6 +365,14 @@ func (r *Router) account(c credential, model string, snapshot limits.Snapshot) A
 				} else if status == "Ready" {
 					a.Status = "Waiting for a reset time"
 				}
+			}
+			if (status == "Usage exhausted" || status == "Usage limits unavailable") && limits.HasUsageCredits(q, r.now()) {
+				// Credits have no percentage/reset score. Prefer included quota
+				// for new conversations, while keeping assigned accounts usable.
+				score := 0.0
+				a.Score = &score
+				a.Status = "Ready"
+				a.UsesCredits = true
 			}
 			break
 		}

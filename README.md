@@ -62,6 +62,8 @@ This is an experimental subscription-authentication bridge, not a guarantee of c
 
 For a new Codex conversation, Garcon checks login health, quota, and model access. It automatically chooses the highest **remaining percentage ÷ hours until reset**. This compares percentages, not absolute token allowances.
 
+When included allowance runs out, fresh provider-reported usage credits keep the account available, including for existing conversations. Automatic routing prefers accounts with included allowance before accounts using credits. OpenAI determines the actual credit charge and can still reject requests. Usage credits are separate from reset credits; Garcon never redeems a reset.
+
 In the Usage widget, **Up next** marks the account automatic routing would select for a new conversation (model access can change the choice). Click **Pin** on a Codex account to assign new Codex conversations to that account until you **Unpin**. The pin survives restarts and never silently falls back if the account is unavailable. Pinning and the account pool apply to Codex only; Claude and realtime voice routing are unchanged.
 
 From a terminal, run `garcon codex status` to list accounts, `garcon codex pin ACCOUNT` (an account ID or email) to pin one, and `garcon codex unpin` to resume automatic selection for new conversations. Add `--json` for scripting.
