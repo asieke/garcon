@@ -19,9 +19,9 @@ Keep product setup and usage in [README.md](README.md), and engineering details 
 
 ## Prepare a change
 
-GitHub `main` is the accepted source of truth. Keep the canonical checkout clean on `main`. Before a new task, inspect status, remotes, and worktrees; fetch the verified remote and fast-forward clean main. Preserve dirty or divergent work instead of resetting it. Create a task branch and worktree from freshly fetched `origin/main`, named `<type>/<slug>` as described in [AGENTS.md](AGENTS.md); resume an existing task in its existing worktree.
+GitHub `main` is the accepted source of truth. Keep the canonical checkout clean on `main`. Before a new task, inspect status, remotes, and worktrees; fetch the verified remote and fast-forward clean main. Preserve dirty or divergent work instead of resetting it. Create a task branch and worktree from freshly fetched `origin/main`, named `<type>/<slug>` (`feat`, `fix`, `chore` or `docs`, then two to five words in kebab-case); resume an existing task in its existing worktree.
 
-Follow [AGENTS.md](AGENTS.md), the public agent workflow from the [ways-of-working standard](https://github.com/asieke/workspace/blob/main/STANDARD.md), and its local companions when present. Private instructions are optional, live in the ignored `.local/` folder (for example `.local/AGENTS.md`), and are excluded from this public repository. Standard tests and builds need no `.env` files. If a task needs additional environment files, use only explicitly approved sources, verify destination files are ignored and untracked, preserve restrictive permissions, and never overwrite an existing worktree environment. Do not copy authentication profiles or runtime databases into worktrees. Use disposable fixtures for tests.
+Follow [AGENTS.md](AGENTS.md), the public agent guide, and its local companions when present. Private instructions are optional, live in the ignored `.local/` folder (for example `.local/AGENTS.md`), and are excluded from this public repository. Standard tests and builds need no `.env` files. If a task needs additional environment files, use only explicitly approved sources, verify destination files are ignored and untracked, preserve restrictive permissions, and never overwrite an existing worktree environment. Do not copy authentication profiles or runtime databases into worktrees. Use disposable fixtures for tests.
 
 Keep README content focused on purpose, scope, setup, and stable navigation. Issues own tasks and blockers; code and PRs own implementation and validation. Keep changing verification evidence in the relevant task or established records.
 
@@ -30,20 +30,20 @@ Commit only the files for the proposed change. Keep credentials, account routing
 Before publishing, inspect the complete outgoing diff and run:
 
 ```sh
-scripts/check.sh
+scripts/test.sh
 ```
 
-It starts with the standard gate (`scripts/gate.sh`: merge markers, private keys, large files and a gitleaks scan of commits not yet on `origin/main`), then `.github/scripts/check-repository-boundaries.py`, which detects tracked local context and missing ignore rules, then runs the backend and frontend checks and the release build in dry-run mode. The boundary check does not scan content for secrets or remove material from earlier commits; review the diff as well. There is no CI: after opening the PR, run `scripts/check.sh --report` to post the `check` status that merging requires.
+It starts with `.github/scripts/check-repository-boundaries.py`, which detects tracked local context and missing ignore rules, then runs the backend and frontend checks and the release build in dry-run mode. The boundary check does not scan content for secrets or remove material from earlier commits; review the diff as well. There is no CI for pull requests: say in the PR what you ran.
 
 ## Verify and review
 
-Use the toolchain versions and development commands in [README.md](README.md#work-on-garcon). For application changes, run `scripts/check.sh`, which also runs the release build in dry-run mode. For documentation changes, check links and review the rendered text.
+Use the toolchain versions and development commands in [README.md](README.md#work-on-garcon). For application changes, run `scripts/test.sh`, which also runs the release build in dry-run mode. For documentation changes, check links and review the rendered text.
 
 State what you verified and any remaining limitations. Passing tests, merging, publishing a release, and installing that release are separate outcomes. Merging to main triggers the release workflow; local installations require an explicit update. Preparing a PR does not restart the service.
 
 ## Merge and cleanup
 
-Push the task branch and open or update its PR into protected main using the PR template. The agent that opened it may merge it (`merge: agent` in [PROJECT.md](PROJECT.md)) once the template is filled in and the required checks pass on the current head; every merge is a release. Keep the task worktree available while its PR is open.
+Push the task branch and open or update its PR into protected main, saying what changed, why, and what you verified. The agent that opened it may merge it (`merge: agent` in [PROJECT.md](PROJECT.md)) once its checks have passed on the current head; every merge is a release. Keep the task worktree available while its PR is open.
 
 After an authorized merge, fetch and verify GitHub's merged PR state and its final head, including squash merges. Remove a worktree and its branch only when the branch matches that head, no additional work remains, and no active process or session depends on the checkout. Before removing a worktree, capture its available project-scoped conversations into the configured durable home while the path exists, preserving native logs and privacy exclusions. Retain the worktree if required capture is unavailable. Preserve useful ignored artifacts and durable environment sources first. Use normal worktree removal without force. Retain dirty, unpublished, closed-unmerged, or uncertain work; do not delete by age or branch name. Guard remote branch deletion against concurrent head changes. Fast-forward clean canonical main afterward.
 

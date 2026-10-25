@@ -3,7 +3,7 @@
 #   scripts/release.sh 0.1.2            publish ai-garcon@0.1.2 from this machine (npm login first)
 #   scripts/release.sh 0.1.2 --pack     build and write npm/ai-garcon/ai-garcon-0.1.2.tgz; publish nothing
 #   scripts/release.sh 0.1.2 --dry-run  build and show what would be packed
-# RELEASE_SKIP_TESTS=1 skips the tests, for CI jobs that just ran them in scripts/check.sh.
+# RELEASE_SKIP_TESTS=1 skips the tests, for jobs that just ran them (scripts/test.sh).
 # Merging into main runs --pack from .github/workflows/release.yml in a job without
 # credentials, and a second job publishes the tarball. Publish by hand only to repair a
 # release. The version in npm/ai-garcon/package.json is a placeholder; this script stamps

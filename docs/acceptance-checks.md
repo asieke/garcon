@@ -43,7 +43,7 @@ Useful existing evidence:
 - A1–A3: `internal/proxy/codex_routing_test.go`, `realtime_test.go`, `images_test.go`, and `internal/codexrouting/{router,pin,body}_test.go`.
 - A1/A6: `internal/store/{http,sessions,store}_test.go`, proxy completion/tap tests, and limit credential-isolation tests.
 - A4/A5: `web/test/ticker.test.mjs`, `web/test/live-requests.test.mjs`, and provider/widget tests. Inspect both ticker suites: coverage for one surface does not establish parity.
-- A7: onboarding/service tests, `npm/ai-garcon/test/package.test.js`, `scripts/check.sh` and the Release workflow.
+- A7: onboarding/service tests, `npm/ai-garcon/test/package.test.js`, `scripts/test.sh` and the Release workflow.
 
 ## Live end-to-end verification record
 
