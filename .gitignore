@@ -8,7 +8,7 @@
 /npm/platforms/
 /npm/ai-garcon/*.tgz
 
-# Standard (asieke/workspace templates/common/.gitignore)
+# Local settings, tools, worktrees and the Mac's deploy wrapper
 .env
 .env.*
 !.env.example
@@ -20,3 +20,4 @@ build/
 *.log
 .DS_Store
 .claude/worktrees/
+scripts/deploy.local.sh

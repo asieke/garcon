@@ -10,8 +10,7 @@ description: Commit, push, open and merge pull requests in the Garcon repository
 platform binaries and packs the npm tarball with a read-only token and no publishing
 identity; `publish` installs nothing, publishes that tarball to npm with provenance, tags the
 merge commit `vX.Y.Z` and creates a GitHub release with the tarball attached. Pull requests
-have no CI: `scripts/check.sh` runs the same build without publishing, and
-`scripts/check.sh --report` posts the `check` status that `main` requires. Actions are pinned to
+have no CI: `scripts/test.sh` runs the same build without publishing. Actions are pinned to
 commits: bump the SHA and its version comment together. There is nothing to bump by hand.
 
 ## How the version is chosen
@@ -34,30 +33,29 @@ one PR when that matters.
 
 ```sh
 git status                      # know what is being committed; never commit unrelated files
-git switch -c <type>/<slug> origin/main  # feat|fix|chore|docs, see AGENTS.md; reuse the existing branch if already on one
-scripts/check.sh
+git switch -c <type>/<slug> origin/main  # feat|fix|chore|docs; reuse the existing branch if already on one
+scripts/test.sh
 git add <files>
 git commit -m "<imperative summary>"
 ```
 
 Do not commit `internal/dashboard/build/` (gitignored) or `npm/ai-garcon/dist/`. Docs
 live in `docs/` and `README.md`; update them in the same commit when behavior visible to
-users changes. `scripts/check.sh` already runs `scripts/release.sh 9.9.9 --dry-run` (the exact
+users changes. `scripts/test.sh` already runs `scripts/release.sh 9.9.9 --dry-run` (the exact
 build the workflow will run, without repeating the tests); run it on its own to see the package listing.
 
 ## 2. Push and merge (this is the release)
 
 ```sh
 git push -u origin <type>/<slug>
-gh pr create                     # fill in .github/pull_request_template.md; add [minor] or [major] to the title if the bump should not be a patch
-scripts/check.sh --report        # posts the check status for the pushed head; merge only when it is green
+gh pr create                     # say what changed, why and what you ran; add [minor] or [major] to the title if the bump should not be a patch
 gh pr merge --merge --delete-branch <pr>   # merge commit, like the rest of the history
 git checkout main && git pull --ff-only
 ```
 
-`PROJECT.md` sets `merge: agent`: an agent may merge its own PR once the template is
-filled in and the `check` status is green on the current head, without asking first. The merge publishes,
-so bring the branch up to date with `main` and run `scripts/check.sh --report` on that head before merging. Then watch the run:
+`PROJECT.md` sets `merge: agent`: an agent may merge its own PR once `scripts/test.sh` has passed
+on its current head, without asking first. The merge publishes, so if `main` moved in a way that
+affects the change, bring the branch up to date and run `scripts/test.sh` again before merging. Then watch the run:
 
 ```sh
 gh run watch --exit-status        # the Release workflow for the merge commit
